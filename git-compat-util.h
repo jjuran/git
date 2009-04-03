@@ -172,6 +172,9 @@ typedef unsigned long uintptr_t;
 #define _ALL_SOURCE 1
 #endif
 #endif
+#ifdef __RELIX__
+#include "compat/relix.h"
+#endif
 
 /* used on Mac OS X */
 #ifdef PRECOMPOSE_UNICODE
