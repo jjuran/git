@@ -60,6 +60,25 @@ static char *canon_hostname;
 static char *ip_address;
 static char *tcp_port;
 
+#ifdef __LAMP__
+#define GIT_FORK() vfork()
+#else
+#define GIT_FORK() fork()
+#endif
+
+#ifdef __LAMP__
+pid_t fork_and_exit(int status);
+#else
+static inline pid_t fork_and_exit(int status)
+{
+	pid_t forked = fork();
+	if ( forked > 0 ) {
+		_exit( status );
+	}
+	return forked;  /* 0 for child or -1 on error */
+}
+#endif
+
 static void logreport(int priority, const char *err, va_list params)
 {
 	if (log_syslog) {
@@ -677,6 +696,15 @@ static void check_dead_children(void)
 	}
 }
 
+static void execute_and_exit(struct sockaddr *addr)
+{
+#ifdef __LAMP__
+	(void) reexec(&execute, addr);
+#else
+	exit(execute(addr));
+#endif
+}
+
 static void handle(int incoming, struct sockaddr *addr, int addrlen)
 {
 	pid_t pid;
@@ -692,7 +720,7 @@ static void handle(int incoming, struct sockaddr *addr, int addrlen)
 		}
 	}
 
-	if ((pid = fork())) {
+	if ((pid = GIT_FORK())) {
 		close(incoming);
 		if (pid < 0) {
 			logerror("Couldn't fork %s", strerror(errno));
@@ -707,7 +735,7 @@ static void handle(int incoming, struct sockaddr *addr, int addrlen)
 	dup2(incoming, 1);
 	close(incoming);
 
-	exit(execute(addr));
+	execute_and_exit(addr);
 }
 
 static void child_handler(int signo)
@@ -917,14 +945,8 @@ static void sanitize_stdfds(void)
 
 static void daemonize(void)
 {
-	switch (fork()) {
-		case 0:
-			break;
-		case -1:
-			die_errno("fork failed");
-		default:
-			exit(0);
-	}
+	if (fork_and_exit(0) == -1)
+		die_errno("fork failed");
 	if (setsid() == -1)
 		die_errno("setsid failed");
 	close(0);
