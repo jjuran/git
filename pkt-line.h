@@ -76,7 +76,9 @@ char *packet_read_line(int fd, int *size);
 char *packet_read_line_buf(char **src_buf, size_t *src_len, int *size);
 
 #define DEFAULT_PACKET_MAX 1000
+#ifndef LARGE_PACKET_MAX
 #define LARGE_PACKET_MAX 65520
+#endif
 extern char packet_buffer[LARGE_PACKET_MAX];
 
 #endif
