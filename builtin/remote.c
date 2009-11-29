@@ -90,11 +90,20 @@ static inline int postfixcmp(const char *string, const char *postfix)
 
 static int fetch_remote(const char *name)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *argv[] = { "fetch", name, NULL, NULL };
 	if (verbose) {
 		argv[1] = "-v";
 		argv[2] = name;
 	}
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	printf_ln(_("Updating %s"), name);
 	if (run_command_v_opt(argv, RUN_GIT_CMD))
 		return error(_("Could not fetch %s"), name);
@@ -159,6 +168,10 @@ static int add(int argc, const char **argv)
 	const char *name, *url;
 	int i;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('f', "fetch", &fetch, N_("fetch the remote branches")),
 		OPT_SET_INT(0, "tags", &fetch_tags,
@@ -174,6 +187,10 @@ static int add(int argc, const char **argv)
 			PARSE_OPT_OPTARG, parse_mirror_opt },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options, builtin_remote_add_usage,
 			     0);
@@ -1086,6 +1103,10 @@ static int show_push_info_item(struct string_list_item *item, void *cb_data)
 
 static int show(int argc, const char **argv)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int no_query = 0, result = 0, query_flag = 0;
 	struct option options[] = {
 		OPT_BOOLEAN('n', NULL, &no_query, N_("do not query remotes")),
@@ -1094,6 +1115,10 @@ static int show(int argc, const char **argv)
 	struct ref_states states;
 	struct string_list info_list = STRING_LIST_INIT_NODUP;
 	struct show_info info;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options, builtin_remote_show_usage,
 			     0);
@@ -1194,6 +1219,10 @@ static int set_head(int argc, const char **argv)
 	struct strbuf buf = STRBUF_INIT, buf2 = STRBUF_INIT;
 	char *head_name = NULL;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('a', "auto", &opt_a,
 			    N_("set refs/remotes/<name>/HEAD according to remote")),
@@ -1201,6 +1230,11 @@ static int set_head(int argc, const char **argv)
 			    N_("delete refs/remotes/<name>/HEAD")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	argc = parse_options(argc, argv, NULL, options, builtin_remote_sethead_usage,
 			     0);
 	if (argc)
@@ -1248,11 +1282,19 @@ static int set_head(int argc, const char **argv)
 
 static int prune(int argc, const char **argv)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int dry_run = 0, result = 0;
 	struct option options[] = {
 		OPT__DRY_RUN(&dry_run, N_("dry run")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options, builtin_remote_prune_usage,
 			     0);
@@ -1315,6 +1357,10 @@ static int get_remote_default(const char *key, const char *value, void *priv)
 
 static int update(int argc, const char **argv)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int i, prune = 0;
 	struct option options[] = {
 		OPT_BOOLEAN('p', "prune", &prune,
@@ -1324,6 +1370,10 @@ static int update(int argc, const char **argv)
 	const char **fetch_argv;
 	int fetch_argc = 0;
 	int default_defined = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	fetch_argv = xmalloc(sizeof(char *) * (argc+5));
 
@@ -1402,11 +1452,19 @@ static int set_remote_branches(const char *remotename, const char **branches,
 
 static int set_branches(int argc, const char **argv)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int add_mode = 0;
 	struct option options[] = {
 		OPT_BOOLEAN('\0', "add", &add_mode, N_("add branch")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options,
 			     builtin_remote_setbranches_usage, 0);
@@ -1431,6 +1489,11 @@ static int set_url(int argc, const char **argv)
 	const char **urlset;
 	int urlset_nr;
 	struct strbuf name_buf = STRBUF_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('\0', "push", &push_mode,
 			    N_("manipulate push URLs")),
@@ -1440,6 +1503,11 @@ static int set_url(int argc, const char **argv)
 			    N_("delete URLs")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	argc = parse_options(argc, argv, NULL, options, builtin_remote_seturl_usage,
 			     PARSE_OPT_KEEP_ARGV0);
 

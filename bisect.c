@@ -597,8 +597,16 @@ static void bisect_rev_setup(struct rev_info *revs, const char *prefix,
 			     const char *bad_format, const char *good_format,
 			     int read_paths)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct argv_array rev_argv = ARGV_ARRAY_INIT;
 	int i;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	init_revisions(revs, prefix);
 	revs->abbrev = 0;

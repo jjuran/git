@@ -7,10 +7,18 @@ static int err;
 
 static int merge_entry(int pos, const char *path)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int found;
 	const char *arguments[] = { pgm, "", "", "", path, "", "", "", NULL };
 	char hexbuf[4][60];
 	char ownbuf[4][60];
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (pos >= active_nr)
 		die("git merge-index: %s not in the cache", path);

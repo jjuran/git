@@ -173,6 +173,10 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	int auto_gc = 0;
 	int quiet = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_gc_options[] = {
 		OPT__QUIET(&quiet, N_("suppress progress reporting")),
 		{ OPTION_STRING, 0, "prune", &prune_expire, N_("date"),
@@ -182,6 +186,10 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN(0, "auto", &auto_gc, N_("enable auto-gc mode")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(builtin_gc_usage, builtin_gc_options);

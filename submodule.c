@@ -543,9 +543,17 @@ static void add_sha1_to_argv(const unsigned char sha1[20], void *data)
 
 static void calculate_changed_submodule_paths(void)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct rev_info rev;
 	struct commit *commit;
 	struct argv_array argv = ARGV_ARRAY_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	/* No need to check if there are no submodules configured */
 	if (!config_name_for_path.nr)
@@ -767,11 +775,19 @@ static int find_first_merges(struct object_array *result, const char *path,
 	struct commit *commit;
 	int contains_another;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	char merged_revision[42];
 	const char *rev_args[] = { "rev-list", "--merges", "--ancestry-path",
 				   "--all", merged_revision, NULL };
 	struct rev_info revs;
 	struct setup_revision_opt rev_opts;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&merges, 0, sizeof(merges));
 	memset(result, 0, sizeof(struct object_array));
