@@ -241,6 +241,10 @@ int cmd_cat_file(int argc, const char **argv, const char *prefix)
 	int opt = 0, batch = 0;
 	const char *exp_type = NULL, *obj_name = NULL;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option options[] = {
 		OPT_GROUP("<type> can be one of: blob, tree, commit, tag"),
 		OPT_SET_INT('t', NULL, &opt, "show object type", 't'),
@@ -258,6 +262,10 @@ int cmd_cat_file(int argc, const char **argv, const char *prefix)
 			    BATCH_CHECK),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_cat_file_config, NULL);
 
