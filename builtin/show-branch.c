@@ -657,6 +657,11 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 	int topics = 0;
 	int dense = 1;
 	const char *reflog_base = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_show_branch_options[] = {
 		OPT_BOOLEAN('a', "all", &all_heads,
 			    "show remote-tracking and local branches"),
@@ -693,6 +698,10 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 			    parse_reflog_param },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_show_branch_config, NULL);
 

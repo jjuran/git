@@ -78,10 +78,19 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 	char *path = xmalloc(len + 50);
 	unsigned long loose = 0, packed = 0, packed_loose = 0, garbage = 0;
 	off_t loose_size = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option opts[] = {
 		OPT__VERBOSE(&verbose, "be verbose"),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, opts, count_objects_usage, 0);
 	/* we do not take arguments other than flags for now */

@@ -29,12 +29,21 @@ int cmd_symbolic_ref(int argc, const char **argv, const char *prefix)
 {
 	int quiet = 0;
 	const char *msg = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT__QUIET(&quiet,
 			"suppress error message for non-symbolic (detached) refs"),
 		OPT_STRING('m', NULL, &msg, "reason", "reason of the update"),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options,

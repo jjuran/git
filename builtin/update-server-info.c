@@ -10,10 +10,19 @@ static const char * const update_server_info_usage[] = {
 int cmd_update_server_info(int argc, const char **argv, const char *prefix)
 {
 	int force = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT__FORCE(&force, "update the info files from scratch"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options,
 			     update_server_info_usage, 0);
