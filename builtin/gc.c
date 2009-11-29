@@ -179,6 +179,10 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	int quiet = 0;
 	char buf[80];
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_gc_options[] = {
 		OPT__QUIET(&quiet),
 		{ OPTION_STRING, 0, "prune", &prune_expire, "date",
@@ -188,6 +192,10 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN(0, "auto", &auto_gc, "enable auto-gc mode"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(gc_config, NULL);
 

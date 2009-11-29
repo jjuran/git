@@ -221,7 +221,15 @@ static int reject_entry(const unsigned char *sha1, const char *base,
 
 static int path_exists(struct tree *tree, const char *path)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *pathspec[] = { path, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (read_tree_recursive(tree, "", 0, 0, pathspec, reject_entry, NULL))
 		return 1;
@@ -305,6 +313,11 @@ static int parse_archive_args(int argc, const char **argv,
 	int i;
 	int list = 0;
 	int worktree_attributes = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option opts[] = {
 		OPT_GROUP(""),
 		OPT_STRING(0, "format", &format, "fmt", "archive format"),
@@ -335,6 +348,10 @@ static int parse_archive_args(int argc, const char **argv,
 			"path to the remote git-upload-archive command"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, opts, archive_usage, 0);
 

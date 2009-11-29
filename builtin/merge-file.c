@@ -29,6 +29,11 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 	int ret = 0, i = 0, to_stdout = 0;
 	int quiet = 0;
 	int prefixlen = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('p', "stdout", &to_stdout, "send results to standard output"),
 		OPT_SET_INT(0, "diff3", &xmp.style, "use a diff3 based merge", XDL_MERGE_DIFF3),
@@ -45,6 +50,10 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 			     "set labels for file1/orig_file/file2", &label_cb),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	xmp.level = XDL_MERGE_ZEALOUS_ALNUM;
 	xmp.style = 0;

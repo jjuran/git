@@ -365,6 +365,11 @@ static void describe(const char *arg, int last_one)
 int cmd_describe(int argc, const char **argv, const char *prefix)
 {
 	int contains = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN(0, "contains",   &contains, "find the tag that comes after the commit"),
 		OPT_BOOLEAN(0, "debug",      &debug, "debug search strategy on stderr"),
@@ -385,6 +390,10 @@ int cmd_describe(int argc, const char **argv, const char *prefix)
 		 PARSE_OPT_OPTARG, NULL, (intptr_t) "-dirty"},
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, describe_usage, 0);
 	if (max_candidates < 0)
