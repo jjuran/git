@@ -762,10 +762,18 @@ char *find_hook(const char *name)
 
 int run_hook_ve(const char *const *env, const char *name, va_list args)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct child_process hook;
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	const char *p;
 	int ret;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	p = find_hook(name);
 	if (!p)

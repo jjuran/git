@@ -950,9 +950,17 @@ static int get_remote_group(const char *key, const char *value, void *priv)
 
 static int add_remote_or_group(const char *name, struct string_list *list)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int prev_nr = list->nr;
 	struct remote_group_data g;
 	g.name = name; g.list = list;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(get_remote_group, &g);
 	if (list->nr == prev_nr) {

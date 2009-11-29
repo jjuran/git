@@ -120,11 +120,19 @@ static void write_note_data(int fd, const unsigned char *sha1)
 
 static void write_commented_object(int fd, const unsigned char *object)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *show_args[5] =
 		{"show", "--stat", "--no-notes", sha1_to_hex(object), NULL};
 	struct child_process show;
 	struct strbuf buf = STRBUF_INIT;
 	struct strbuf cbuf = STRBUF_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	/* Invoke "git show --stat --no-notes $object" */
 	memset(&show, 0, sizeof(show));
@@ -405,6 +413,11 @@ static int add(int argc, const char **argv, const char *prefix)
 	char logmsg[100];
 	const unsigned char *note;
 	struct msg_arg msg = { 0, 0, STRBUF_INIT };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		{ OPTION_CALLBACK, 'm', "message", &msg, N_("message"),
 			N_("note contents as a string"), PARSE_OPT_NONEG,
@@ -421,6 +434,10 @@ static int add(int argc, const char **argv, const char *prefix)
 		OPT__FORCE(&force, N_("replace existing notes")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, git_notes_add_usage,
 			     PARSE_OPT_KEEP_ARGV0);
@@ -485,6 +502,11 @@ static int copy(int argc, const char **argv, const char *prefix)
 	unsigned char object[20], from_obj[20];
 	struct notes_tree *t;
 	const char *rewrite_cmd = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT__FORCE(&force, N_("replace existing notes")),
 		OPT_BOOL(0, "stdin", &from_stdin, N_("read objects from stdin")),
@@ -493,6 +515,10 @@ static int copy(int argc, const char **argv, const char *prefix)
 			      "--stdin)")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, git_notes_copy_usage,
 			     0);
@@ -562,6 +588,11 @@ static int append_edit(int argc, const char **argv, const char *prefix)
 	char logmsg[100];
 	const char * const *usage;
 	struct msg_arg msg = { 0, 0, STRBUF_INIT };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		{ OPTION_CALLBACK, 'm', "message", &msg, N_("message"),
 			N_("note contents as a string"), PARSE_OPT_NONEG,
@@ -577,6 +608,11 @@ static int append_edit(int argc, const char **argv, const char *prefix)
 			parse_reuse_arg},
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	int edit = !strcmp(argv[0], "edit");
 
 	usage = edit ? git_notes_edit_usage : git_notes_append_usage;
@@ -647,7 +683,17 @@ static int show(int argc, const char **argv, const char *prefix)
 		retval = error(_("No note found for object %s."),
 			       sha1_to_hex(object));
 	else {
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		const char *show_args[3] = {"show", sha1_to_hex(note), NULL};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 		retval = execv_git_cmd(show_args);
 	}
 	free_notes(t);
@@ -728,6 +774,10 @@ static int merge_commit(struct notes_merge_options *o)
 
 static int merge(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct strbuf remote_ref = STRBUF_INIT, msg = STRBUF_INIT;
 	unsigned char result_sha1[20];
 	struct notes_tree *t;
@@ -752,6 +802,10 @@ static int merge(int argc, const char **argv, const char *prefix)
 			PARSE_OPT_NOARG | PARSE_OPT_NONEG, NULL, 1},
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options,
 			     git_notes_merge_usage, 0);
@@ -851,6 +905,10 @@ static int remove_one_note(struct notes_tree *t, const char *name, unsigned flag
 
 static int remove_cmd(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	unsigned flag = 0;
 	int from_stdin = 0;
 	struct option options[] = {
@@ -863,6 +921,10 @@ static int remove_cmd(int argc, const char **argv, const char *prefix)
 	};
 	struct notes_tree *t;
 	int retval = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options,
 			     git_notes_remove_usage, 0);
@@ -893,6 +955,10 @@ static int remove_cmd(int argc, const char **argv, const char *prefix)
 
 static int prune(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct notes_tree *t;
 	int show_only = 0, verbose = 0;
 	struct option options[] = {
@@ -900,6 +966,10 @@ static int prune(int argc, const char **argv, const char *prefix)
 		OPT__VERBOSE(&verbose, "report pruned notes"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, git_notes_prune_usage,
 			     0);
@@ -938,11 +1008,20 @@ int cmd_notes(int argc, const char **argv, const char *prefix)
 {
 	int result;
 	const char *override_notes_ref = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_STRING(0, "ref", &override_notes_ref, N_("notes-ref"),
 			   N_("use notes from <notes_ref>")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options, git_notes_usage,

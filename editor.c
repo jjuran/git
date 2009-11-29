@@ -37,9 +37,18 @@ int launch_editor(const char *path, struct strbuf *buffer, const char *const *en
 		return error("Terminal is dumb, but EDITOR unset");
 
 	if (strcmp(editor, ":")) {
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		const char *args[] = { editor, real_path(path), NULL };
 		struct child_process p;
 		int ret, sig;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 		memset(&p, 0, sizeof(p));
 		p.argv = args;

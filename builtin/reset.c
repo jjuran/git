@@ -269,6 +269,11 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	unsigned char sha1[20];
 	struct pathspec pathspec;
 	int intent_to_add = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option options[] = {
 		OPT__QUIET(&quiet, N_("be quiet, only report errors")),
 		OPT_SET_INT(0, "mixed", &reset_type,
@@ -285,6 +290,10 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 				N_("record only the fact that removed paths will be added later")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 
