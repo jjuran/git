@@ -254,8 +254,18 @@ int interactive_add(int argc, const char **argv, const char *prefix)
 static int edit_patch(int argc, const char **argv, const char *prefix)
 {
 	char *file = xstrdup(git_path("ADD_EDIT.patch"));
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *apply_argv[] = { "apply", "--recount", "--cached",
 		file, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	struct child_process child;
 	struct rev_info rev;
 	int out;

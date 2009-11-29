@@ -32,6 +32,10 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 	int favor = 0;
 	int nongit;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('p', "stdout", &to_stdout, "send results to standard output"),
 		OPT_SET_INT(0, "diff3", &style, "use a diff3 based merge", XDL_MERGE_DIFF3),
@@ -44,6 +48,10 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 			     "set labels for file1/orig_file/file2", &label_cb),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	prefix = setup_git_directory_gently(&nongit);
 	if (!nongit) {

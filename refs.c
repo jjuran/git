@@ -311,7 +311,16 @@ static int warn_if_dangling_symref(const char *refname, const unsigned char *sha
 
 void warn_dangling_symref(FILE *fp, const char *msg_fmt, const char *refname)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct warn_if_dangling_data data = { fp, refname, msg_fmt };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	for_each_rawref(warn_if_dangling_symref, &data);
 }
 

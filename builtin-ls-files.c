@@ -463,6 +463,11 @@ int cmd_ls_files(int argc, const char **argv, const char *prefix)
 {
 	int require_work_tree = 0, show_tag = 0;
 	struct dir_struct dir;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_ls_files_options[] = {
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
 			"paths are separated with NUL character",
@@ -517,6 +522,10 @@ int cmd_ls_files(int argc, const char **argv, const char *prefix)
 		OPT__ABBREV(&abbrev),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&dir, 0, sizeof(dir));
 	if (prefix)

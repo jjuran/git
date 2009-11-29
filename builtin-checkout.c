@@ -612,7 +612,16 @@ static int check_tracking_name(const char *refname, const unsigned char *sha1,
 
 static const char *unique_tracking_name(const char *name)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct tracking_name_data cb_data = { name, NULL, 1 };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	for_each_ref(check_tracking_name, &cb_data);
 	if (cb_data.unique)
 		return cb_data.remote;
@@ -622,6 +631,11 @@ static const char *unique_tracking_name(const char *name)
 
 int cmd_checkout(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define new new_
+#endif
+
 	struct checkout_opts opts;
 	unsigned char rev[20];
 	const char *arg;
@@ -651,6 +665,10 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		OPT_END(),
 	};
 	int has_dash_dash;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&opts, 0, sizeof(opts));
 	memset(&new, 0, sizeof(new));

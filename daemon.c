@@ -141,6 +141,11 @@ static char *path_ok(char *directory)
 	}
 	else if (interpolated_path && saw_extended_args) {
 		struct strbuf expanded_path = STRBUF_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		struct strbuf_expand_dict_entry dict[] = {
 			{ "H", hostname },
 			{ "CH", canon_hostname },
@@ -149,6 +154,10 @@ static char *path_ok(char *directory)
 			{ "D", directory },
 			{ NULL }
 		};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 		if (*dir != '/') {
 			/* Allow only absolute */
@@ -341,9 +350,17 @@ static int run_service_command(const char **argv)
 
 static int upload_pack(void)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	/* Timeout as string */
 	char timeout_buf[64];
 	const char *argv[] = { "upload-pack", "--strict", timeout_buf, ".", NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	snprintf(timeout_buf, sizeof timeout_buf, "--timeout=%u", timeout);
 	return run_service_command(argv);
