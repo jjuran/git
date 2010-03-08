@@ -7,6 +7,7 @@
 */
 
 #include "cache.h"
+#include "builtin.h"
 #include "exec_cmd.h"
 
 #define BLKSIZE 512
