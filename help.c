@@ -392,6 +392,9 @@ const char *help_unknown_cmd(const char *cmd)
 	}
 
 	exit(1);
+
+	/* Not reached */
+	return NULL;
 }
 
 int cmd_version(int argc, const char **argv, const char *prefix)

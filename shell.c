@@ -213,4 +213,7 @@ int main(int argc, char **argv)
 		die("invalid command format '%s': %s", argv[2],
 		    split_cmdline_strerror(count));
 	}
+
+	/* Not reached */
+	return 0;
 }

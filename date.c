@@ -674,6 +674,9 @@ enum date_mode parse_date_format(const char *format)
 		return DATE_RAW;
 	else
 		die("unknown date format %s", format);
+
+	/* Not reached */
+	return DATE_NORMAL;
 }
 
 void datestamp(char *buf, int bufsize)
