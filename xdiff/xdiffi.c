@@ -102,7 +102,7 @@ static long xdl_split(unsigned long const *ha1, long off1, long lim1,
 				i1 = kvdf[d + 1];
 			prev1 = i1;
 			i2 = i1 - d;
-			for (; i1 < lim1 && i2 < lim2 && ha1[i1] == ha2[i2]; i1++, i2++);
+			for (; i1 < lim1 && i2 < lim2 && ha1[i1] == ha2[i2]; i1++, i2++) continue;
 			if (i1 - prev1 > xenv->snake_cnt)
 				got_snake = 1;
 			kvdf[d] = i1;
@@ -137,7 +137,7 @@ static long xdl_split(unsigned long const *ha1, long off1, long lim1,
 				i1 = kvdb[d + 1] - 1;
 			prev1 = i1;
 			i2 = i1 - d;
-			for (; i1 > off1 && i2 > off2 && ha1[i1 - 1] == ha2[i2 - 1]; i1--, i2--);
+			for (; i1 > off1 && i2 > off2 && ha1[i1 - 1] == ha2[i2 - 1]; i1--, i2--) continue;
 			if (prev1 - i1 > xenv->snake_cnt)
 				got_snake = 1;
 			kvdb[d] = i1;
@@ -273,8 +273,8 @@ int xdl_recs_cmp(diffdata_t *dd1, long off1, long lim1,
 	/*
 	 * Shrink the box by walking through each diagonal snake (SW and NE).
 	 */
-	for (; off1 < lim1 && off2 < lim2 && ha1[off1] == ha2[off2]; off1++, off2++);
-	for (; off1 < lim1 && off2 < lim2 && ha1[lim1 - 1] == ha2[lim2 - 1]; lim1--, lim2--);
+	for (; off1 < lim1 && off2 < lim2 && ha1[off1] == ha2[off2]; off1++, off2++) continue;
+	for (; off1 < lim1 && off2 < lim2 && ha1[lim1 - 1] == ha2[lim2 - 1]; lim1--, lim2--) continue;
 
 	/*
 	 * If one dimension is empty, then all records on the other one must
@@ -417,7 +417,7 @@ int xdl_change_compact(xdfile_t *xdf, xdfile_t *xdfo, long flags) {
 		 * a zero at position -1 and N.
 		 */
 		for (; ix < nrec && !rchg[ix]; ix++)
-			while (rchgo[ixo++]);
+			while (rchgo[ixo++]) continue;
 		if (ix == nrec)
 			break;
 
@@ -427,8 +427,8 @@ int xdl_change_compact(xdfile_t *xdf, xdfile_t *xdfo, long flags) {
 		 * indexes (ix and ixo).
 		 */
 		ixs = ix;
-		for (ix++; rchg[ix]; ix++);
-		for (; rchgo[ixo]; ixo++);
+		for (ix++; rchg[ix]; ix++) continue;
+		for (; rchgo[ixo]; ixo++) continue;
 
 		do {
 			grpsiz = ix - ixs;
@@ -449,8 +449,8 @@ int xdl_change_compact(xdfile_t *xdf, xdfile_t *xdfo, long flags) {
 				 * the start index accordingly (and so the other-file
 				 * end-of-group index).
 				 */
-				for (; rchg[ixs - 1]; ixs--);
-				while (rchgo[--ixo]);
+				for (; rchg[ixs - 1]; ixs--) continue;
+				while (rchgo[--ixo]) continue;
 			}
 
 			/*
@@ -479,7 +479,7 @@ int xdl_change_compact(xdfile_t *xdf, xdfile_t *xdfo, long flags) {
 				 * index in case we are shifting together with a
 				 * corresponding group of changes in the other file.
 				 */
-				for (; rchg[ix]; ix++);
+				for (; rchg[ix]; ix++) continue;
 				while (rchgo[++ixo])
 					ixref = ix;
 			}
@@ -492,7 +492,7 @@ int xdl_change_compact(xdfile_t *xdf, xdfile_t *xdfo, long flags) {
 		while (ixref < ix) {
 			rchg[--ixs] = 1;
 			rchg[--ix] = 0;
-			while (rchgo[--ixo]);
+			while (rchgo[--ixo]) continue;
 		}
 	}
 
@@ -510,8 +510,8 @@ int xdl_build_script(xdfenv_t *xe, xdchange_t **xscr) {
 	 */
 	for (i1 = xe->xdf1.nrec, i2 = xe->xdf2.nrec; i1 >= 0 || i2 >= 0; i1--, i2--)
 		if (rchg1[i1 - 1] || rchg2[i2 - 1]) {
-			for (l1 = i1; rchg1[i1 - 1]; i1--);
-			for (l2 = i2; rchg2[i2 - 1]; i2--);
+			for (l1 = i1; rchg1[i1 - 1]; i1--) continue;
+			for (l2 = i2; rchg2[i2 - 1]; i2--) continue;
 
 			if (!(xch = xdl_add_change(cscr, i1, i2, l1 - i1, l2 - i2))) {
 				xdl_free_script(cscr);

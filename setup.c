@@ -483,7 +483,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 		if (is_git_directory("."))
 			return setup_bare_git_dir(work_tree_env, offset,
 							len, cwd, nongit_ok);
-		while (--offset > ceil_offset && cwd[offset] != '/');
+		while (--offset > ceil_offset && cwd[offset] != '/') continue;
 		if (offset <= ceil_offset)
 			return setup_nongit(cwd, nongit_ok);
 		if (one_filesystem) {

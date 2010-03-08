@@ -313,7 +313,7 @@ unsigned long xdl_hash_record(char const **data, char const *top, long flags) {
 unsigned int xdl_hashbits(unsigned int size) {
 	unsigned int val = 1, bits = 0;
 
-	for (; val < size && bits < CHAR_BIT * sizeof(unsigned int); val <<= 1, bits++);
+	for (; val < size && bits < CHAR_BIT * sizeof(unsigned int); val <<= 1, bits++) continue;
 	return bits ? bits: 1;
 }
 
@@ -345,7 +345,7 @@ long xdl_atol(char const *str, char const **next) {
 	long val, base;
 	char const *top;
 
-	for (top = str; XDL_ISDIGIT(*top); top++);
+	for (top = str; XDL_ISDIGIT(*top); top++)  continue;
 	if (next)
 		*next = top;
 	for (val = 0, base = 1, top--; top >= str; top--, base *= 10)
