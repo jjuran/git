@@ -802,6 +802,9 @@ static const char *find_author_by_nickname(const char *name)
 		return strbuf_detach(&buf, NULL);
 	}
 	die("No existing author found with '%s'", name);
+
+	/* Not reached */
+	return NULL;
 }
 
 

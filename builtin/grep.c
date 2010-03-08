@@ -673,6 +673,9 @@ static int grep_object(struct grep_opt *opt, const char **paths,
 		return hit;
 	}
 	die("unable to grep from object of type %s", typename(obj->type));
+
+	/* Not reached */
+	return 0;
 }
 
 static int grep_directory(struct grep_opt *opt, const char **paths)
