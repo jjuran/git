@@ -251,6 +251,9 @@ static int git_parse_file(config_fn_t fn, void *data)
 			break;
 	}
 	die("bad config file line %d in %s", config_linenr, config_file_name);
+
+	/* Not reached */
+	return 0;
 }
 
 static int parse_unit_factor(const char *end, unsigned long *val)
