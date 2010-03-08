@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "builtin.h"
 #include "pack.h"
 #include "refs.h"
 #include "pkt-line.h"

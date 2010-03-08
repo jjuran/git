@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "builtin.h"
 #include "delta.h"
 #include "pack.h"
 #include "csum-file.h"
