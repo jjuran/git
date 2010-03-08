@@ -410,7 +410,7 @@ const char *setup_git_directory_gently(int *nongit_ok)
 			check_repository_format_gently(nongit_ok);
 			return NULL;
 		}
-		while (--offset > ceil_offset && cwd[offset] != '/');
+		while (--offset > ceil_offset && cwd[offset] != '/') continue;
 		if (offset <= ceil_offset) {
 			if (nongit_ok) {
 				if (chdir(cwd))
