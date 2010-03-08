@@ -2024,6 +2024,9 @@ static const char *parse_loc(const char *spec,
 		regerror(reg_error, &regexp, errbuf, 1024);
 		die("-L parameter '%s': %s", spec + 1, errbuf);
 	}
+
+	/* Not reached */
+	return NULL;
 }
 
 /*

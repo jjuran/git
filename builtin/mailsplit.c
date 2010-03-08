@@ -98,6 +98,9 @@ static int split_one(FILE *mbox, const char *name, int allow_bare)
 	unlink(name);
 	fprintf(stderr, "corrupt mailbox\n");
 	exit(1);
+
+	/* Not reached */
+	return 0;
 }
 
 static int populate_maildir_list(struct string_list *list, const char *path)

@@ -1182,6 +1182,9 @@ int transport_connect(struct transport *transport, const char *name,
 		return transport->connect(transport, name, exec, fd);
 	else
 		die("Operation not supported by protocol");
+
+	/* Not reached */
+	return 0;
 }
 
 int transport_disconnect(struct transport *transport)

@@ -147,6 +147,9 @@ static int get_value(struct parse_opt_ctx_t *p,
 	default:
 		die("should not happen, someone must be hit on the forehead");
 	}
+
+	/* Not reached */
+	return 0;
 }
 
 static int parse_short_opt(struct parse_opt_ctx_t *p, const struct option *options)

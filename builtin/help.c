@@ -63,6 +63,9 @@ static enum help_format parse_help_format(const char *format)
 	if (!strcmp(format, "web") || !strcmp(format, "html"))
 		return HELP_FORMAT_WEB;
 	die(_("unrecognized help format '%s'"), format);
+
+	/* Not reached */
+	return HELP_FORMAT_NONE;
 }
 
 static const char *get_man_viewer_info(const char *name)
