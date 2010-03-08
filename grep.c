@@ -54,6 +54,9 @@ static int parse_pattern_type_arg(const char *opt, const char *arg)
 	else if (!strcmp(arg, "perl"))
 		return GREP_PATTERN_TYPE_PCRE;
 	die("bad %s argument: %s", opt, arg);
+
+	/* Not reached */
+	return 0;
 }
 
 /*
@@ -1750,6 +1753,9 @@ static int grep_source_load(struct grep_source *gs)
 		return gs->buf ? 0 : -1;
 	}
 	die("BUG: invalid grep_source type");
+
+	/* Not reached */
+	return 0;
 }
 
 void grep_source_load_driver(struct grep_source *gs)

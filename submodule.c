@@ -357,6 +357,9 @@ int parse_fetch_recurse_submodules_arg(const char *opt, const char *arg)
 			return RECURSE_SUBMODULES_ON_DEMAND;
 		die("bad %s argument: %s", opt, arg);
 	}
+	
+	/* Not reached */
+	return 0;
 }
 
 void show_submodule_summary(FILE *f, const char *path,

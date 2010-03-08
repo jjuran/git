@@ -41,6 +41,9 @@ int type_from_string(const char *str)
 		if (!strcmp(str, object_type_strings[i]))
 			return i;
 	die("invalid object type \"%s\"", str);
+
+	/* Not reached */
+	return 0;
 }
 
 /*
@@ -227,6 +230,8 @@ struct object *parse_object_or_die(const unsigned char *sha1,
 		return o;
 
 	die(_("unable to parse object: %s"), name ? name : sha1_to_hex(sha1));
+
+	return o;
 }
 
 struct object *parse_object(const unsigned char *sha1)

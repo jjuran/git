@@ -580,6 +580,9 @@ static struct pack_list * add_pack_file(const char *filename)
 		p = p->next;
 	}
 	die("Filename %s not found in packed_git", filename);
+
+	/* Not reached */
+	return NULL;
 }
 
 static void load_all(void)

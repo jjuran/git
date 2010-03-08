@@ -149,6 +149,9 @@ int check_filename(const char *prefix, const char *arg)
 	if (errno == ENOENT || errno == ENOTDIR)
 		return 0; /* file does not exist */
 	die_errno("failed to stat '%s'", arg);
+
+	/* Not reached */
+	return 0;
 }
 
 static void NORETURN die_verify_filename(const char *prefix,

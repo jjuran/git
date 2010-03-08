@@ -277,6 +277,9 @@ static enum protocol get_protocol(const char *name)
 	if (!strcmp(name, "file"))
 		return PROTO_FILE;
 	die("I don't handle protocol '%s'", name);
+
+	/* Not reached */
+	return (enum protocol)0;
 }
 
 #define STR_(s)	# s
