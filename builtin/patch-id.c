@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "builtin.h"
 #include "exec_cmd.h"
 
 static void flush_current_id(int patchlen, unsigned char *id, git_SHA_CTX *c)

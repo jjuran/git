@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "commit.h"
 #include "sha1-lookup.h"
 #include "refs.h"
 

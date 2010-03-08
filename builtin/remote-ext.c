@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "builtin.h"
 #include "transport.h"
 #include "run-command.h"
 
