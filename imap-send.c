@@ -699,7 +699,7 @@ static int parse_response_code(struct imap_store *ctx, struct imap_cmd_cb *cb,
 		/* RFC2060 says that these messages MUST be displayed
 		 * to the user
 		 */
-		for (; isspace((unsigned char)*p); p++);
+		for (; isspace((unsigned char)*p); p++) continue;
 		fprintf(stderr, "*** IMAP ALERT *** %s\n", p);
 	} else if (cb && cb->ctx && !strcmp("APPENDUID", arg)) {
 		if (!(arg = next_arg(&s)) || !(ctx->uidvalidity = atoi(arg)) ||
