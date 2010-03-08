@@ -52,5 +52,5 @@ int main(int ac, char **av)
 		fwrite(sha1, 1, 20, stdout);
 	else
 		puts(sha1_to_hex(sha1));
-	exit(0);
+	return 0;
 }
