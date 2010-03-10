@@ -2,6 +2,12 @@
 #include "run-command.h"
 #include "exec_cmd.h"
 
+#ifdef __LAMP__
+#define GIT_FORK() vfork()
+#else
+#define GIT_FORK() fork()
+#endif
+
 static inline void close_pair(int fd[2])
 {
 	close(fd[0]);
@@ -200,7 +206,7 @@ fail_pipe:
 		notify_pipe[0] = notify_pipe[1] = -1;
 
 	fflush(NULL);
-	cmd->pid = fork();
+	cmd->pid = GIT_FORK();
 	if (!cmd->pid) {
 		/*
 		 * Redirect the channel to write syscall error messages to
@@ -455,6 +461,15 @@ static unsigned __stdcall run_thread(void *data)
 }
 #endif
 
+static void run_async_proc(struct async *async, int proc_in, int proc_out)
+{
+#ifdef __LAMP__
+	(void) reexec(async->proc, proc_in, proc_out, async->data);
+#else
+	exit(!!async->proc(proc_in, proc_out, async->data));
+#endif
+}
+
 int start_async(struct async *async)
 {
 	int need_in, need_out;
@@ -501,7 +516,7 @@ int start_async(struct async *async)
 	/* Flush stdio before fork() to avoid cloning buffers */
 	fflush(NULL);
 
-	async->pid = fork();
+	async->pid = GIT_FORK();
 	if (async->pid < 0) {
 		error("fork (async) failed: %s", strerror(errno));
 		goto error;
@@ -511,7 +526,7 @@ int start_async(struct async *async)
 			close(fdin[1]);
 		if (need_out)
 			close(fdout[0]);
-		exit(!!async->proc(proc_in, proc_out, async->data));
+		run_async_proc(async, proc_in, proc_out);
 	}
 
 	if (need_in)
