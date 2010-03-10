@@ -123,6 +123,9 @@
 #ifdef _MSC_VER
 #include "compat/msvc.h"
 #endif
+#ifdef __LAMP__
+#include "compat/lamp.h"
+#endif
 
 #ifndef NO_LIBGEN_H
 #include <libgen.h>
