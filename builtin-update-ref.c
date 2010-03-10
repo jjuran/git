@@ -11,6 +11,11 @@ static const char * const git_update_ref_usage[] = {
 
 int cmd_update_ref(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define delete delete_
+#endif
+
 	const char *refname, *oldval, *msg=NULL;
 	unsigned char sha1[20], oldsha1[20];
 	int delete = 0, no_deref = 0, flags = 0;
@@ -21,6 +26,10 @@ int cmd_update_ref(int argc, const char **argv, const char *prefix)
 					"update <refname> not the one it points to"),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options, git_update_ref_usage,

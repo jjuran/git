@@ -464,6 +464,11 @@ static void wt_status_print_submodule_summary(struct wt_status *s, int uncommitt
 	struct child_process sm_summary;
 	char summary_limit[64];
 	char index[PATH_MAX];
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *env[] = { index, NULL };
 	const char *argv[] = {
 		"submodule",
@@ -475,6 +480,10 @@ static void wt_status_print_submodule_summary(struct wt_status *s, int uncommitt
 		uncommitted ? NULL : (s->amend ? "HEAD^" : "HEAD"),
 		NULL
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	sprintf(summary_limit, "%d", s->submodule_summary);
 	snprintf(index, sizeof(index), "GIT_INDEX_FILE=%s", s->index_file);

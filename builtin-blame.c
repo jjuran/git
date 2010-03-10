@@ -733,7 +733,17 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 {
 	int last_in_target;
 	mmfile_t file_p, file_o;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct blame_chunk_cb_data d = { sb, target, parent, 0, 0 };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
 
@@ -875,7 +885,17 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	const char *cp;
 	int cnt;
 	mmfile_t file_o;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct handle_split_cb_data d = { sb, ent, parent, split, 0, 0 };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
 

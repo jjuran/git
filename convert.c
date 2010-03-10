@@ -249,7 +249,16 @@ static int filter_buffer(int in, int out, void *data)
 	struct child_process child_process;
 	struct filter_params *params = (struct filter_params *)data;
 	int write_err, status;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *argv[] = { params->cmd, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&child_process, 0, sizeof(child_process));
 	child_process.argv = argv;

@@ -3522,6 +3522,10 @@ int cmd_apply(int argc, const char **argv, const char *unused_prefix)
 
 	const char *whitespace_option = NULL;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_apply_options[] = {
 		{ OPTION_CALLBACK, 0, "exclude", NULL, "path",
 			"don't apply changes matching the given path",
@@ -3588,6 +3592,10 @@ int cmd_apply(int argc, const char **argv, const char *unused_prefix)
 			0, option_parse_directory },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	prefix = setup_git_directory_gently(&is_not_gitdir);
 	prefix_length = prefix ? strlen(prefix) : 0;

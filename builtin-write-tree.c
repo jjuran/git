@@ -20,6 +20,11 @@ int cmd_write_tree(int argc, const char **argv, const char *unused_prefix)
 	const char *prefix = NULL;
 	unsigned char sha1[20];
 	const char *me = "git-write-tree";
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option write_tree_options[] = {
 		OPT_BIT(0, "missing-ok", &flags, "allow missing objects",
 			WRITE_TREE_MISSING_OK),
@@ -32,6 +37,10 @@ int cmd_write_tree(int argc, const char **argv, const char *unused_prefix)
 		  WRITE_TREE_IGNORE_CACHE_TREE },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, unused_prefix, write_tree_options,

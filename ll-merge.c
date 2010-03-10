@@ -172,6 +172,11 @@ static int ll_ext_merge(const struct ll_merge_driver *fn,
 {
 	char temp[4][50];
 	struct strbuf cmd = STRBUF_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct strbuf_expand_dict_entry dict[] = {
 		{ "O", temp[0] },
 		{ "A", temp[1] },
@@ -179,6 +184,11 @@ static int ll_ext_merge(const struct ll_merge_driver *fn,
 		{ "L", temp[3] },
 		{ NULL }
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
+
 	const char *args[] = { NULL, NULL };
 	int status, fd, i;
 	struct stat st;

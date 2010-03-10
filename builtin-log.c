@@ -884,6 +884,10 @@ static int cc_callback(const struct option *opt, const char *arg, int unset)
 
 int cmd_format_patch(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct commit *commit;
 	struct commit **list = NULL;
 	struct rev_info rev;
@@ -955,6 +959,10 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    PARSE_OPT_OPTARG, thread_callback },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_format_config, NULL);
 	init_revisions(&rev, prefix);

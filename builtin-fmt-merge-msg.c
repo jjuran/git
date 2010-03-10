@@ -348,12 +348,21 @@ int fmt_merge_msg(int merge_summary, struct strbuf *in, struct strbuf *out) {
 int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 {
 	const char *inpath = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN(0, "log",     &merge_summary, "populate log with the shortlog"),
 		OPT_BOOLEAN(0, "summary", &merge_summary, "alias for --log"),
 		OPT_FILENAME('F', "file", &inpath, "file to read from"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	FILE *in = stdin;
 	struct strbuf input = STRBUF_INIT, output = STRBUF_INIT;
