@@ -138,6 +138,11 @@ advice.*::
 		Advice on how to set your identity configuration when
 		your information is guessed from the system username and
 		domain name. Default: true.
+
+	detachedHead::
+		Advice shown when you used linkgit::git-checkout[1] to
+		move to the detach HEAD state, to instruct how to create
+		a local branch after the fact.  Default: true.
 --
 
 core.fileMode::
@@ -1437,7 +1442,7 @@ receive.denyCurrentBranch::
 	out of sync with the index and working tree. If set to "warn",
 	print a warning of such a push to stderr, but allow the push to
 	proceed. If set to false or "ignore", allow such pushes with no
-	message. Defaults to "warn".
+	message. Defaults to "refuse".
 
 receive.denyNonFastForwards::
 	If set to true, git-receive-pack will deny a ref update which is
