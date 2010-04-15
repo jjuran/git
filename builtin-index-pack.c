@@ -382,7 +382,7 @@ static void *get_data_from_pack(struct object_entry *obj)
 	stream.next_in = src;
 	stream.avail_in = len;
 	git_inflate_init(&stream);
-	while ((st = git_inflate(&stream, Z_FINISH)) == Z_OK);
+	while ((st = git_inflate(&stream, Z_FINISH)) == Z_OK) continue;
 	git_inflate_end(&stream);
 	if (st != Z_STREAM_END || stream.total_out != obj->size)
 		die("serious inflate inconsistency");
@@ -681,7 +681,7 @@ static int write_compressed(struct sha1file *f, void *in, unsigned int size)
 	stream.avail_in = size;
 	stream.next_out = out;
 	stream.avail_out = maxsize;
-	while (deflate(&stream, Z_FINISH) == Z_OK);
+	while (deflate(&stream, Z_FINISH) == Z_OK) continue;
 	deflateEnd(&stream);
 
 	size = stream.total_out;
