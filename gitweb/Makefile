@@ -6,13 +6,13 @@ all::
 # Define JSMIN to point to JavaScript minifier that functions as
 # a filter to have gitweb.js minified.
 #
+# Define CSSMIN to point to a CSS minifier in order to generate a minified
+# version of gitweb.css
+#
 
 prefix ?= $(HOME)
 bindir ?= $(prefix)/bin
 RM ?= rm -f
-
-# JavaScript minifier invocation that can function as filter
-JSMIN ?=
 
 # default configuration for gitweb
 GITWEB_CONFIG = gitweb_config.perl
@@ -29,11 +29,7 @@ GITWEB_HOMETEXT = indextext.html
 GITWEB_CSS = gitweb.css
 GITWEB_LOGO = git-logo.png
 GITWEB_FAVICON = git-favicon.png
-ifdef JSMIN
-GITWEB_JS = gitweb.min.js
-else
 GITWEB_JS = gitweb.js
-endif
 GITWEB_SITE_HEADER =
 GITWEB_SITE_FOOTER =
 
@@ -85,45 +81,54 @@ endif
 all:: gitweb.cgi
 
 ifdef JSMIN
-FILES=gitweb.cgi gitweb.min.js
-gitweb.cgi: gitweb.perl gitweb.min.js
-else # !JSMIN
-FILES=gitweb.cgi
-gitweb.cgi: gitweb.perl
-endif # JSMIN
+GITWEB_JS = gitweb.min.js
+all:: gitweb.min.js
+gitweb.min.js: gitweb.js GITWEB-BUILD-OPTIONS
+	$(QUIET_GEN)$(JSMIN) <$< >$@
+endif
 
-gitweb.cgi:
+ifdef CSSMIN
+GITWEB_CSS = gitweb.min.css
+all:: gitweb.min.css
+gitweb.min.css: gitweb.css GITWEB-BUILD-OPTIONS
+	$(QUIET_GEN)$(CSSMIN) <$ >$@
+endif
+
+GITWEB_REPLACE = \
+	-e 's|++GIT_VERSION++|$(GIT_VERSION)|g' \
+	-e 's|++GIT_BINDIR++|$(bindir)|g' \
+	-e 's|++GITWEB_CONFIG++|$(GITWEB_CONFIG)|g' \
+	-e 's|++GITWEB_CONFIG_SYSTEM++|$(GITWEB_CONFIG_SYSTEM)|g' \
+	-e 's|++GITWEB_HOME_LINK_STR++|$(GITWEB_HOME_LINK_STR)|g' \
+	-e 's|++GITWEB_SITENAME++|$(GITWEB_SITENAME)|g' \
+	-e 's|++GITWEB_PROJECTROOT++|$(GITWEB_PROJECTROOT)|g' \
+	-e 's|"++GITWEB_PROJECT_MAXDEPTH++"|$(GITWEB_PROJECT_MAXDEPTH)|g' \
+	-e 's|++GITWEB_EXPORT_OK++|$(GITWEB_EXPORT_OK)|g' \
+	-e 's|++GITWEB_STRICT_EXPORT++|$(GITWEB_STRICT_EXPORT)|g' \
+	-e 's|++GITWEB_BASE_URL++|$(GITWEB_BASE_URL)|g' \
+	-e 's|++GITWEB_LIST++|$(GITWEB_LIST)|g' \
+	-e 's|++GITWEB_HOMETEXT++|$(GITWEB_HOMETEXT)|g' \
+	-e 's|++GITWEB_CSS++|$(GITWEB_CSS)|g' \
+	-e 's|++GITWEB_LOGO++|$(GITWEB_LOGO)|g' \
+	-e 's|++GITWEB_FAVICON++|$(GITWEB_FAVICON)|g' \
+	-e 's|++GITWEB_JS++|$(GITWEB_JS)|g' \
+	-e 's|++GITWEB_SITE_HEADER++|$(GITWEB_SITE_HEADER)|g' \
+	-e 's|++GITWEB_SITE_FOOTER++|$(GITWEB_SITE_FOOTER)|g'
+
+GITWEB-BUILD-OPTIONS: FORCE
+	@rm -f $@+
+	@echo "x" '$(PERL_PATH_SQ)' $(GITWEB_REPLACE) "$(JSMIN)|$(CSSMIN)" >$@+
+	@cmp -s $@+ $@ && rm -f $@+ || mv -f $@+ $@
+
+gitweb.cgi: gitweb.perl GITWEB-BUILD-OPTIONS
 	$(QUIET_GEN)$(RM) $@ $@+ && \
 	sed -e '1s|#!.*perl|#!$(PERL_PATH_SQ)|' \
-	    -e 's|++GIT_VERSION++|$(GIT_VERSION)|g' \
-	    -e 's|++GIT_BINDIR++|$(bindir)|g' \
-	    -e 's|++GITWEB_CONFIG++|$(GITWEB_CONFIG)|g' \
-	    -e 's|++GITWEB_CONFIG_SYSTEM++|$(GITWEB_CONFIG_SYSTEM)|g' \
-	    -e 's|++GITWEB_HOME_LINK_STR++|$(GITWEB_HOME_LINK_STR)|g' \
-	    -e 's|++GITWEB_SITENAME++|$(GITWEB_SITENAME)|g' \
-	    -e 's|++GITWEB_PROJECTROOT++|$(GITWEB_PROJECTROOT)|g' \
-	    -e 's|"++GITWEB_PROJECT_MAXDEPTH++"|$(GITWEB_PROJECT_MAXDEPTH)|g' \
-	    -e 's|++GITWEB_EXPORT_OK++|$(GITWEB_EXPORT_OK)|g' \
-	    -e 's|++GITWEB_STRICT_EXPORT++|$(GITWEB_STRICT_EXPORT)|g' \
-	    -e 's|++GITWEB_BASE_URL++|$(GITWEB_BASE_URL)|g' \
-	    -e 's|++GITWEB_LIST++|$(GITWEB_LIST)|g' \
-	    -e 's|++GITWEB_HOMETEXT++|$(GITWEB_HOMETEXT)|g' \
-	    -e 's|++GITWEB_CSS++|$(GITWEB_CSS)|g' \
-	    -e 's|++GITWEB_LOGO++|$(GITWEB_LOGO)|g' \
-	    -e 's|++GITWEB_FAVICON++|$(GITWEB_FAVICON)|g' \
-	    -e 's|++GITWEB_JS++|$(GITWEB_JS)|g' \
-	    -e 's|++GITWEB_SITE_HEADER++|$(GITWEB_SITE_HEADER)|g' \
-	    -e 's|++GITWEB_SITE_FOOTER++|$(GITWEB_SITE_FOOTER)|g' \
-	    $< >$@+ && \
+		$(GITWEB_REPLACE) $< >$@+ && \
 	chmod +x $@+ && \
 	mv $@+ $@
 
-ifdef JSMIN
-gitweb.min.js: gitweb.js
-	$(QUIET_GEN)$(JSMIN) <$< >$@
-endif # JSMIN
-
 clean:
-	$(RM) $(FILES)
+	$(RM) gitweb.cgi gitweb.min.js gitweb.min.css GITWEB-BUILD-OPTIONS
 
-.PHONY: all clean .FORCE-GIT-VERSION-FILE
+.PHONY: all clean .FORCE-GIT-VERSION-FILE FORCE
+

@@ -526,7 +526,7 @@ static int fetch_refs_via_pack(struct transport *transport,
 	args.include_tag = data->options.followtags;
 	args.verbose = (transport->verbose > 0);
 	args.quiet = (transport->verbose < 0);
-	args.no_progress = args.quiet || (!transport->progress && !isatty(2));
+	args.no_progress = !transport->progress;
 	args.depth = data->options.depth;
 
 	for (i = 0; i < nr_heads; i++)
@@ -573,7 +573,7 @@ static int push_had_errors(struct ref *ref)
 	return 0;
 }
 
-static int refs_pushed(struct ref *ref)
+int transport_refs_pushed(struct ref *ref)
 {
 	for (; ref; ref = ref->next) {
 		switch(ref->status) {
@@ -587,7 +587,7 @@ static int refs_pushed(struct ref *ref)
 	return 0;
 }
 
-static void update_tracking_ref(struct remote *remote, struct ref *ref, int verbose)
+void transport_update_tracking_ref(struct remote *remote, struct ref *ref, int verbose)
 {
 	struct refspec rs;
 
@@ -609,8 +609,6 @@ static void update_tracking_ref(struct remote *remote, struct ref *ref, int verb
 	}
 }
 
-#define SUMMARY_WIDTH (2 * DEFAULT_ABBREV + 3)
-
 static void print_ref_status(char flag, const char *summary, struct ref *to, struct ref *from, const char *msg, int porcelain)
 {
 	if (porcelain) {
@@ -623,7 +621,7 @@ static void print_ref_status(char flag, const char *summary, struct ref *to, str
 		else
 			fprintf(stdout, "%s\n", summary);
 	} else {
-		fprintf(stderr, " %c %-*s ", flag, SUMMARY_WIDTH, summary);
+		fprintf(stderr, " %c %-*s ", flag, TRANSPORT_SUMMARY_WIDTH, summary);
 		if (from)
 			fprintf(stderr, "%s -> %s", prettify_refname(from->name), prettify_refname(to->name));
 		else
@@ -675,7 +673,7 @@ static void print_ok_ref_status(struct ref *ref, int porcelain)
 static int print_one_push_status(struct ref *ref, const char *dest, int count, int porcelain)
 {
 	if (!count)
-		fprintf(stderr, "To %s\n", dest);
+		fprintf(porcelain ? stdout : stderr, "To %s\n", dest);
 
 	switch(ref->status) {
 	case REF_STATUS_NONE:
@@ -711,8 +709,8 @@ static int print_one_push_status(struct ref *ref, const char *dest, int count, i
 	return 1;
 }
 
-static void print_push_status(const char *dest, struct ref *refs,
-			      int verbose, int porcelain, int * nonfastforward)
+void transport_print_push_status(const char *dest, struct ref *refs,
+				  int verbose, int porcelain, int *nonfastforward)
 {
 	struct ref *ref;
 	int n = 0;
@@ -738,7 +736,7 @@ static void print_push_status(const char *dest, struct ref *refs,
 	}
 }
 
-static void verify_remote_names(int nr_heads, const char **heads)
+void transport_verify_remote_names(int nr_heads, const char **heads)
 {
 	int i;
 
@@ -788,9 +786,10 @@ static int git_transport_push(struct transport *transport, struct ref *remote_re
 	args.send_mirror = !!(flags & TRANSPORT_PUSH_MIRROR);
 	args.force_update = !!(flags & TRANSPORT_PUSH_FORCE);
 	args.use_thin_pack = data->options.thin;
-	args.verbose = !!(flags & TRANSPORT_PUSH_VERBOSE);
-	args.quiet = !!(flags & TRANSPORT_PUSH_QUIET);
+	args.verbose = (transport->verbose > 0);
+	args.quiet = (transport->verbose < 0);
 	args.dry_run = !!(flags & TRANSPORT_PUSH_DRY_RUN);
+	args.porcelain = !!(flags & TRANSPORT_PUSH_PORCELAIN);
 
 	ret = send_pack(&args, data->fd, data->conn, remote_refs,
 			&data->extra_have);
@@ -872,6 +871,21 @@ static int is_file(const char *url)
 	return S_ISREG(buf.st_mode);
 }
 
+static int isurlschemechar(int first_flag, int ch)
+{
+	/*
+	 * The set of valid URL schemes, as per STD66 (RFC3986) is
+	 * '[A-Za-z][A-Za-z0-9+.-]*'. But use sightly looser check
+	 * of '[A-Za-z0-9][A-Za-z0-9+.-]*' because earlier version
+	 * of check used '[A-Za-z0-9]+' so not to break any remote
+	 * helpers.
+	 */
+	int alphanumeric, special;
+	alphanumeric = ch > 0 && isalnum(ch);
+	special = ch == '+' || ch == '-' || ch == '.';
+	return alphanumeric || (!first_flag && special);
+}
+
 static int is_url(const char *url)
 {
 	const char *url2, *first_slash;
@@ -896,7 +910,7 @@ static int is_url(const char *url)
 	 */
 	url2 = url;
 	while (url2 < first_slash - 1) {
-		if (!isalnum((unsigned char)*url2))
+		if (!isurlschemechar(url2 == url, (unsigned char)*url2))
 			return 0;
 		url2++;
 	}
@@ -915,6 +929,8 @@ struct transport *transport_get(struct remote *remote, const char *url)
 	const char *helper;
 	struct transport *ret = xcalloc(1, sizeof(*ret));
 
+	ret->progress = isatty(2);
+
 	if (!remote)
 		die("No remote provided to transport_get()");
 
@@ -930,7 +946,7 @@ struct transport *transport_get(struct remote *remote, const char *url)
 	if (url) {
 		const char *p = url;
 
-		while (isalnum(*p))
+		while (isurlschemechar(p == url, *p))
 			p++;
 		if (!prefixcmp(p, "::"))
 			helper = xstrndup(url, p - url);
@@ -1014,12 +1030,31 @@ int transport_set_option(struct transport *transport,
 	return 1;
 }
 
+void transport_set_verbosity(struct transport *transport, int verbosity,
+	int force_progress)
+{
+	if (verbosity >= 2)
+		transport->verbose = verbosity <= 3 ? verbosity : 3;
+	if (verbosity < 0)
+		transport->verbose = -1;
+
+	/**
+	 * Rules used to determine whether to report progress (processing aborts
+	 * when a rule is satisfied):
+	 *
+	 *   1. Report progress, if force_progress is 1 (ie. --progress).
+	 *   2. Don't report progress, if verbosity < 0 (ie. -q/--quiet ).
+	 *   3. Report progress if isatty(2) is 1.
+	 **/
+	transport->progress = force_progress || (verbosity >= 0 && isatty(2));
+}
+
 int transport_push(struct transport *transport,
 		   int refspec_nr, const char **refspec, int flags,
 		   int *nonfastforward)
 {
 	*nonfastforward = 0;
-	verify_remote_names(refspec_nr, refspec);
+	transport_verify_remote_names(refspec_nr, refspec);
 
 	if (transport->push) {
 		/* Maybe FIXME. But no important transport uses this case. */
@@ -1032,11 +1067,11 @@ int transport_push(struct transport *transport,
 			transport->get_refs_list(transport, 1);
 		struct ref *local_refs = get_local_heads();
 		int match_flags = MATCH_REFS_NONE;
-		int verbose = flags & TRANSPORT_PUSH_VERBOSE;
-		int quiet = flags & TRANSPORT_PUSH_QUIET;
+		int verbose = (transport->verbose > 0);
+		int quiet = (transport->verbose < 0);
 		int porcelain = flags & TRANSPORT_PUSH_PORCELAIN;
 		int pretend = flags & TRANSPORT_PUSH_DRY_RUN;
-		int ret, err;
+		int push_ret, ret, err;
 
 		if (flags & TRANSPORT_PUSH_ALL)
 			match_flags |= MATCH_REFS_ALL;
@@ -1052,13 +1087,12 @@ int transport_push(struct transport *transport,
 			flags & TRANSPORT_PUSH_MIRROR,
 			flags & TRANSPORT_PUSH_FORCE);
 
-		ret = transport->push_refs(transport, remote_refs, flags);
+		push_ret = transport->push_refs(transport, remote_refs, flags);
 		err = push_had_errors(remote_refs);
-
-		ret |= err;
+		ret = push_ret | err;
 
 		if (!quiet || err)
-			print_push_status(transport->url, remote_refs,
+			transport_print_push_status(transport->url, remote_refs,
 					verbose | porcelain, porcelain,
 					nonfastforward);
 
@@ -1068,11 +1102,14 @@ int transport_push(struct transport *transport,
 		if (!(flags & TRANSPORT_PUSH_DRY_RUN)) {
 			struct ref *ref;
 			for (ref = remote_refs; ref; ref = ref->next)
-				update_tracking_ref(transport->remote, ref, verbose);
+				transport_update_tracking_ref(transport->remote, ref, verbose);
 		}
 
-		if (!quiet && !ret && !refs_pushed(remote_refs))
+		if (porcelain && !push_ret)
+			puts("Done");
+		else if (!quiet && !ret && !transport_refs_pushed(remote_refs))
 			fprintf(stderr, "Everything up-to-date\n");
+
 		return ret;
 	}
 	return 1;

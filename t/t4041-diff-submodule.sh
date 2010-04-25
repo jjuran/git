@@ -201,7 +201,7 @@ test_expect_success 'submodule contains untracked content' "
 	echo new > sm1/new-file &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head6-dirty:
+Submodule sm1 contains untracked content
 EOF
 "
 
@@ -209,7 +209,8 @@ test_expect_success 'submodule contains untracked and modifed content' "
 	echo new > sm1/foo6 &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head6-dirty:
+Submodule sm1 contains untracked content
+Submodule sm1 contains modified content
 EOF
 "
 
@@ -217,7 +218,7 @@ test_expect_success 'submodule contains modifed content' "
 	rm -f sm1/new-file &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head6-dirty:
+Submodule sm1 contains modified content
 EOF
 "
 
@@ -235,7 +236,8 @@ test_expect_success 'modified submodule contains untracked content' "
 	echo new > sm1/new-file &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head8-dirty:
+Submodule sm1 contains untracked content
+Submodule sm1 $head6..$head8:
   > change
 EOF
 "
@@ -244,7 +246,9 @@ test_expect_success 'modified submodule contains untracked and modifed content' 
 	echo modification >> sm1/foo6 &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head8-dirty:
+Submodule sm1 contains untracked content
+Submodule sm1 contains modified content
+Submodule sm1 $head6..$head8:
   > change
 EOF
 "
@@ -253,7 +257,8 @@ test_expect_success 'modified submodule contains modifed content' "
 	rm -f sm1/new-file &&
 	git diff-index -p --submodule=log HEAD >actual &&
 	diff actual - <<-EOF
-Submodule sm1 $head6..$head8-dirty:
+Submodule sm1 contains modified content
+Submodule sm1 $head6..$head8:
   > change
 EOF
 "
@@ -323,5 +328,20 @@ index 0000000..$head7
 +Subproject commit $fullhead7
 EOF
 "
+
+test_expect_success 'setup .git file for sm2' '
+	(cd sm2 &&
+	 REAL="$(pwd)/../.real" &&
+	 mv .git "$REAL"
+	 echo "gitdir: $REAL" >.git)
+'
+
+test_expect_success 'diff --submodule with .git file' '
+	git diff --submodule HEAD^ >actual &&
+	diff actual - <<-EOF
+Submodule sm1 $head6...0000000 (submodule deleted)
+Submodule sm2 0000000...$head7 (new submodule)
+EOF
+'
 
 test_done
