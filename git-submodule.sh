@@ -553,12 +553,17 @@ cmd_summary() {
 
 	test $summary_limit = 0 && return
 
-	if rev=$(git rev-parse -q --verify "$1^0")
+	if rev=$(git rev-parse -q --verify --default HEAD ${1+"$1"})
 	then
 		head=$rev
-		shift
+		test $# = 0 || shift
+	elif test -z "$1" -o "$1" = "HEAD"
+	then
+		# before the first commit: compare with an empty tree
+		head=$(git hash-object -w -t tree --stdin </dev/null)
+		test -z "$1" || shift
 	else
-		head=HEAD
+		head="HEAD"
 	fi
 
 	if [ -n "$files" ]

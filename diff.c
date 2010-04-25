@@ -554,6 +554,10 @@ static void emit_rewrite_diff(const char *name_a,
 		emit_rewrite_lines(&ecbdata, '-', data_one, size_one);
 	if (lc_b)
 		emit_rewrite_lines(&ecbdata, '+', data_two, size_two);
+	if (textconv_one)
+		free((char *)data_one);
+	if (textconv_two)
+		free((char *)data_two);
 }
 
 struct diff_words_buffer {
@@ -2036,7 +2040,7 @@ static int diff_populate_gitlink(struct diff_filespec *s, int size_only)
 	char *data = xmalloc(100), *dirty = "";
 
 	/* Are we looking at the work tree? */
-	if (!s->sha1_valid && s->dirty_submodule)
+	if (s->dirty_submodule)
 		dirty = "-dirty";
 
 	len = snprintf(data, 100,
@@ -2632,6 +2636,12 @@ int diff_setup_done(struct diff_options *options)
 	 */
 	if (options->pickaxe)
 		DIFF_OPT_SET(options, RECURSIVE);
+	/*
+	 * When patches are generated, submodules diffed against the work tree
+	 * must be checked for dirtiness too so it can be shown in the output
+	 */
+	if (options->output_format & DIFF_FORMAT_PATCH)
+		DIFF_OPT_SET(options, DIRTY_SUBMODULES);
 
 	if (options->detect_rename && options->rename_limit < 0)
 		options->rename_limit = diff_rename_limit_default;
@@ -2830,6 +2840,15 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		DIFF_OPT_SET(options, FOLLOW_RENAMES);
 	else if (!strcmp(arg, "--color"))
 		DIFF_OPT_SET(options, COLOR_DIFF);
+	else if (!prefixcmp(arg, "--color=")) {
+		int value = git_config_colorbool(NULL, arg+8, -1);
+		if (value == 0)
+			DIFF_OPT_CLR(options, COLOR_DIFF);
+		else if (value > 0)
+			DIFF_OPT_SET(options, COLOR_DIFF);
+		else
+			return error("option `color' expects \"always\", \"auto\", or \"never\"");
+	}
 	else if (!strcmp(arg, "--no-color"))
 		DIFF_OPT_CLR(options, COLOR_DIFF);
 	else if (!strcmp(arg, "--color-words")) {
@@ -3081,7 +3100,8 @@ int diff_unmodified_pair(struct diff_filepair *p)
 	 * dealing with a change.
 	 */
 	if (one->sha1_valid && two->sha1_valid &&
-	    !hashcmp(one->sha1, two->sha1))
+	    !hashcmp(one->sha1, two->sha1) &&
+	    !one->dirty_submodule && !two->dirty_submodule)
 		return 1; /* no change */
 	if (!one->sha1_valid && !two->sha1_valid)
 		return 1; /* both look at the same file on the filesystem. */
@@ -3216,6 +3236,8 @@ static void diff_resolve_rename_copy(void)
 		}
 		else if (hashcmp(p->one->sha1, p->two->sha1) ||
 			 p->one->mode != p->two->mode ||
+			 p->one->dirty_submodule ||
+			 p->two->dirty_submodule ||
 			 is_null_sha1(p->one->sha1))
 			p->status = DIFF_STATUS_MODIFIED;
 		else {
