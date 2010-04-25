@@ -3,6 +3,7 @@
 
 #include "parse-options.h"
 #include "grep.h"
+#include "notes.h"
 
 #define SEEN		(1u<<0)
 #define UNINTERESTING   (1u<<1)
@@ -20,6 +21,7 @@
 
 struct rev_info;
 struct log_info;
+struct string_list;
 
 struct rev_info {
 	/* Starting list */
@@ -126,6 +128,9 @@ struct rev_info {
 	struct reflog_walk_info *reflog_info;
 	struct decoration children;
 	struct decoration merge_simplification;
+
+	/* notes-specific options: which refs to show */
+	struct display_notes_opt notes_opt;
 };
 
 #define REV_TREE_SAME		0
@@ -137,8 +142,13 @@ struct rev_info {
 typedef void (*show_early_output_fn_t)(struct rev_info *, struct commit_list *);
 extern volatile show_early_output_fn_t show_early_output;
 
+struct setup_revision_opt {
+	const char *def;
+	void (*tweak)(struct rev_info *, struct setup_revision_opt *);
+};
+
 extern void init_revisions(struct rev_info *revs, const char *prefix);
-extern int setup_revisions(int argc, const char **argv, struct rev_info *revs, const char *def);
+extern int setup_revisions(int argc, const char **argv, struct rev_info *revs, struct setup_revision_opt *);
 extern void parse_revision_opt(struct rev_info *revs, struct parse_opt_ctx_t *ctx,
 				 const struct option *options,
 				 const char * const usagestr[]);

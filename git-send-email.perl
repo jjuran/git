@@ -47,9 +47,9 @@ git send-email [options] <file | directory | rev-list options >
 
   Composing:
     --from                  <str>  * Email From:
-    --to                    <str>  * Email To:
-    --cc                    <str>  * Email Cc:
-    --bcc                   <str>  * Email Bcc:
+    --[no-]to               <str>  * Email To:
+    --[no-]cc               <str>  * Email Cc:
+    --[no-]bcc              <str>  * Email Bcc:
     --subject               <str>  * Email "Subject:"
     --in-reply-to           <str>  * Email "In-Reply-To:"
     --annotate                     * Review each patch that will be sent in an editor.
@@ -64,6 +64,8 @@ git send-email [options] <file | directory | rev-list options >
     --smtp-pass             <str>  * Password for SMTP-AUTH; not necessary.
     --smtp-encryption       <str>  * tls or ssl; anything else disables.
     --smtp-ssl                     * Deprecated. Use '--smtp-encryption ssl'.
+    --smtp-domain           <str>  * The domain name sent to HELO/EHLO handshake
+    --smtp-debug            <0|1>  * Disable, enable Net::SMTP debug.
 
   Automating:
     --identity              <str>  * Use the sendemail.<id> options.
@@ -130,12 +132,14 @@ my $have_email_valid = eval { require Email::Valid; 1 };
 my $have_mail_address = eval { require Mail::Address; 1 };
 my $smtp;
 my $auth;
+my $mail_domain_default = "localhost.localdomain";
+my $mail_domain;
 
 sub unique_email_list(@);
 sub cleanup_compose_files();
 
 # Variables we fill in automatically, or via prompting:
-my (@to,@cc,@initial_cc,@bcclist,@xh,
+my (@to,$no_to,@cc,$no_cc,@initial_cc,@bcclist,$no_bcc,@xh,
 	$initial_reply_to,$initial_subject,@files,
 	$author,$sender,$smtp_authpass,$annotate,$compose,$time);
 
@@ -162,9 +166,12 @@ my $compose_filename;
 
 # Handle interactive edition of files.
 my $multiedit;
-my $editor = Git::command_oneline('var', 'GIT_EDITOR');
+my $editor;
 
 sub do_edit {
+	if (!defined($editor)) {
+		$editor = Git::command_oneline('var', 'GIT_EDITOR');
+	}
 	if (defined($multiedit) && !$multiedit) {
 		map {
 			system('sh', '-c', $editor.' "$@"', $editor, $_);
@@ -186,6 +193,8 @@ my ($smtp_server, $smtp_server_port, $smtp_authuser, $smtp_encryption);
 my ($identity, $aliasfiletype, @alias_files, @smtp_host_parts);
 my ($validate, $confirm);
 my (@suppress_cc);
+
+my ($debug_net_smtp) = 0;		# Net::SMTP, see send_message()
 
 my $not_set_by_user = "true but not set by the user";
 
@@ -261,8 +270,11 @@ my $rc = GetOptions("sender|from=s" => \$sender,
                     "in-reply-to=s" => \$initial_reply_to,
 		    "subject=s" => \$initial_subject,
 		    "to=s" => \@to,
+		    "no-to" => \$no_to,
 		    "cc=s" => \@initial_cc,
+		    "no-cc" => \$no_cc,
 		    "bcc=s" => \@bcclist,
+		    "no-bcc" => \$no_bcc,
 		    "chain-reply-to!" => \$chain_reply_to,
 		    "smtp-server=s" => \$smtp_server,
 		    "smtp-server-port=s" => \$smtp_server_port,
@@ -270,6 +282,8 @@ my $rc = GetOptions("sender|from=s" => \$sender,
 		    "smtp-pass:s" => \$smtp_authpass,
 		    "smtp-ssl" => sub { $smtp_encryption = 'ssl' },
 		    "smtp-encryption=s" => \$smtp_encryption,
+		    "smtp-debug:i" => \$debug_net_smtp,
+		    "smtp-domain:s" => \$mail_domain,
 		    "identity=s" => \$identity,
 		    "annotate" => \$annotate,
 		    "compose" => \$compose,
@@ -305,6 +319,9 @@ sub read_config {
 
 	foreach my $setting (keys %config_settings) {
 		my $target = $config_settings{$setting};
+		next if $setting eq "to" and defined $no_to;
+		next if $setting eq "cc" and defined $no_cc;
+		next if $setting eq "bcc" and defined $no_bcc;
 		if (ref($target) eq "ARRAY") {
 			unless (@$target) {
 				my @values = Git::config(@repo, "$prefix.$setting");
@@ -830,6 +847,62 @@ sub sanitize_address
 
 }
 
+# Returns the local Fully Qualified Domain Name (FQDN) if available.
+#
+# Tightly configured MTAa require that a caller sends a real DNS
+# domain name that corresponds the IP address in the HELO/EHLO
+# handshake. This is used to verify the connection and prevent
+# spammers from trying to hide their identity. If the DNS and IP don't
+# match, the receiveing MTA may deny the connection.
+#
+# Here is a deny example of Net::SMTP with the default "localhost.localdomain"
+#
+# Net::SMTP=GLOB(0x267ec28)>>> EHLO localhost.localdomain
+# Net::SMTP=GLOB(0x267ec28)<<< 550 EHLO argument does not match calling host
+#
+# This maildomain*() code is based on ideas in Perl library Test::Reporter
+# /usr/share/perl5/Test/Reporter/Mail/Util.pm ==> sub _maildomain ()
+
+sub maildomain_net
+{
+	my $maildomain;
+
+	if (eval { require Net::Domain; 1 }) {
+		my $domain = Net::Domain::domainname();
+		$maildomain = $domain
+			unless $^O eq 'darwin' && $domain =~ /\.local$/;
+	}
+
+	return $maildomain;
+}
+
+sub maildomain_mta
+{
+	my $maildomain;
+
+	if (eval { require Net::SMTP; 1 }) {
+		for my $host (qw(mailhost localhost)) {
+			my $smtp = Net::SMTP->new($host);
+			if (defined $smtp) {
+				my $domain = $smtp->domain;
+				$smtp->quit;
+
+				$maildomain = $domain
+					unless $^O eq 'darwin' && $domain =~ /\.local$/;
+
+				last if $maildomain;
+			}
+		}
+	}
+
+	return $maildomain;
+}
+
+sub maildomain
+{
+	return maildomain_net() || maildomain_mta() || $mail_domain_default;
+}
+
 # Returns 1 if the message was sent, and 0 otherwise.
 # In actuality, the whole program dies when there
 # is an error sending a message.
@@ -932,13 +1005,19 @@ X-Mailer: git-send-email $gitversion
 		if ($smtp_encryption eq 'ssl') {
 			$smtp_server_port ||= 465; # ssmtp
 			require Net::SMTP::SSL;
-			$smtp ||= Net::SMTP::SSL->new($smtp_server, Port => $smtp_server_port);
+			$mail_domain ||= maildomain();
+			$smtp ||= Net::SMTP::SSL->new($smtp_server,
+						      Hello => $mail_domain,
+						      Port => $smtp_server_port);
 		}
 		else {
 			require Net::SMTP;
+			$mail_domain ||= maildomain();
 			$smtp ||= Net::SMTP->new((defined $smtp_server_port)
 						 ? "$smtp_server:$smtp_server_port"
-						 : $smtp_server);
+						 : $smtp_server,
+						 Hello => $mail_domain,
+						 Debug => $debug_net_smtp);
 			if ($smtp_encryption eq 'tls' && $smtp) {
 				require Net::SMTP::SSL;
 				$smtp->command('STARTTLS');
@@ -957,7 +1036,11 @@ X-Mailer: git-send-email $gitversion
 		}
 
 		if (!$smtp) {
-			die "Unable to initialize SMTP properly.  Is there something wrong with your config?";
+			die "Unable to initialize SMTP properly. Check config and use --smtp-debug. ",
+			    "VALUES: server=$smtp_server ",
+			    "encryption=$smtp_encryption ",
+			    "maildomain=$mail_domain",
+			    defined $smtp_server_port ? "port=$smtp_server_port" : "";
 		}
 
 		if (defined $smtp_authuser) {

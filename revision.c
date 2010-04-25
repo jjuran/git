@@ -12,6 +12,7 @@
 #include "patch-ids.h"
 #include "decorate.h"
 #include "log-tree.h"
+#include "string-list.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -1191,9 +1192,29 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 	} else if (!strcmp(arg, "--show-notes")) {
 		revs->show_notes = 1;
 		revs->show_notes_given = 1;
+	} else if (!prefixcmp(arg, "--show-notes=")) {
+		struct strbuf buf = STRBUF_INIT;
+		revs->show_notes = 1;
+		revs->show_notes_given = 1;
+		if (!revs->notes_opt.extra_notes_refs)
+			revs->notes_opt.extra_notes_refs = xcalloc(1, sizeof(struct string_list));
+		if (!prefixcmp(arg+13, "refs/"))
+			/* happy */;
+		else if (!prefixcmp(arg+13, "notes/"))
+			strbuf_addstr(&buf, "refs/");
+		else
+			strbuf_addstr(&buf, "refs/notes/");
+		strbuf_addstr(&buf, arg+13);
+		string_list_append(strbuf_detach(&buf, NULL),
+				   revs->notes_opt.extra_notes_refs);
 	} else if (!strcmp(arg, "--no-notes")) {
 		revs->show_notes = 0;
 		revs->show_notes_given = 1;
+	} else if (!strcmp(arg, "--standard-notes")) {
+		revs->show_notes_given = 1;
+		revs->notes_opt.suppress_default_notes = 0;
+	} else if (!strcmp(arg, "--no-standard-notes")) {
+		revs->notes_opt.suppress_default_notes = 1;
 	} else if (!strcmp(arg, "--oneline")) {
 		revs->verbose_header = 1;
 		get_commit_format("oneline", revs);
@@ -1332,7 +1353,7 @@ static void append_prune_data(const char ***prune_data, const char **av)
  * Returns the number of arguments left that weren't recognized
  * (which are also moved to the head of the argument list)
  */
-int setup_revisions(int argc, const char **argv, struct rev_info *revs, const char *def)
+int setup_revisions(int argc, const char **argv, struct rev_info *revs, struct setup_revision_opt *opt)
 {
 	int i, flags, left, seen_dashdash, read_from_stdin, got_rev_arg = 0;
 	const char **prune_data = NULL;
@@ -1468,7 +1489,9 @@ int setup_revisions(int argc, const char **argv, struct rev_info *revs, const ch
 		revs->prune_data = get_pathspec(revs->prefix, prune_data);
 
 	if (revs->def == NULL)
-		revs->def = def;
+		revs->def = opt ? opt->def : NULL;
+	if (opt && opt->tweak)
+		opt->tweak(revs, opt);
 	if (revs->show_merge)
 		prepare_show_merge(revs);
 	if (revs->def && !revs->pending.nr && !got_rev_arg) {
@@ -1502,11 +1525,8 @@ int setup_revisions(int argc, const char **argv, struct rev_info *revs, const ch
 		if (!revs->full_diff)
 			diff_tree_setup_paths(revs->prune_data, &revs->diffopt);
 	}
-	if (revs->combine_merges) {
+	if (revs->combine_merges)
 		revs->ignore_merges = 0;
-		if (revs->dense_combined_merges && !revs->diffopt.output_format)
-			revs->diffopt.output_format = DIFF_FORMAT_PATCH;
-	}
 	revs->diffopt.abbrev = revs->abbrev;
 	if (diff_setup_done(&revs->diffopt) < 0)
 		die("diff_setup_done failed");

@@ -198,11 +198,11 @@ core.quotepath::
 
 core.autocrlf::
 	If true, makes git convert `CRLF` at the end of lines in text files to
-	`LF` when reading from the filesystem, and convert in reverse when
-	writing to the filesystem.  The variable can be set to
+	`LF` when reading from the work tree, and convert in reverse when
+	writing to the work tree.  The variable can be set to
 	'input', in which case the conversion happens only while
-	reading from the filesystem but files are written out with
-	`LF` at the end of lines.  A file is considered
+	reading from the work tree but files are written out to the work
+	tree with `LF` at the end of lines.  A file is considered
 	"text" (i.e. be subjected to the autocrlf mechanism) based on
 	the file's `crlf` attribute, or if `crlf` is unspecified,
 	based on the file's contents.  See linkgit:gitattributes[5].
@@ -519,10 +519,12 @@ check that makes sure that existing object files will not get overwritten.
 core.notesRef::
 	When showing commit messages, also show notes which are stored in
 	the given ref.  This ref is expected to contain files named
-	after the full SHA-1 of the commit they annotate.
+	after the full SHA-1 of the commit they annotate.  The ref
+	must be fully qualified.
 +
 If such a file exists in the given ref, the referenced blob is read, and
-appended to the commit message, separated by a "Notes:" line.  If the
+appended to the commit message, separated by a "Notes (<refname>):"
+line (shortened to "Notes:" in the case of "refs/notes/commits").  If the
 given ref itself does not exist, it is not an error, but means that no
 notes should be printed.
 +
@@ -554,6 +556,13 @@ it will be treated as a shell command.  For example, defining
 "gitk --all --not ORIG_HEAD".  Note that shell commands will be
 executed from the top-level directory of a repository, which may
 not necessarily be the current directory.
+
+am.keepcr::
+	If true, git-am will call git-mailsplit for patches in mbox format
+	with parameter '--keep-cr'. In this case git-mailsplit will
+	not remove `\r` from lines ending with `\r\n`. Can be overrriden
+	by giving '--no-keep-cr' from the command line.
+	See linkgit:git-am[1], linkgit:git-mailsplit[1].
 
 apply.ignorewhitespace::
 	When set to 'change', tells 'git apply' to ignore changes in
@@ -683,9 +692,29 @@ color.grep::
 	`never`), never.  When set to `true` or `auto`, use color only
 	when the output is written to the terminal.  Defaults to `false`.
 
-color.grep.match::
-	Use customized color for matches.  The value of this variable
-	may be specified as in color.branch.<slot>.
+color.grep.<slot>::
+	Use customized color for grep colorization.  `<slot>` specifies which
+	part of the line to use the specified color, and is one of
++
+--
+`context`;;
+	non-matching text in context lines (when using `-A`, `-B`, or `-C`)
+`filename`;;
+	filename prefix (when not using `-h`)
+`function`;;
+	function name lines (when using `-p`)
+`linenumber`;;
+	line number prefix (when using `-n`)
+`match`;;
+	matching text
+`selected`;;
+	non-matching text in selected lines
+`separator`;;
+	separators between fields on a line (`:`, `-`, and `=`)
+	and between hunks (`--`)
+--
++
+The values of these variables may be specified as in color.branch.<slot>.
 
 color.interactive::
 	When set to `always`, always use colors for interactive prompts
@@ -885,7 +914,7 @@ format.signoff::
 gc.aggressiveWindow::
 	The window size parameter used in the delta compression
 	algorithm used by 'git gc --aggressive'.  This defaults
-	to 10.
+	to 250.
 
 gc.auto::
 	When there are approximately more than this many loose
@@ -1203,6 +1232,10 @@ imap::
 	The configuration variables in the 'imap' section are described
 	in linkgit:git-imap-send[1].
 
+init.templatedir::
+	Specify the directory from which templates will be copied.
+	(See the "TEMPLATE DIRECTORY" section of linkgit:git-init[1].)
+
 instaweb.browser::
 	Specify the program that will be used to browse your working
 	repository in gitweb. See linkgit:git-instaweb[1].
@@ -1302,6 +1335,53 @@ mergetool.keepTemporaries::
 
 mergetool.prompt::
 	Prompt before each invocation of the merge resolution program.
+
+notes.displayRef::
+	The (fully qualified) refname from which to show notes when
+	showing commit messages.  The value of this variable can be set
+	to a glob, in which case notes from all matching refs will be
+	shown.  You may also specify this configuration variable
+	several times.  A warning will be issued for refs that do not
+	exist, but a glob that does not match any refs is silently
+	ignored.
++
+This setting can be overridden with the `GIT_NOTES_DISPLAY_REF`
+environment variable, which must be a colon separated list of refs or
+globs.
++
+The effective value of "core.notesRef" (possibly overridden by
+GIT_NOTES_REF) is also implicitly added to the list of refs to be
+displayed.
+
+notes.rewrite.<command>::
+	When rewriting commits with <command> (currently `amend` or
+	`rebase`) and this variable is set to `true`, git
+	automatically copies your notes from the original to the
+	rewritten commit.  Defaults to `true`, but see
+	"notes.rewriteRef" below.
++
+This setting can be overridden with the `GIT_NOTES_REWRITE_REF`
+environment variable, which must be a colon separated list of refs or
+globs.
+
+notes.rewriteMode::
+	When copying notes during a rewrite (see the
+	"notes.rewrite.<command>" option), determines what to do if
+	the target commit already has a note.  Must be one of
+	`overwrite`, `concatenate`, or `ignore`.  Defaults to
+	`concatenate`.
++
+This setting can be overridden with the `GIT_NOTES_REWRITE_MODE`
+environment variable.
+
+notes.rewriteRef::
+	When copying notes during a rewrite, specifies the (fully
+	qualified) ref whose notes should be copied.  The ref may be a
+	glob, in which case notes in all matching refs will be copied.
+	You may also specify this configuration several times.
++
+Does not have a default value; you must configure this variable to
+enable note rewriting.
 
 pack.window::
 	The size of the window used by linkgit:git-pack-objects[1] when no
