@@ -6,6 +6,7 @@
 
 /* ISSYMREF=01 and ISPACKED=02 are public interfaces */
 #define REF_KNOWS_PEELED 04
+#define REF_BROKEN 010
 
 struct ref_list {
 	struct ref_list *next;
@@ -275,8 +276,10 @@ static struct ref_list *get_ref_dir(const char *base, struct ref_list *list)
 				list = get_ref_dir(ref, list);
 				continue;
 			}
-			if (!resolve_ref(ref, sha1, 1, &flag))
+			if (!resolve_ref(ref, sha1, 1, &flag)) {
 				hashclr(sha1);
+				flag |= REF_BROKEN;
+			}
 			list = add_ref(ref, sha1, flag, list, NULL);
 		}
 		free(ref);
@@ -548,10 +551,10 @@ static int do_one_ref(const char *base, each_ref_fn fn, int trim,
 {
 	if (strncmp(base, entry->name, trim))
 		return 0;
-	/* Is this a "negative ref" that represents a deleted ref? */
-	if (is_null_sha1(entry->sha1))
-		return 0;
+
 	if (!(flags & DO_FOR_EACH_INCLUDE_BROKEN)) {
+		if (entry->flag & REF_BROKEN)
+			return 0; /* ignore dangling symref */
 		if (!has_sha1_file(entry->sha1)) {
 			error("%s does not point to a valid object!", entry->name);
 			return 0;
@@ -704,7 +707,6 @@ int for_each_glob_ref_in(each_ref_fn fn, const char *pattern,
 {
 	struct strbuf real_pattern = STRBUF_INIT;
 	struct ref_filter filter;
-	const char *has_glob_specials;
 	int ret;
 
 	if (!prefix && prefixcmp(pattern, "refs/"))
@@ -713,8 +715,7 @@ int for_each_glob_ref_in(each_ref_fn fn, const char *pattern,
 		strbuf_addstr(&real_pattern, prefix);
 	strbuf_addstr(&real_pattern, pattern);
 
-	has_glob_specials = strpbrk(pattern, "?*[");
-	if (!has_glob_specials) {
+	if (!has_glob_specials(pattern)) {
 		/* Append implied '/' '*' if not present. */
 		if (real_pattern.buf[real_pattern.len - 1] != '/')
 			strbuf_addch(&real_pattern, '/');
@@ -1284,6 +1285,7 @@ static int log_ref_write(const char *ref_name, const unsigned char *old_sha1,
 	if (log_all_ref_updates &&
 	    (!prefixcmp(ref_name, "refs/heads/") ||
 	     !prefixcmp(ref_name, "refs/remotes/") ||
+	     !prefixcmp(ref_name, "refs/notes/") ||
 	     !strcmp(ref_name, "HEAD"))) {
 		if (safe_create_leading_directories(log_file) < 0)
 			return error("unable to create directory for %s",
@@ -1583,7 +1585,7 @@ int for_each_recent_reflog_ent(const char *ref, each_reflog_ent_fn fn, long ofs,
 {
 	const char *logfile;
 	FILE *logfp;
-	char buf[1024];
+	struct strbuf sb = STRBUF_INIT;
 	int ret = 0;
 
 	logfile = git_path("logs/%s", ref);
@@ -1596,24 +1598,24 @@ int for_each_recent_reflog_ent(const char *ref, each_reflog_ent_fn fn, long ofs,
 		if (fstat(fileno(logfp), &statbuf) ||
 		    statbuf.st_size < ofs ||
 		    fseek(logfp, -ofs, SEEK_END) ||
-		    fgets(buf, sizeof(buf), logfp)) {
+		    strbuf_getwholeline(&sb, logfp, '\n')) {
 			fclose(logfp);
+			strbuf_release(&sb);
 			return -1;
 		}
 	}
 
-	while (fgets(buf, sizeof(buf), logfp)) {
+	while (!strbuf_getwholeline(&sb, logfp, '\n')) {
 		unsigned char osha1[20], nsha1[20];
 		char *email_end, *message;
 		unsigned long timestamp;
-		int len, tz;
+		int tz;
 
 		/* old SP new SP name <email> SP time TAB msg LF */
-		len = strlen(buf);
-		if (len < 83 || buf[len-1] != '\n' ||
-		    get_sha1_hex(buf, osha1) || buf[40] != ' ' ||
-		    get_sha1_hex(buf + 41, nsha1) || buf[81] != ' ' ||
-		    !(email_end = strchr(buf + 82, '>')) ||
+		if (sb.len < 83 || sb.buf[sb.len - 1] != '\n' ||
+		    get_sha1_hex(sb.buf, osha1) || sb.buf[40] != ' ' ||
+		    get_sha1_hex(sb.buf + 41, nsha1) || sb.buf[81] != ' ' ||
+		    !(email_end = strchr(sb.buf + 82, '>')) ||
 		    email_end[1] != ' ' ||
 		    !(timestamp = strtoul(email_end + 2, &message, 10)) ||
 		    !message || message[0] != ' ' ||
@@ -1627,11 +1629,13 @@ int for_each_recent_reflog_ent(const char *ref, each_reflog_ent_fn fn, long ofs,
 			message += 6;
 		else
 			message += 7;
-		ret = fn(osha1, nsha1, buf+82, timestamp, tz, message, cb_data);
+		ret = fn(osha1, nsha1, sb.buf + 82, timestamp, tz, message,
+			 cb_data);
 		if (ret)
 			break;
 	}
 	fclose(logfp);
+	strbuf_release(&sb);
 	return ret;
 }
 

@@ -35,13 +35,6 @@ static size_t sz_fmt(size_t s) { return s; }
 
 const unsigned char null_sha1[20];
 
-static inline int offset_1st_component(const char *path)
-{
-	if (has_dos_drive_prefix(path))
-		return 2 + (path[2] == '/');
-	return *path == '/';
-}
-
 int safe_create_leading_directories(char *path)
 {
 	char *pos = path + offset_1st_component(path);
@@ -2206,7 +2199,7 @@ int move_temp_to_file(const char *tmpfile, const char *filename)
 	}
 
 out:
-	if (set_shared_perm(filename, (S_IFREG|0444)))
+	if (adjust_shared_perm(filename))
 		return error("unable to set permission to '%s'", filename);
 	return 0;
 }
@@ -2262,7 +2255,7 @@ static int create_tmpfile(char *buffer, size_t bufsiz, const char *filename)
 	}
 	memcpy(buffer, filename, dirlen);
 	strcpy(buffer + dirlen, "tmp_obj_XXXXXX");
-	fd = mkstemp(buffer);
+	fd = git_mkstemp_mode(buffer, 0444);
 	if (fd < 0 && dirlen && errno == ENOENT) {
 		/* Make sure the directory exists */
 		memcpy(buffer, filename, dirlen);
@@ -2272,13 +2265,13 @@ static int create_tmpfile(char *buffer, size_t bufsiz, const char *filename)
 
 		/* Try again */
 		strcpy(buffer + dirlen - 1, "/tmp_obj_XXXXXX");
-		fd = mkstemp(buffer);
+		fd = git_mkstemp_mode(buffer, 0444);
 	}
 	return fd;
 }
 
 static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
-			      void *buf, unsigned long len, time_t mtime)
+			      const void *buf, unsigned long len, time_t mtime)
 {
 	int fd, ret;
 	unsigned char compressed[4096];
@@ -2314,7 +2307,7 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 	git_SHA1_Update(&c, hdr, hdrlen);
 
 	/* Then the data itself.. */
-	stream.next_in = buf;
+	stream.next_in = (void *)buf;
 	stream.avail_in = len;
 	do {
 		unsigned char *in0 = stream.next_in;
@@ -2349,7 +2342,7 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 	return move_temp_to_file(tmpfile, filename);
 }
 
-int write_sha1_file(void *buf, unsigned long len, const char *type, unsigned char *returnsha1)
+int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *returnsha1)
 {
 	unsigned char sha1[20];
 	char hdr[32];

@@ -67,19 +67,21 @@ static int child_notifier = -1;
 
 static void notify_parent(void)
 {
-	write(child_notifier, "", 1);
+	ssize_t unused;
+	unused = write(child_notifier, "", 1);
 }
 
 static NORETURN void die_child(const char *err, va_list params)
 {
 	char msg[4096];
+	ssize_t unused;
 	int len = vsnprintf(msg, sizeof(msg), err, params);
 	if (len > sizeof(msg))
 		len = sizeof(msg);
 
-	write(child_err, "fatal: ", 7);
-	write(child_err, msg, len);
-	write(child_err, "\n", 1);
+	unused = write(child_err, "fatal: ", 7);
+	unused = write(child_err, msg, len);
+	unused = write(child_err, "\n", 1);
 	exit(128);
 }
 
@@ -340,8 +342,6 @@ fail_pipe:
 	else if (cmd->out > 1)
 		fhout = dup(cmd->out);
 
-	if (cmd->dir)
-		die("chdir in start_command() not implemented");
 	if (cmd->env)
 		env = make_augmented_environ(cmd->env);
 
@@ -351,7 +351,7 @@ fail_pipe:
 		cmd->argv = prepare_shell_cmd(cmd->argv);
 	}
 
-	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, env,
+	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, env, cmd->dir,
 				  fhin, fhout, fherr);
 	failed_errno = errno;
 	if (cmd->pid < 0 && (!cmd->silent_exec_failure || errno != ENOENT))

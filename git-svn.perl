@@ -36,11 +36,13 @@ $ENV{TZ} = 'UTC';
 $| = 1; # unbuffer STDOUT
 
 sub fatal (@) { print STDERR "@_\n"; exit 1 }
-require SVN::Core; # use()-ing this causes segfaults for me... *shrug*
-require SVN::Ra;
-require SVN::Delta;
-if ($SVN::Core::VERSION lt '1.1.0') {
-	fatal "Need SVN::Core 1.1.0 or better (got $SVN::Core::VERSION)";
+sub _req_svn {
+	require SVN::Core; # use()-ing this causes segfaults for me... *shrug*
+	require SVN::Ra;
+	require SVN::Delta;
+	if ($SVN::Core::VERSION lt '1.1.0') {
+		fatal "Need SVN::Core 1.1.0 or better (got $SVN::Core::VERSION)";
+	}
 }
 my $can_compress = eval { require Compress::Zlib; 1};
 push @Git::SVN::Ra::ISA, 'SVN::Ra';
@@ -349,6 +351,7 @@ information.
 }
 
 sub version {
+	::_req_svn();
 	print "git-svn version $VERSION (svn $SVN::Core::VERSION)\n";
 	exit 0;
 }
@@ -367,7 +370,6 @@ sub do_git_init_db {
 		command_noisy(@init_db);
 		$_repository = Git->repository(Repository => ".git");
 	}
-	command_noisy('config', 'core.autocrlf', 'false');
 	my $set;
 	my $pfx = "svn-remote.$Git::SVN::default_repo_id";
 	foreach my $i (keys %icv) {
@@ -729,6 +731,8 @@ sub cmd_branch {
 	if ($dst =~ /^https:/ && $src =~ /^http:/) {
 		$src=~s/^http:/https:/;
 	}
+
+	::_req_svn();
 
 	my $ctx = SVN::Client->new(
 		auth    => Git::SVN::Ra::_auth_providers(),
@@ -1098,6 +1102,7 @@ sub cmd_info {
 	if ($@) {
 		$result .= "Repository Root: (offline)\n";
 	}
+	::_req_svn();
 	$result .= "Repository UUID: $uuid\n" unless $diff_status eq "A" &&
 		($SVN::Core::VERSION le '1.5.4' || $file_type ne "dir");
 	$result .= "Revision: " . ($diff_status eq "A" ? 0 : $rev) . "\n";
@@ -2993,7 +2998,7 @@ sub find_extra_svk_parents {
 	for my $ticket ( @tickets ) {
 		my ($uuid, $path, $rev) = split /:/, $ticket;
 		if ( $uuid eq $self->ra_uuid ) {
-			my $url = $self->rewrite_root || $self->{url};
+			my $url = $self->{url};
 			my $repos_root = $url;
 			my $branch_from = $path;
 			$branch_from =~ s{^/}{};
@@ -3201,7 +3206,7 @@ sub find_extra_svn_parents {
 	# are now marked as merge, we can add the tip as a parent.
 	my @merges = split "\n", $mergeinfo;
 	my @merge_tips;
-	my $url = $self->rewrite_root || $self->{url};
+	my $url = $self->{url};
 	my $uuid = $self->ra_uuid;
 	my %ranges;
 	for my $merge ( @merges ) {
@@ -3273,7 +3278,7 @@ sub find_extra_svn_parents {
 					"$new_parents[$i]..$new_parents[$j]",
 				       );
 				if ( !$revs ) {
-					undef($new_parents[$i]);
+					undef($new_parents[$j]);
 				}
 			}
 		}
@@ -3966,18 +3971,25 @@ sub username {
 
 sub _read_password {
 	my ($prompt, $realm) = @_;
-	print STDERR $prompt;
-	STDERR->flush;
-	require Term::ReadKey;
-	Term::ReadKey::ReadMode('noecho');
 	my $password = '';
-	while (defined(my $key = Term::ReadKey::ReadKey(0))) {
-		last if $key =~ /[\012\015]/; # \n\r
-		$password .= $key;
+	if (exists $ENV{GIT_ASKPASS}) {
+		open(PH, "-|", $ENV{GIT_ASKPASS}, $prompt);
+		$password = <PH>;
+		$password =~ s/[\012\015]//; # \n\r
+		close(PH);
+	} else {
+		print STDERR $prompt;
+		STDERR->flush;
+		require Term::ReadKey;
+		Term::ReadKey::ReadMode('noecho');
+		while (defined(my $key = Term::ReadKey::ReadKey(0))) {
+			last if $key =~ /[\012\015]/; # \n\r
+			$password .= $key;
+		}
+		Term::ReadKey::ReadMode('restore');
+		print STDERR "\n";
+		STDERR->flush;
 	}
-	Term::ReadKey::ReadMode('restore');
-	print STDERR "\n";
-	STDERR->flush;
 	$password;
 }
 
@@ -4858,6 +4870,8 @@ sub new {
 	my ($class, $url) = @_;
 	$url =~ s!/+$!!;
 	return $RA if ($RA && $RA->{url} eq $url);
+
+	::_req_svn();
 
 	SVN::_Core::svn_config_ensure($config_dir, undef);
 	my ($baton, $callbacks) = SVN::Core::auth_open_helper(_auth_providers);

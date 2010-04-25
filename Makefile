@@ -34,7 +34,7 @@ all::
 # Define NO_D_INO_IN_DIRENT if you don't have d_ino in your struct dirent.
 #
 # Define NO_D_TYPE_IN_DIRENT if your platform defines DT_UNKNOWN but lacks
-# d_type in struct dirent (latest Cygwin -- will be fixed soonish).
+# d_type in struct dirent (Cygwin 1.5, fixed in Cygwin 1.7).
 #
 # Define NO_C99_FORMAT if your formatted IO functions (printf/scanf et.al.)
 # do not support the 'size specifiers' introduced by C99, namely ll, hh,
@@ -109,7 +109,7 @@ all::
 # Define NO_PTHREADS if you do not have or do not want to use Pthreads.
 #
 # Define NO_PREAD if you have a problem with pread() system call (e.g.
-# cygwin.dll before v1.5.22).
+# cygwin1.dll before v1.5.22).
 #
 # Define NO_FAST_WORKING_DIRECTORY if accessing objects in pack files is
 # generally faster on your platform than accessing the working directory.
@@ -203,6 +203,9 @@ all::
 # Define JSMIN to point to JavaScript minifier that functions as
 # a filter to have gitweb.js minified.
 #
+# Define CSSMIN to point to a CSS minifier in order to generate a minified
+# version of gitweb.css
+#
 # Define DEFAULT_PAGER to a sensible pager command (defaults to "less") if
 # you want to use something different.  The value will be interpreted by the
 # shell at runtime when it is used.
@@ -214,6 +217,13 @@ all::
 #   DEFAULT_EDITOR='~/bin/vi',
 #   DEFAULT_EDITOR='$GIT_FALLBACK_EDITOR',
 #   DEFAULT_EDITOR='"C:\Program Files\Vim\gvim.exe" --nofork'
+#
+# Define COMPUTE_HEADER_DEPENDENCIES if your compiler supports the -MMD option
+# and you want to avoid rebuilding objects when an unrelated header file
+# changes.
+#
+# Define CHECK_HEADER_DEPENDENCIES to check for problems in the hard-coded
+# dependency rules.
 
 GIT-VERSION-FILE: FORCE
 	@$(SHELL_PATH) ./GIT-VERSION-GEN
@@ -272,9 +282,6 @@ lib = lib
 # DESTDIR=
 pathsep = :
 
-# JavaScript minifier invocation that can function as filter
-JSMIN =
-
 export prefix bindir sharedir sysconfdir
 
 CC = gcc
@@ -301,7 +308,7 @@ SPARSE_FLAGS = -D__BIG_ENDIAN__ -D__powerpc__
 # Those must not be GNU-specific; they are shared with perl/ which may
 # be built by a different compiler. (Note that this is an artifact now
 # but it still might be nice to keep that distinction.)
-BASIC_CFLAGS =
+BASIC_CFLAGS = -I.
 BASIC_LDFLAGS =
 
 # Guard against environment variables
@@ -309,13 +316,22 @@ BUILTIN_OBJS =
 BUILT_INS =
 COMPAT_CFLAGS =
 COMPAT_OBJS =
+EXTRA_CPPFLAGS =
 LIB_H =
 LIB_OBJS =
+PROGRAM_OBJS =
 PROGRAMS =
 SCRIPT_PERL =
 SCRIPT_PYTHON =
 SCRIPT_SH =
-TEST_PROGRAMS =
+SCRIPT_LIB =
+TEST_PROGRAMS_NEED_X =
+
+# Having this variable in your environment would break pipelines because
+# you cause "cd" to echo its destination to stdout.  It can also take
+# scripts to unexpected places.  If you like CDPATH, define it for your
+# interactive shell sessions without exporting it.
+unexport CDPATH
 
 SCRIPT_SH += git-am.sh
 SCRIPT_SH += git-bisect.sh
@@ -326,19 +342,19 @@ SCRIPT_SH += git-merge-octopus.sh
 SCRIPT_SH += git-merge-one-file.sh
 SCRIPT_SH += git-merge-resolve.sh
 SCRIPT_SH += git-mergetool.sh
-SCRIPT_SH += git-mergetool--lib.sh
-SCRIPT_SH += git-notes.sh
-SCRIPT_SH += git-parse-remote.sh
 SCRIPT_SH += git-pull.sh
 SCRIPT_SH += git-quiltimport.sh
 SCRIPT_SH += git-rebase--interactive.sh
 SCRIPT_SH += git-rebase.sh
 SCRIPT_SH += git-repack.sh
 SCRIPT_SH += git-request-pull.sh
-SCRIPT_SH += git-sh-setup.sh
 SCRIPT_SH += git-stash.sh
 SCRIPT_SH += git-submodule.sh
 SCRIPT_SH += git-web--browse.sh
+
+SCRIPT_LIB += git-mergetool--lib
+SCRIPT_LIB += git-parse-remote
+SCRIPT_LIB += git-sh-setup
 
 SCRIPT_PERL += git-add--interactive.perl
 SCRIPT_PERL += git-difftool.perl
@@ -360,16 +376,35 @@ EXTRA_PROGRAMS =
 
 # ... and all the rest that could be moved out of bindir to gitexecdir
 PROGRAMS += $(EXTRA_PROGRAMS)
-PROGRAMS += git-fast-import$X
-PROGRAMS += git-imap-send$X
-PROGRAMS += git-shell$X
-PROGRAMS += git-show-index$X
-PROGRAMS += git-upload-pack$X
-PROGRAMS += git-http-backend$X
+
+PROGRAM_OBJS += fast-import.o
+PROGRAM_OBJS += imap-send.o
+PROGRAM_OBJS += shell.o
+PROGRAM_OBJS += show-index.o
+PROGRAM_OBJS += upload-pack.o
+PROGRAM_OBJS += http-backend.o
+
+PROGRAMS += $(patsubst %.o,git-%$X,$(PROGRAM_OBJS))
+
+TEST_PROGRAMS_NEED_X += test-chmtime
+TEST_PROGRAMS_NEED_X += test-ctype
+TEST_PROGRAMS_NEED_X += test-date
+TEST_PROGRAMS_NEED_X += test-delta
+TEST_PROGRAMS_NEED_X += test-dump-cache-tree
+TEST_PROGRAMS_NEED_X += test-genrandom
+TEST_PROGRAMS_NEED_X += test-match-trees
+TEST_PROGRAMS_NEED_X += test-parse-options
+TEST_PROGRAMS_NEED_X += test-path-utils
+TEST_PROGRAMS_NEED_X += test-run-command
+TEST_PROGRAMS_NEED_X += test-sha1
+TEST_PROGRAMS_NEED_X += test-sigchain
+TEST_PROGRAMS_NEED_X += test-index-version
+
+TEST_PROGRAMS = $(patsubst %,%$X,$(TEST_PROGRAMS_NEED_X))
 
 # List built-in command $C whose implementation cmd_$C() is not in
-# builtin-$C.o but is linked in as part of some other command.
-BUILT_INS += $(patsubst builtin-%.o,git-%$X,$(BUILTIN_OBJS))
+# builtin/$C.o but is linked in as part of some other command.
+BUILT_INS += $(patsubst builtin/%.o,git-%$X,$(BUILTIN_OBJS))
 
 BUILT_INS += git-cherry$X
 BUILT_INS += git-cherry-pick$X
@@ -425,6 +460,7 @@ LIB_H += blob.h
 LIB_H += builtin.h
 LIB_H += cache.h
 LIB_H += cache-tree.h
+LIB_H += color.h
 LIB_H += commit.h
 LIB_H += compat/bswap.h
 LIB_H += compat/cygwin.h
@@ -436,6 +472,7 @@ LIB_H += delta.h
 LIB_H += diffcore.h
 LIB_H += diff.h
 LIB_H += dir.h
+LIB_H += exec_cmd.h
 LIB_H += fsck.h
 LIB_H += git-compat-util.h
 LIB_H += graph.h
@@ -478,7 +515,8 @@ LIB_H += tree-walk.h
 LIB_H += unpack-trees.h
 LIB_H += userdiff.h
 LIB_H += utf8.h
-LIB_H += wt-status.h
+LIB_H += xdiff-interface.h
+LIB_H += xdiff/xdiff.h
 
 LIB_OBJS += abspath.o
 LIB_OBJS += advice.o
@@ -592,95 +630,96 @@ LIB_OBJS += ws.o
 LIB_OBJS += wt-status.o
 LIB_OBJS += xdiff-interface.o
 
-BUILTIN_OBJS += builtin-add.o
-BUILTIN_OBJS += builtin-annotate.o
-BUILTIN_OBJS += builtin-apply.o
-BUILTIN_OBJS += builtin-archive.o
-BUILTIN_OBJS += builtin-bisect--helper.o
-BUILTIN_OBJS += builtin-blame.o
-BUILTIN_OBJS += builtin-branch.o
-BUILTIN_OBJS += builtin-bundle.o
-BUILTIN_OBJS += builtin-cat-file.o
-BUILTIN_OBJS += builtin-check-attr.o
-BUILTIN_OBJS += builtin-check-ref-format.o
-BUILTIN_OBJS += builtin-checkout-index.o
-BUILTIN_OBJS += builtin-checkout.o
-BUILTIN_OBJS += builtin-clean.o
-BUILTIN_OBJS += builtin-clone.o
-BUILTIN_OBJS += builtin-commit-tree.o
-BUILTIN_OBJS += builtin-commit.o
-BUILTIN_OBJS += builtin-config.o
-BUILTIN_OBJS += builtin-count-objects.o
-BUILTIN_OBJS += builtin-describe.o
-BUILTIN_OBJS += builtin-diff-files.o
-BUILTIN_OBJS += builtin-diff-index.o
-BUILTIN_OBJS += builtin-diff-tree.o
-BUILTIN_OBJS += builtin-diff.o
-BUILTIN_OBJS += builtin-fast-export.o
-BUILTIN_OBJS += builtin-fetch-pack.o
-BUILTIN_OBJS += builtin-fetch.o
-BUILTIN_OBJS += builtin-fmt-merge-msg.o
-BUILTIN_OBJS += builtin-for-each-ref.o
-BUILTIN_OBJS += builtin-fsck.o
-BUILTIN_OBJS += builtin-gc.o
-BUILTIN_OBJS += builtin-grep.o
-BUILTIN_OBJS += builtin-hash-object.o
-BUILTIN_OBJS += builtin-help.o
-BUILTIN_OBJS += builtin-index-pack.o
-BUILTIN_OBJS += builtin-init-db.o
-BUILTIN_OBJS += builtin-log.o
-BUILTIN_OBJS += builtin-ls-files.o
-BUILTIN_OBJS += builtin-ls-remote.o
-BUILTIN_OBJS += builtin-ls-tree.o
-BUILTIN_OBJS += builtin-mailinfo.o
-BUILTIN_OBJS += builtin-mailsplit.o
-BUILTIN_OBJS += builtin-merge.o
-BUILTIN_OBJS += builtin-merge-base.o
-BUILTIN_OBJS += builtin-merge-file.o
-BUILTIN_OBJS += builtin-merge-index.o
-BUILTIN_OBJS += builtin-merge-ours.o
-BUILTIN_OBJS += builtin-merge-recursive.o
-BUILTIN_OBJS += builtin-merge-tree.o
-BUILTIN_OBJS += builtin-mktag.o
-BUILTIN_OBJS += builtin-mktree.o
-BUILTIN_OBJS += builtin-mv.o
-BUILTIN_OBJS += builtin-name-rev.o
-BUILTIN_OBJS += builtin-pack-objects.o
-BUILTIN_OBJS += builtin-pack-redundant.o
-BUILTIN_OBJS += builtin-pack-refs.o
-BUILTIN_OBJS += builtin-patch-id.o
-BUILTIN_OBJS += builtin-prune-packed.o
-BUILTIN_OBJS += builtin-prune.o
-BUILTIN_OBJS += builtin-push.o
-BUILTIN_OBJS += builtin-read-tree.o
-BUILTIN_OBJS += builtin-receive-pack.o
-BUILTIN_OBJS += builtin-reflog.o
-BUILTIN_OBJS += builtin-remote.o
-BUILTIN_OBJS += builtin-replace.o
-BUILTIN_OBJS += builtin-rerere.o
-BUILTIN_OBJS += builtin-reset.o
-BUILTIN_OBJS += builtin-rev-list.o
-BUILTIN_OBJS += builtin-rev-parse.o
-BUILTIN_OBJS += builtin-revert.o
-BUILTIN_OBJS += builtin-rm.o
-BUILTIN_OBJS += builtin-send-pack.o
-BUILTIN_OBJS += builtin-shortlog.o
-BUILTIN_OBJS += builtin-show-branch.o
-BUILTIN_OBJS += builtin-show-ref.o
-BUILTIN_OBJS += builtin-stripspace.o
-BUILTIN_OBJS += builtin-symbolic-ref.o
-BUILTIN_OBJS += builtin-tag.o
-BUILTIN_OBJS += builtin-tar-tree.o
-BUILTIN_OBJS += builtin-unpack-file.o
-BUILTIN_OBJS += builtin-unpack-objects.o
-BUILTIN_OBJS += builtin-update-index.o
-BUILTIN_OBJS += builtin-update-ref.o
-BUILTIN_OBJS += builtin-update-server-info.o
-BUILTIN_OBJS += builtin-upload-archive.o
-BUILTIN_OBJS += builtin-var.o
-BUILTIN_OBJS += builtin-verify-pack.o
-BUILTIN_OBJS += builtin-verify-tag.o
-BUILTIN_OBJS += builtin-write-tree.o
+BUILTIN_OBJS += builtin/add.o
+BUILTIN_OBJS += builtin/annotate.o
+BUILTIN_OBJS += builtin/apply.o
+BUILTIN_OBJS += builtin/archive.o
+BUILTIN_OBJS += builtin/bisect--helper.o
+BUILTIN_OBJS += builtin/blame.o
+BUILTIN_OBJS += builtin/branch.o
+BUILTIN_OBJS += builtin/bundle.o
+BUILTIN_OBJS += builtin/cat-file.o
+BUILTIN_OBJS += builtin/check-attr.o
+BUILTIN_OBJS += builtin/check-ref-format.o
+BUILTIN_OBJS += builtin/checkout-index.o
+BUILTIN_OBJS += builtin/checkout.o
+BUILTIN_OBJS += builtin/clean.o
+BUILTIN_OBJS += builtin/clone.o
+BUILTIN_OBJS += builtin/commit-tree.o
+BUILTIN_OBJS += builtin/commit.o
+BUILTIN_OBJS += builtin/config.o
+BUILTIN_OBJS += builtin/count-objects.o
+BUILTIN_OBJS += builtin/describe.o
+BUILTIN_OBJS += builtin/diff-files.o
+BUILTIN_OBJS += builtin/diff-index.o
+BUILTIN_OBJS += builtin/diff-tree.o
+BUILTIN_OBJS += builtin/diff.o
+BUILTIN_OBJS += builtin/fast-export.o
+BUILTIN_OBJS += builtin/fetch-pack.o
+BUILTIN_OBJS += builtin/fetch.o
+BUILTIN_OBJS += builtin/fmt-merge-msg.o
+BUILTIN_OBJS += builtin/for-each-ref.o
+BUILTIN_OBJS += builtin/fsck.o
+BUILTIN_OBJS += builtin/gc.o
+BUILTIN_OBJS += builtin/grep.o
+BUILTIN_OBJS += builtin/hash-object.o
+BUILTIN_OBJS += builtin/help.o
+BUILTIN_OBJS += builtin/index-pack.o
+BUILTIN_OBJS += builtin/init-db.o
+BUILTIN_OBJS += builtin/log.o
+BUILTIN_OBJS += builtin/ls-files.o
+BUILTIN_OBJS += builtin/ls-remote.o
+BUILTIN_OBJS += builtin/ls-tree.o
+BUILTIN_OBJS += builtin/mailinfo.o
+BUILTIN_OBJS += builtin/mailsplit.o
+BUILTIN_OBJS += builtin/merge.o
+BUILTIN_OBJS += builtin/merge-base.o
+BUILTIN_OBJS += builtin/merge-file.o
+BUILTIN_OBJS += builtin/merge-index.o
+BUILTIN_OBJS += builtin/merge-ours.o
+BUILTIN_OBJS += builtin/merge-recursive.o
+BUILTIN_OBJS += builtin/merge-tree.o
+BUILTIN_OBJS += builtin/mktag.o
+BUILTIN_OBJS += builtin/mktree.o
+BUILTIN_OBJS += builtin/mv.o
+BUILTIN_OBJS += builtin/name-rev.o
+BUILTIN_OBJS += builtin/notes.o
+BUILTIN_OBJS += builtin/pack-objects.o
+BUILTIN_OBJS += builtin/pack-redundant.o
+BUILTIN_OBJS += builtin/pack-refs.o
+BUILTIN_OBJS += builtin/patch-id.o
+BUILTIN_OBJS += builtin/prune-packed.o
+BUILTIN_OBJS += builtin/prune.o
+BUILTIN_OBJS += builtin/push.o
+BUILTIN_OBJS += builtin/read-tree.o
+BUILTIN_OBJS += builtin/receive-pack.o
+BUILTIN_OBJS += builtin/reflog.o
+BUILTIN_OBJS += builtin/remote.o
+BUILTIN_OBJS += builtin/replace.o
+BUILTIN_OBJS += builtin/rerere.o
+BUILTIN_OBJS += builtin/reset.o
+BUILTIN_OBJS += builtin/rev-list.o
+BUILTIN_OBJS += builtin/rev-parse.o
+BUILTIN_OBJS += builtin/revert.o
+BUILTIN_OBJS += builtin/rm.o
+BUILTIN_OBJS += builtin/send-pack.o
+BUILTIN_OBJS += builtin/shortlog.o
+BUILTIN_OBJS += builtin/show-branch.o
+BUILTIN_OBJS += builtin/show-ref.o
+BUILTIN_OBJS += builtin/stripspace.o
+BUILTIN_OBJS += builtin/symbolic-ref.o
+BUILTIN_OBJS += builtin/tag.o
+BUILTIN_OBJS += builtin/tar-tree.o
+BUILTIN_OBJS += builtin/unpack-file.o
+BUILTIN_OBJS += builtin/unpack-objects.o
+BUILTIN_OBJS += builtin/update-index.o
+BUILTIN_OBJS += builtin/update-ref.o
+BUILTIN_OBJS += builtin/update-server-info.o
+BUILTIN_OBJS += builtin/upload-archive.o
+BUILTIN_OBJS += builtin/var.o
+BUILTIN_OBJS += builtin/verify-pack.o
+BUILTIN_OBJS += builtin/verify-tag.o
+BUILTIN_OBJS += builtin/write-tree.o
 
 GITLIBS = $(LIB_FILE) $(XDIFF_LIB)
 EXTLIBS =
@@ -792,22 +831,24 @@ ifeq ($(uname_S),SunOS)
 	BASIC_CFLAGS += -D__EXTENSIONS__ -D__sun__ -DHAVE_ALLOCA_H
 endif
 ifeq ($(uname_O),Cygwin)
-	NO_D_TYPE_IN_DIRENT = YesPlease
-	NO_D_INO_IN_DIRENT = YesPlease
-	NO_STRCASESTR = YesPlease
-	NO_MEMMEM = YesPlease
-	NO_MKSTEMPS = YesPlease
-	NO_SYMLINK_HEAD = YesPlease
+	ifeq ($(shell expr "$(uname_R)" : '1\.[1-6]\.'),4)
+		NO_D_TYPE_IN_DIRENT = YesPlease
+		NO_D_INO_IN_DIRENT = YesPlease
+		NO_STRCASESTR = YesPlease
+		NO_MEMMEM = YesPlease
+		NO_MKSTEMPS = YesPlease
+		NO_SYMLINK_HEAD = YesPlease
+		NO_IPV6 = YesPlease
+		OLD_ICONV = UnfortunatelyYes
+	endif
 	NEEDS_LIBICONV = YesPlease
 	NO_FAST_WORKING_DIRECTORY = UnfortunatelyYes
 	NO_TRUSTABLE_FILEMODE = UnfortunatelyYes
-	OLD_ICONV = UnfortunatelyYes
 	NO_ST_BLOCKS_IN_STRUCT_STAT = YesPlease
 	# There are conflicting reports about this.
 	# On some boxes NO_MMAP is needed, and not so elsewhere.
 	# Try commenting this out if you suspect MMAP is more efficient
 	NO_MMAP = YesPlease
-	NO_IPV6 = YesPlease
 	X = .exe
 	COMPAT_OBJS += compat/cygwin.o
 	UNRELIABLE_FSTAT = UnfortunatelyYes
@@ -825,6 +866,7 @@ ifeq ($(uname_S),FreeBSD)
 		NO_UINTMAX_T = YesPlease
 		NO_STRTOUMAX = YesPlease
 	endif
+	PYTHON_PATH = /usr/local/bin/python
 endif
 ifeq ($(uname_S),OpenBSD)
 	NO_STRCASESTR = YesPlease
@@ -1020,6 +1062,14 @@ endif
 -include config.mak.autogen
 -include config.mak
 
+ifdef CHECK_HEADER_DEPENDENCIES
+USE_COMPUTED_HEADER_DEPENDENCIES =
+endif
+
+ifdef COMPUTE_HEADER_DEPENDENCIES
+USE_COMPUTED_HEADER_DEPENDENCIES = YesPlease
+endif
+
 ifdef SANE_TOOL_PATH
 SANE_TOOL_PATH_SQ = $(subst ','\'',$(SANE_TOOL_PATH))
 BROKEN_PATH_FIX = 's|^\# @@BROKEN_PATH_FIX@@$$|git_broken_path_fix $(SANE_TOOL_PATH_SQ)|'
@@ -1075,11 +1125,12 @@ else
 	REMOTE_CURL_PRIMARY = git-remote-http$X
 	REMOTE_CURL_ALIASES = git-remote-https$X git-remote-ftp$X git-remote-ftps$X
 	REMOTE_CURL_NAMES = $(REMOTE_CURL_PRIMARY) $(REMOTE_CURL_ALIASES)
-	PROGRAMS += $(REMOTE_CURL_NAMES) git-http-fetch$X
+	PROGRAM_OBJS += http-fetch.o
+	PROGRAMS += $(REMOTE_CURL_NAMES)
 	curl_check := $(shell (echo 070908; curl-config --vernum) | sort -r | sed -ne 2p)
 	ifeq "$(curl_check)" "070908"
 		ifndef NO_EXPAT
-			PROGRAMS += git-http-push$X
+			PROGRAM_OBJS += http-push.o
 		endif
 	endif
 	ifndef NO_EXPAT
@@ -1099,7 +1150,7 @@ endif
 EXTLIBS += -lz
 
 ifndef NO_POSIX_ONLY_PROGRAMS
-	PROGRAMS += git-daemon$X
+	PROGRAM_OBJS += daemon.o
 endif
 ifndef NO_OPENSSL
 	OPENSSL_LIBSSL = -lssl
@@ -1200,7 +1251,6 @@ ifdef NO_MKDTEMP
 endif
 ifdef NO_MKSTEMPS
 	COMPAT_CFLAGS += -DNO_MKSTEMPS
-	COMPAT_OBJS += compat/mkstemps.o
 endif
 ifdef NO_UNSETENV
 	COMPAT_CFLAGS += -DNO_UNSETENV
@@ -1266,10 +1316,12 @@ endif
 ifdef BLK_SHA1
 	SHA1_HEADER = "block-sha1/sha1.h"
 	LIB_OBJS += block-sha1/sha1.o
+	LIB_H += block-sha1/sha1.h
 else
 ifdef PPC_SHA1
 	SHA1_HEADER = "ppc/sha1.h"
 	LIB_OBJS += ppc/sha1.o ppc/sha1ppc.o
+	LIB_H += ppc/sha1.h
 else
 	SHA1_HEADER = <openssl/sha.h>
 	EXTLIBS += $(LIB_4_CRYPTO)
@@ -1411,7 +1463,7 @@ export TAR INSTALL DESTDIR SHELL_PATH
 
 SHELL = $(SHELL_PATH)
 
-all:: shell_compatibility_test $(ALL_PROGRAMS) $(BUILT_INS) $(OTHER_PROGRAMS) GIT-BUILD-OPTIONS
+all:: shell_compatibility_test $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) $(OTHER_PROGRAMS) GIT-BUILD-OPTIONS
 ifneq (,$X)
 	$(QUIET_BUILT_IN)$(foreach p,$(patsubst %$X,%,$(filter %$X,$(ALL_PROGRAMS) $(BUILT_INS) git$X)), test -d '$p' -o '$p' -ef '$p$X' || $(RM) '$p';)
 endif
@@ -1427,7 +1479,7 @@ endif
 ifndef NO_PYTHON
 	$(QUIET_SUBDIR0)git_remote_helpers $(QUIET_SUBDIR1) PYTHON_PATH='$(PYTHON_PATH_SQ)' prefix='$(prefix_SQ)' all
 endif
-	$(QUIET_SUBDIR0)templates $(QUIET_SUBDIR1)
+	$(QUIET_SUBDIR0)templates $(QUIET_SUBDIR1) SHELL_PATH='$(SHELL_PATH_SQ)' PERL_PATH='$(PERL_PATH_SQ)'
 
 please_set_SHELL_PATH_to_a_more_modern_shell:
 	@$$(:)
@@ -1438,15 +1490,15 @@ strip: $(PROGRAMS) git$X
 	$(STRIP) $(STRIP_OPTS) $(PROGRAMS) git$X
 
 git.o: common-cmds.h
-git.s git.o: ALL_CFLAGS += -DGIT_VERSION='"$(GIT_VERSION)"' \
+git.s git.o: EXTRA_CPPFLAGS = -DGIT_VERSION='"$(GIT_VERSION)"' \
 	'-DGIT_HTML_PATH="$(htmldir_SQ)"'
 
 git$X: git.o $(BUILTIN_OBJS) $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ git.o \
 		$(BUILTIN_OBJS) $(ALL_LDFLAGS) $(LIBS)
 
-builtin-help.o: common-cmds.h
-builtin-help.s builtin-help.o: ALL_CFLAGS += \
+builtin/help.o: common-cmds.h
+builtin/help.s builtin/help.o: EXTRA_CPPFLAGS = \
 	'-DGIT_HTML_PATH="$(htmldir_SQ)"' \
 	'-DGIT_MAN_PATH="$(mandir_SQ)"' \
 	'-DGIT_INFO_PATH="$(infodir_SQ)"'
@@ -1462,15 +1514,23 @@ common-cmds.h: ./generate-cmdlist.sh command-list.txt
 common-cmds.h: $(wildcard Documentation/git-*.txt)
 	$(QUIET_GEN)./generate-cmdlist.sh > $@+ && mv $@+ $@
 
+define cmd_munge_script
+$(RM) $@ $@+ && \
+sed -e '1s|#!.*/sh|#!$(SHELL_PATH_SQ)|' \
+    -e 's|@SHELL_PATH@|$(SHELL_PATH_SQ)|' \
+    -e 's/@@GIT_VERSION@@/$(GIT_VERSION)/g' \
+    -e 's/@@NO_CURL@@/$(NO_CURL)/g' \
+    -e $(BROKEN_PATH_FIX) \
+    $@.sh >$@+
+endef
+
 $(patsubst %.sh,%,$(SCRIPT_SH)) : % : %.sh
-	$(QUIET_GEN)$(RM) $@ $@+ && \
-	sed -e '1s|#!.*/sh|#!$(SHELL_PATH_SQ)|' \
-	    -e 's|@SHELL_PATH@|$(SHELL_PATH_SQ)|' \
-	    -e 's/@@GIT_VERSION@@/$(GIT_VERSION)/g' \
-	    -e 's/@@NO_CURL@@/$(NO_CURL)/g' \
-	    -e $(BROKEN_PATH_FIX) \
-	    $@.sh >$@+ && \
+	$(QUIET_GEN)$(cmd_munge_script) && \
 	chmod +x $@+ && \
+	mv $@+ $@
+
+$(SCRIPT_LIB) : % : %.sh
+	$(QUIET_GEN)$(cmd_munge_script) && \
 	mv $@+ $@
 
 ifndef NO_PERL
@@ -1501,18 +1561,29 @@ gitweb:
 	$(QUIET_SUBDIR0)gitweb $(QUIET_SUBDIR1) all
 
 ifdef JSMIN
-OTHER_PROGRAMS += gitweb/gitweb.cgi   gitweb/gitweb.min.js
-gitweb/gitweb.cgi: gitweb/gitweb.perl gitweb/gitweb.min.js
+GITWEB_PROGRAMS += gitweb/gitweb.min.js
+GITWEB_JS = gitweb/gitweb.min.js
 else
-OTHER_PROGRAMS += gitweb/gitweb.cgi
-gitweb/gitweb.cgi: gitweb/gitweb.perl
+GITWEB_JS = gitweb/gitweb.js
 endif
+ifdef CSSMIN
+GITWEB_PROGRAMS += gitweb/gitweb.min.css
+GITWEB_CSS = gitweb/gitweb.min.css
+else
+GITWEB_CSS = gitweb/gitweb.css
+endif
+OTHER_PROGRAMS +=  gitweb/gitweb.cgi  $(GITWEB_PROGRAMS)
+gitweb/gitweb.cgi: gitweb/gitweb.perl $(GITWEB_PROGRAMS)
 	$(QUIET_SUBDIR0)gitweb $(QUIET_SUBDIR1) $(patsubst gitweb/%,%,$@)
 
 ifdef JSMIN
 gitweb/gitweb.min.js: gitweb/gitweb.js
 	$(QUIET_SUBDIR0)gitweb $(QUIET_SUBDIR1) $(patsubst gitweb/%,%,$@)
 endif # JSMIN
+ifdef CSSMIN
+gitweb/gitweb.min.css: gitweb/gitweb.css
+	$(QUIET_SUBDIR0)gitweb $(QUIET_SUBDIR1) $(patsubst gitweb/%,%,$@)
+endif # CSSMIN
 
 
 git-instaweb: git-instaweb.sh gitweb/gitweb.cgi gitweb/gitweb.css gitweb/gitweb.js
@@ -1522,11 +1593,13 @@ git-instaweb: git-instaweb.sh gitweb/gitweb.cgi gitweb/gitweb.css gitweb/gitweb.
 	    -e 's/@@NO_CURL@@/$(NO_CURL)/g' \
 	    -e '/@@GITWEB_CGI@@/r gitweb/gitweb.cgi' \
 	    -e '/@@GITWEB_CGI@@/d' \
-	    -e '/@@GITWEB_CSS@@/r gitweb/gitweb.css' \
+	    -e '/@@GITWEB_CSS@@/r $(GITWEB_CSS)' \
 	    -e '/@@GITWEB_CSS@@/d' \
-	    -e '/@@GITWEB_JS@@/r gitweb/gitweb.js' \
+	    -e '/@@GITWEB_JS@@/r $(GITWEB_JS)' \
 	    -e '/@@GITWEB_JS@@/d' \
 	    -e 's|@@PERL@@|$(PERL_PATH_SQ)|g' \
+            -e 's|@@GITWEB_CSS_NAME@@|$(GITWEB_CSS)|' \
+            -e 's|@@GITWEB_JS_NAME@@|$(GITWEB_JS)|' \
 	    $@.sh > $@+ && \
 	chmod +x $@+ && \
 	mv $@+ $@
@@ -1552,9 +1625,8 @@ $(patsubst %.py,%,$(SCRIPT_PYTHON)): % : %.py
 	    -e '}' \
 	    -e 's|^import sys.*|&; \\\
 	           import os; \\\
-	           sys.path[0] = os.environ.has_key("GITPYTHONLIB") and \\\
-	                         os.environ["GITPYTHONLIB"] or \\\
-	                         "@@INSTLIBDIR@@"|' \
+	           sys.path.insert(0, os.getenv("GITPYTHONLIB",\
+	                                        "@@INSTLIBDIR@@"));|' \
 	    -e 's|@@INSTLIBDIR@@|'"$$INSTLIBDIR"'|g' \
 	    $@.py >$@+ && \
 	chmod +x $@+ && \
@@ -1582,28 +1654,148 @@ git.o git.spec \
 	$(patsubst %.perl,%,$(SCRIPT_PERL)) \
 	: GIT-VERSION-FILE
 
-%.o: %.c GIT-CFLAGS
-	$(QUIET_CC)$(CC) -o $*.o -c $(ALL_CFLAGS) $<
-%.s: %.c GIT-CFLAGS FORCE
-	$(QUIET_CC)$(CC) -S $(ALL_CFLAGS) $<
-%.o: %.S GIT-CFLAGS
-	$(QUIET_CC)$(CC) -o $*.o -c $(ALL_CFLAGS) $<
+TEST_OBJS := $(patsubst test-%$X,test-%.o,$(TEST_PROGRAMS))
+GIT_OBJS := $(LIB_OBJS) $(BUILTIN_OBJS) $(PROGRAM_OBJS) $(TEST_OBJS) \
+	git.o http.o http-walker.o remote-curl.o
+XDIFF_OBJS = xdiff/xdiffi.o xdiff/xprepare.o xdiff/xutils.o xdiff/xemit.o \
+	xdiff/xmerge.o xdiff/xpatience.o
+OBJECTS := $(GIT_OBJS) $(XDIFF_OBJS)
 
-exec_cmd.s exec_cmd.o: ALL_CFLAGS += \
+dep_files := $(foreach f,$(OBJECTS),$(dir $f).depend/$(notdir $f).d)
+dep_dirs := $(addsuffix .depend,$(sort $(dir $(OBJECTS))))
+
+ifdef COMPUTE_HEADER_DEPENDENCIES
+$(dep_dirs):
+	mkdir -p $@
+
+missing_dep_dirs := $(filter-out $(wildcard $(dep_dirs)),$(dep_dirs))
+dep_file = $(dir $@).depend/$(notdir $@).d
+dep_args = -MF $(dep_file) -MMD -MP
+ifdef CHECK_HEADER_DEPENDENCIES
+$(error cannot compute header dependencies outside a normal build. \
+Please unset CHECK_HEADER_DEPENDENCIES and try again)
+endif
+endif
+
+ifndef COMPUTE_HEADER_DEPENDENCIES
+ifndef CHECK_HEADER_DEPENDENCIES
+dep_dirs =
+missing_dep_dirs =
+dep_args =
+endif
+endif
+
+ifdef CHECK_HEADER_DEPENDENCIES
+ifndef PRINT_HEADER_DEPENDENCIES
+missing_deps = $(filter-out $(notdir $^), \
+	$(notdir $(shell $(MAKE) -s $@ \
+		CHECK_HEADER_DEPENDENCIES=YesPlease \
+		USE_COMPUTED_HEADER_DEPENDENCIES=YesPlease \
+		PRINT_HEADER_DEPENDENCIES=YesPlease)))
+endif
+endif
+
+ASM_SRC := $(wildcard $(OBJECTS:o=S))
+ASM_OBJ := $(ASM_SRC:S=o)
+C_OBJ := $(filter-out $(ASM_OBJ),$(OBJECTS))
+
+.SUFFIXES:
+
+ifdef PRINT_HEADER_DEPENDENCIES
+$(C_OBJ): %.o: %.c FORCE
+	echo $^
+$(ASM_OBJ): %.o: %.S FORCE
+	echo $^
+
+ifndef CHECK_HEADER_DEPENDENCIES
+$(error cannot print header dependencies during a normal build. \
+Please set CHECK_HEADER_DEPENDENCIES and try again)
+endif
+endif
+
+ifndef PRINT_HEADER_DEPENDENCIES
+ifdef CHECK_HEADER_DEPENDENCIES
+$(C_OBJ): %.o: %.c $(dep_files) FORCE
+	@set -e; echo CHECK $@; \
+	missing_deps="$(missing_deps)"; \
+	if test "$$missing_deps"; \
+	then \
+		echo missing dependencies: $$missing_deps; \
+		false; \
+	fi
+$(ASM_OBJ): %.o: %.S $(dep_files) FORCE
+	@set -e; echo CHECK $@; \
+	missing_deps="$(missing_deps)"; \
+	if test "$$missing_deps"; \
+	then \
+		echo missing dependencies: $$missing_deps; \
+		false; \
+	fi
+endif
+endif
+
+ifndef CHECK_HEADER_DEPENDENCIES
+$(C_OBJ): %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
+	$(QUIET_CC)$(CC) -o $*.o -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+$(ASM_OBJ): %.o: %.S GIT-CFLAGS $(missing_dep_dirs)
+	$(QUIET_CC)$(CC) -o $*.o -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+endif
+
+%.s: %.c GIT-CFLAGS FORCE
+	$(QUIET_CC)$(CC) -S $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+
+ifdef USE_COMPUTED_HEADER_DEPENDENCIES
+# Take advantage of gcc's on-the-fly dependency generation
+# See <http://gcc.gnu.org/gcc-3.0/features.html>.
+dep_files_present := $(wildcard $(dep_files))
+ifneq ($(dep_files_present),)
+include $(dep_files_present)
+endif
+else
+# Dependencies on header files, for platforms that do not support
+# the gcc -MMD option.
+#
+# Dependencies on automatically generated headers such as common-cmds.h
+# should _not_ be included here, since they are necessary even when
+# building an object for the first time.
+#
+# XXX. Please check occasionally that these include all dependencies
+# gcc detects!
+
+$(GIT_OBJS): $(LIB_H)
+builtin/branch.o builtin/checkout.o builtin/clone.o builtin/reset.o branch.o transport.o: branch.h
+builtin/bundle.o bundle.o transport.o: bundle.h
+builtin/bisect--helper.o builtin/rev-list.o bisect.o: bisect.h
+builtin/clone.o builtin/fetch-pack.o transport.o: fetch-pack.h
+builtin/grep.o: thread-utils.h
+builtin/send-pack.o transport.o: send-pack.h
+builtin/log.o builtin/shortlog.o: shortlog.h
+builtin/prune.o builtin/reflog.o reachable.o: reachable.h
+builtin/commit.o builtin/revert.o wt-status.o: wt-status.h
+builtin/tar-tree.o archive-tar.o: tar.h
+builtin/pack-objects.o: thread-utils.h
+http-fetch.o http-walker.o remote-curl.o transport.o walker.o: walker.h
+http.o http-walker.o http-push.o remote-curl.o: http.h
+
+xdiff-interface.o $(XDIFF_OBJS): \
+	xdiff/xinclude.h xdiff/xmacros.h xdiff/xdiff.h xdiff/xtypes.h \
+	xdiff/xutils.h xdiff/xprepare.h xdiff/xdiffi.h xdiff/xemit.h
+endif
+
+exec_cmd.s exec_cmd.o: EXTRA_CPPFLAGS = \
 	'-DGIT_EXEC_PATH="$(gitexecdir_SQ)"' \
 	'-DBINDIR="$(bindir_relative_SQ)"' \
 	'-DPREFIX="$(prefix_SQ)"'
 
-builtin-init-db.s builtin-init-db.o: ALL_CFLAGS += \
+builtin/init-db.s builtin/init-db.o: EXTRA_CPPFLAGS = \
 	-DDEFAULT_GIT_TEMPLATE_DIR='"$(template_dir_SQ)"'
 
-config.s config.o: ALL_CFLAGS += -DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
+config.s config.o: EXTRA_CPPFLAGS = -DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
 
-http.s http.o: ALL_CFLAGS += -DGIT_USER_AGENT='"git/$(GIT_VERSION)"'
+http.s http.o: EXTRA_CPPFLAGS = -DGIT_USER_AGENT='"git/$(GIT_VERSION)"'
 
 ifdef NO_EXPAT
-http-walker.o: http.h
-http-walker.s http-walker.o: ALL_CFLAGS += -DNO_EXPAT
+http-walker.s http-walker.o: EXTRA_CPPFLAGS = -DNO_EXPAT
 endif
 
 git-%$X: %.o $(GITLIBS)
@@ -1612,10 +1804,6 @@ git-%$X: %.o $(GITLIBS)
 git-imap-send$X: imap-send.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(LIBS) $(OPENSSL_LINK) $(OPENSSL_LIBSSL)
-
-http.o http-walker.o http-push.o: http.h
-
-http.o http-walker.o: $(LIB_H)
 
 git-http-fetch$X: revision.o http.o http-walker.o http-fetch.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
@@ -1634,17 +1822,8 @@ $(REMOTE_CURL_PRIMARY): remote-curl.o http.o http-walker.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(LIBS) $(CURL_LIBCURL) $(EXPAT_LIBEXPAT)
 
-$(LIB_OBJS) $(BUILTIN_OBJS): $(LIB_H)
-$(patsubst git-%$X,%.o,$(PROGRAMS)) git.o: $(LIB_H) $(wildcard */*.h)
-builtin-revert.o wt-status.o: wt-status.h
-
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) rcs $@ $(LIB_OBJS)
-
-XDIFF_OBJS=xdiff/xdiffi.o xdiff/xprepare.o xdiff/xutils.o xdiff/xemit.o \
-	xdiff/xmerge.o xdiff/xpatience.o
-$(XDIFF_OBJS): xdiff/xinclude.h xdiff/xmacros.h xdiff/xdiff.h xdiff/xtypes.h \
-	xdiff/xutils.h xdiff/xprepare.h xdiff/xdiffi.h xdiff/xemit.h
 
 $(XDIFF_LIB): $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) rcs $@ $(XDIFF_OBJS)
@@ -1711,24 +1890,6 @@ GIT-GUI-VARS: FORCE
             fi
 endif
 
-### Testing rules
-
-TEST_PROGRAMS_NEED_X += test-chmtime
-TEST_PROGRAMS_NEED_X += test-ctype
-TEST_PROGRAMS_NEED_X += test-date
-TEST_PROGRAMS_NEED_X += test-delta
-TEST_PROGRAMS_NEED_X += test-dump-cache-tree
-TEST_PROGRAMS_NEED_X += test-genrandom
-TEST_PROGRAMS_NEED_X += test-match-trees
-TEST_PROGRAMS_NEED_X += test-parse-options
-TEST_PROGRAMS_NEED_X += test-path-utils
-TEST_PROGRAMS_NEED_X += test-run-command
-TEST_PROGRAMS_NEED_X += test-sha1
-TEST_PROGRAMS_NEED_X += test-sigchain
-TEST_PROGRAMS_NEED_X += test-index-version
-
-TEST_PROGRAMS = $(patsubst %,%$X,$(TEST_PROGRAMS_NEED_X))
-
 test_bindir_programs := $(patsubst %,bin-wrappers/%,$(BINDIR_PROGRAMS_NEED_X) $(BINDIR_PROGRAMS_NO_X) $(TEST_PROGRAMS_NEED_X))
 
 all:: $(TEST_PROGRAMS) $(test_bindir_programs)
@@ -1746,6 +1907,8 @@ bin-wrappers/%: wrap-for-bin.sh
 
 export NO_SVN_TESTS
 
+### Testing rules
+
 test: all
 	$(MAKE) -C t/ all
 
@@ -1757,9 +1920,7 @@ test-delta$X: diff-delta.o patch-delta.o
 
 test-parse-options$X: parse-options.o
 
-test-parse-options.o: parse-options.h
-
-.PRECIOUS: $(patsubst test-%$X,test-%.o,$(TEST_PROGRAMS))
+.PRECIOUS: $(TEST_OBJS)
 
 test-%$X: test-%.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
@@ -1805,6 +1966,7 @@ install: all
 	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(bindir_SQ)'
 	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 	$(INSTALL) $(ALL_PROGRAMS) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
+	$(INSTALL) -m 644 $(SCRIPT_LIB) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 	$(INSTALL) $(install_bindir_programs) '$(DESTDIR_SQ)$(bindir_SQ)'
 	$(MAKE) -C templates DESTDIR='$(DESTDIR_SQ)' install
 ifndef NO_PERL
@@ -1923,10 +2085,11 @@ distclean: clean
 
 clean:
 	$(RM) *.o block-sha1/*.o ppc/*.o compat/*.o compat/*/*.o xdiff/*.o \
-		$(LIB_FILE) $(XDIFF_LIB)
-	$(RM) $(ALL_PROGRAMS) $(BUILT_INS) git$X
+		builtin/*.o $(LIB_FILE) $(XDIFF_LIB)
+	$(RM) $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git$X
 	$(RM) $(TEST_PROGRAMS)
 	$(RM) -r bin-wrappers
+	$(RM) -r $(dep_dirs)
 	$(RM) *.spec *.pyc *.pyo */*.pyc */*.pyo common-cmds.h TAGS tags cscope*
 	$(RM) -r autom4te.cache
 	$(RM) config.log config.mak.autogen config.mak.append config.status config.cache
@@ -1935,7 +2098,7 @@ clean:
 	$(RM) $(htmldocs).tar.gz $(manpages).tar.gz
 	$(MAKE) -C Documentation/ clean
 ifndef NO_PERL
-	$(RM) gitweb/gitweb.cgi
+	$(RM) gitweb/gitweb.cgi gitweb/gitweb.min.*
 	$(MAKE) -C perl clean
 endif
 ifndef NO_PYTHON
@@ -1956,12 +2119,13 @@ endif
 ### Check documentation
 #
 check-docs::
-	@(for v in $(ALL_PROGRAMS) $(BUILT_INS) git gitk; \
+	@(for v in $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git gitk; \
 	do \
 		case "$$v" in \
 		git-merge-octopus | git-merge-ours | git-merge-recursive | \
 		git-merge-resolve | git-merge-subtree | \
 		git-fsck-objects | git-init-db | \
+		git-remote-* | git-stage | \
 		git-?*--?* ) continue ;; \
 		esac ; \
 		test -f "Documentation/$$v.txt" || \
@@ -1999,9 +2163,12 @@ check-docs::
 		documented,gitrepository-layout | \
 		documented,gittutorial | \
 		documented,gittutorial-2 | \
+		documented,git-bisect-lk2009 | \
+		documented,git-remote-helpers | \
+		documented,gitworkflows | \
 		sentinel,not,matching,is,ok ) continue ;; \
 		esac; \
-		case " $(ALL_PROGRAMS) $(BUILT_INS) git gitk " in \
+		case " $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git gitk " in \
 		*" $$cmd "*)	;; \
 		*) echo "removed but $$how: $$cmd" ;; \
 		esac; \
