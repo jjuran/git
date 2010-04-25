@@ -11,10 +11,12 @@ Test switching across them.
   ! [master] Initial A one, A two
    * [renamer] Renamer R one->uno, M two
     ! [side] Side M one, D two, A three
-  ---
-    + [side] Side M one, D two, A three
-   *  [renamer] Renamer R one->uno, M two
-  +*+ [master] Initial A one, A two
+     ! [simple] Simple D one, M two
+  ----
+     + [simple] Simple D one, M two
+    +  [side] Side M one, D two, A three
+   *   [renamer] Renamer R one->uno, M two
+  +*++ [master] Initial A one, A two
 
 '
 
@@ -51,6 +53,11 @@ test_expect_success setup '
 	rm -f two &&
 	git update-index --add --remove one two three &&
 	git commit -m "Side M one, D two, A three" &&
+
+	git checkout -b simple master &&
+	rm -f one &&
+	fill a c e > two &&
+	git commit -a -m "Simple D one, M two" &&
 
 	git checkout master
 '
@@ -166,19 +173,81 @@ test_expect_success 'checkout -m with merge conflict' '
 	! test -s current
 '
 
-test_expect_success 'checkout to detach HEAD' '
+test_expect_success 'format of merge conflict from checkout -m' '
 
+	git checkout -f master && git clean -f &&
+
+	fill b d > two &&
+	git checkout -m simple &&
+
+	git ls-files >current &&
+	fill same two two two >expect &&
+	test_cmp current expect &&
+
+	cat <<-EOF >expect &&
+	<<<<<<< simple
+	a
+	c
+	e
+	=======
+	b
+	d
+	>>>>>>> local
+	EOF
+	test_cmp two expect
+'
+
+test_expect_success 'checkout --merge --conflict=diff3 <branch>' '
+
+	git checkout -f master && git reset --hard && git clean -f &&
+
+	fill b d > two &&
+	git checkout --merge --conflict=diff3 simple &&
+
+	cat <<-EOF >expect &&
+	<<<<<<< simple
+	a
+	c
+	e
+	||||||| master
+	a
+	b
+	c
+	d
+	e
+	=======
+	b
+	d
+	>>>>>>> local
+	EOF
+	test_cmp two expect
+'
+
+test_expect_success 'checkout to detach HEAD (with advice declined)' '
+
+	git config advice.detachedHead false &&
 	git checkout -f renamer && git clean -f &&
 	git checkout renamer^ 2>messages &&
-	(cat >messages.expect <<EOF
-Note: moving to '\''renamer^'\'' which isn'\''t a local branch
-If you want to create a new branch from this checkout, you may do so
-(now or later) by using -b with the checkout command again. Example:
-  git checkout -b <new_branch_name>
-HEAD is now at 7329388... Initial A one, A two
-EOF
-) &&
-	test_cmp messages.expect messages &&
+	grep "HEAD is now at 7329388" messages &&
+	test 1 -eq $(wc -l <messages) &&
+	H=$(git rev-parse --verify HEAD) &&
+	M=$(git show-ref -s --verify refs/heads/master) &&
+	test "z$H" = "z$M" &&
+	if git symbolic-ref HEAD >/dev/null 2>&1
+	then
+		echo "OOPS, HEAD is still symbolic???"
+		false
+	else
+		: happy
+	fi
+'
+
+test_expect_success 'checkout to detach HEAD' '
+	git config advice.detachedHead true &&
+	git checkout -f renamer && git clean -f &&
+	git checkout renamer^ 2>messages &&
+	grep "HEAD is now at 7329388" messages &&
+	test 1 -lt $(wc -l <messages) &&
 	H=$(git rev-parse --verify HEAD) &&
 	M=$(git show-ref -s --verify refs/heads/master) &&
 	test "z$H" = "z$M" &&
@@ -469,7 +538,7 @@ test_expect_success 'checkout with --merge, in diff3 -m style' '
 	(
 		echo "<<<<<<< ours"
 		echo ourside
-		echo "|||||||"
+		echo "||||||| base"
 		echo original
 		echo "======="
 		echo theirside
@@ -513,7 +582,7 @@ test_expect_success 'checkout --conflict=diff3' '
 	(
 		echo "<<<<<<< ours"
 		echo ourside
-		echo "|||||||"
+		echo "||||||| base"
 		echo original
 		echo "======="
 		echo theirside
