@@ -2,6 +2,7 @@
 #include "parse-options.h"
 #include "cache.h"
 #include "commit.h"
+#include "color.h"
 
 static int parse_options_usage(const char * const *usagestr,
 			       const struct option *opts);
@@ -599,6 +600,21 @@ int parse_opt_approxidate_cb(const struct option *opt, const char *arg,
 	return 0;
 }
 
+int parse_opt_color_flag_cb(const struct option *opt, const char *arg,
+			    int unset)
+{
+	int value;
+
+	if (!arg)
+		arg = unset ? "never" : (const char *)opt->defval;
+	value = git_config_colorbool(NULL, arg, -1);
+	if (value < 0)
+		return opterror(opt,
+			"expects \"always\", \"auto\", or \"never\"", 0);
+	*(int *)opt->value = value;
+	return 0;
+}
+
 int parse_opt_verbosity_cb(const struct option *opt, const char *arg,
 			   int unset)
 {
@@ -642,4 +658,19 @@ int parse_opt_tertiary(const struct option *opt, const char *arg, int unset)
 	int *target = opt->value;
 	*target = unset ? 2 : 1;
 	return 0;
+}
+
+int parse_options_concat(struct option *dst, size_t dst_size, struct option *src)
+{
+	int i, j;
+
+	for (i = 0; i < dst_size; i++)
+		if (dst[i].type == OPTION_END)
+			break;
+	for (j = 0; i < dst_size; i++, j++) {
+		dst[i] = src[j];
+		if (src[j].type == OPTION_END)
+			return 0;
+	}
+	return -1;
 }

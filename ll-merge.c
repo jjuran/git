@@ -15,7 +15,7 @@ struct ll_merge_driver;
 typedef int (*ll_merge_fn)(const struct ll_merge_driver *,
 			   mmbuffer_t *result,
 			   const char *path,
-			   mmfile_t *orig,
+			   mmfile_t *orig, const char *orig_name,
 			   mmfile_t *src1, const char *name1,
 			   mmfile_t *src2, const char *name2,
 			   int flag,
@@ -36,7 +36,7 @@ struct ll_merge_driver {
 static int ll_binary_merge(const struct ll_merge_driver *drv_unused,
 			   mmbuffer_t *result,
 			   const char *path_unused,
-			   mmfile_t *orig,
+			   mmfile_t *orig, const char *orig_name,
 			   mmfile_t *src1, const char *name1,
 			   mmfile_t *src2, const char *name2,
 			   int flag, int marker_size)
@@ -57,14 +57,12 @@ static int ll_binary_merge(const struct ll_merge_driver *drv_unused,
 static int ll_xdl_merge(const struct ll_merge_driver *drv_unused,
 			mmbuffer_t *result,
 			const char *path,
-			mmfile_t *orig,
+			mmfile_t *orig, const char *orig_name,
 			mmfile_t *src1, const char *name1,
 			mmfile_t *src2, const char *name2,
 			int flag, int marker_size)
 {
 	xmparam_t xmp;
-	int style = 0;
-	int favor = (flag >> 1) & 03;
 
 	if (buffer_is_binary(orig->ptr, orig->size) ||
 	    buffer_is_binary(src1->ptr, src1->size) ||
@@ -73,69 +71,38 @@ static int ll_xdl_merge(const struct ll_merge_driver *drv_unused,
 			path, name1, name2);
 		return ll_binary_merge(drv_unused, result,
 				       path,
-				       orig, src1, name1,
+				       orig, orig_name,
+				       src1, name1,
 				       src2, name2,
 				       flag, marker_size);
 	}
 
 	memset(&xmp, 0, sizeof(xmp));
+	xmp.level = XDL_MERGE_ZEALOUS;
+	xmp.favor= (flag >> 1) & 03;
 	if (git_xmerge_style >= 0)
-		style = git_xmerge_style;
+		xmp.style = git_xmerge_style;
 	if (marker_size > 0)
 		xmp.marker_size = marker_size;
-	return xdl_merge(orig,
-			 src1, name1,
-			 src2, name2,
-			 &xmp, XDL_MERGE_FLAGS(XDL_MERGE_ZEALOUS, style, favor),
-			 result);
+	xmp.ancestor = orig_name;
+	xmp.file1 = name1;
+	xmp.file2 = name2;
+	return xdl_merge(orig, src1, src2, &xmp, result);
 }
 
 static int ll_union_merge(const struct ll_merge_driver *drv_unused,
 			  mmbuffer_t *result,
 			  const char *path_unused,
-			  mmfile_t *orig,
+			  mmfile_t *orig, const char *orig_name,
 			  mmfile_t *src1, const char *name1,
 			  mmfile_t *src2, const char *name2,
 			  int flag, int marker_size)
 {
-	char *src, *dst;
-	long size;
-	int status, saved_style;
-
-	/* We have to force the RCS "merge" style */
-	saved_style = git_xmerge_style;
-	git_xmerge_style = 0;
-	status = ll_xdl_merge(drv_unused, result, path_unused,
-			      orig, src1, NULL, src2, NULL,
-			      flag, marker_size);
-	git_xmerge_style = saved_style;
-	if (status <= 0)
-		return status;
-	size = result->size;
-	src = dst = result->ptr;
-	while (size) {
-		char ch;
-		if ((marker_size < size) &&
-		    (*src == '<' || *src == '=' || *src == '>')) {
-			int i;
-			ch = *src;
-			for (i = 0; i < marker_size; i++)
-				if (src[i] != ch)
-					goto not_a_marker;
-			if (src[marker_size] != '\n')
-				goto not_a_marker;
-			src += marker_size + 1;
-			size -= marker_size + 1;
-			continue;
-		}
-	not_a_marker:
-		do {
-			ch = *src++;
-			*dst++ = ch;
-			size--;
-		} while (ch != '\n' && size);
-	}
-	result->size = dst - result->ptr;
+	/* Use union favor */
+	flag = (flag & 1) | (XDL_MERGE_FAVOR_UNION << 1);
+	return ll_xdl_merge(drv_unused, result, path_unused,
+			    orig, NULL, src1, NULL, src2, NULL,
+			    flag, marker_size);
 	return 0;
 }
 
@@ -165,7 +132,7 @@ static void create_temp(mmfile_t *src, char *path)
 static int ll_ext_merge(const struct ll_merge_driver *fn,
 			mmbuffer_t *result,
 			const char *path,
-			mmfile_t *orig,
+			mmfile_t *orig, const char *orig_name,
 			mmfile_t *src1, const char *name1,
 			mmfile_t *src2, const char *name2,
 			int flag, int marker_size)
@@ -356,7 +323,7 @@ static int git_path_check_merge(const char *path, struct git_attr_check check[2]
 
 int ll_merge(mmbuffer_t *result_buf,
 	     const char *path,
-	     mmfile_t *ancestor,
+	     mmfile_t *ancestor, const char *ancestor_label,
 	     mmfile_t *ours, const char *our_label,
 	     mmfile_t *theirs, const char *their_label,
 	     int flag)
@@ -378,7 +345,7 @@ int ll_merge(mmbuffer_t *result_buf,
 	driver = find_ll_merge_driver(ll_driver_name);
 	if (virtual_ancestor && driver->recursive)
 		driver = find_ll_merge_driver(driver->recursive);
-	return driver->fn(driver, result_buf, path, ancestor,
+	return driver->fn(driver, result_buf, path, ancestor, ancestor_label,
 			  ours, our_label, theirs, their_label,
 			  flag, marker_size);
 }

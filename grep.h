@@ -59,6 +59,8 @@ struct grep_expr {
 struct grep_opt {
 	struct grep_pat *pattern_list;
 	struct grep_pat **pattern_tail;
+	struct grep_pat *header_list;
+	struct grep_pat **header_tail;
 	struct grep_expr *pattern_expression;
 	const char *prefix;
 	int prefix_length;
@@ -84,7 +86,13 @@ struct grep_opt {
 	int color;
 	int max_depth;
 	int funcname;
+	char color_context[COLOR_MAXLEN];
+	char color_filename[COLOR_MAXLEN];
+	char color_function[COLOR_MAXLEN];
+	char color_lineno[COLOR_MAXLEN];
 	char color_match[COLOR_MAXLEN];
+	char color_selected[COLOR_MAXLEN];
+	char color_sep[COLOR_MAXLEN];
 	int regflags;
 	unsigned pre_context;
 	unsigned post_context;

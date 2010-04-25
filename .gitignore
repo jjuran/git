@@ -156,6 +156,7 @@
 /git-core-*/?*
 /gitk-git/gitk-wish
 /gitweb/gitweb.cgi
+/gitweb/gitweb.min.*
 /test-chmtime
 /test-ctype
 /test-date
@@ -177,6 +178,7 @@
 *.exe
 *.[aos]
 *.py[co]
+.depend/
 *+
 /config.mak
 /autom4te.cache

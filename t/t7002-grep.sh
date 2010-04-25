@@ -353,7 +353,7 @@ test_expect_success 'log grep (4)' '
 '
 
 test_expect_success 'log grep (5)' '
-	git log --author=Thor -F --grep=Thu --pretty=tformat:%s >actual &&
+	git log --author=Thor -F --pretty=tformat:%s >actual &&
 	( echo third ; echo initial ) >expect &&
 	test_cmp expect actual
 '
@@ -361,6 +361,14 @@ test_expect_success 'log grep (5)' '
 test_expect_success 'log grep (6)' '
 	git log --author=-0700  --pretty=tformat:%s >actual &&
 	>expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --author implicitly uses all-match' '
+	# grep matches initial and second but not third
+	# author matches only initial and third
+	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
+	echo initial >expect &&
 	test_cmp expect actual
 '
 
@@ -432,6 +440,58 @@ EOF
 test_expect_success 'grep -Fi' '
 	git grep -Fi "CHAR *" >actual &&
 	test_cmp expected actual
+'
+
+test_expect_success 'outside of git repository' '
+	rm -fr non &&
+	mkdir -p non/git/sub &&
+	echo hello >non/git/file1 &&
+	echo world >non/git/sub/file2 &&
+	echo ".*o*" >non/git/.gitignore &&
+	{
+		echo file1:hello &&
+		echo sub/file2:world
+	} >non/expect.full &&
+	echo file2:world >non/expect.sub
+	(
+		GIT_CEILING_DIRECTORIES="$(pwd)/non/git" &&
+		export GIT_CEILING_DIRECTORIES &&
+		cd non/git &&
+		test_must_fail git grep o &&
+		git grep --no-index o >../actual.full &&
+		test_cmp ../expect.full ../actual.full
+		cd sub &&
+		test_must_fail git grep o &&
+		git grep --no-index o >../../actual.sub &&
+		test_cmp ../../expect.sub ../../actual.sub
+	)
+'
+
+test_expect_success 'inside git repository but with --no-index' '
+	rm -fr is &&
+	mkdir -p is/git/sub &&
+	echo hello >is/git/file1 &&
+	echo world >is/git/sub/file2 &&
+	echo ".*o*" >is/git/.gitignore &&
+	{
+		echo file1:hello &&
+		echo sub/file2:world
+	} >is/expect.full &&
+	: >is/expect.empty &&
+	echo file2:world >is/expect.sub
+	(
+		cd is/git &&
+		git init &&
+		test_must_fail git grep o >../actual.full &&
+		test_cmp ../expect.empty ../actual.full &&
+		git grep --no-index o >../actual.full &&
+		test_cmp ../expect.full ../actual.full &&
+		cd sub &&
+		test_must_fail git grep o >../../actual.sub &&
+		test_cmp ../../expect.empty ../../actual.sub &&
+		git grep --no-index o >../../actual.sub &&
+		test_cmp ../../expect.sub ../../actual.sub
+	)
 '
 
 test_expect_success 'setup double-dash tests' '

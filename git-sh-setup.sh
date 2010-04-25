@@ -107,6 +107,19 @@ git_editor() {
 	eval "$GIT_EDITOR" '"$@"'
 }
 
+git_pager() {
+	if test -t 1
+	then
+		GIT_PAGER=$(git var GIT_PAGER)
+	else
+		GIT_PAGER=cat
+	fi
+	: ${LESS=-FRSX}
+	export LESS
+
+	eval "$GIT_PAGER" '"$@"'
+}
+
 sane_grep () {
 	GREP_OPTIONS= LC_ALL=C grep "$@"
 }
@@ -128,7 +141,7 @@ cd_to_toplevel () {
 }
 
 require_work_tree () {
-	test $(git rev-parse --is-inside-work-tree) = true ||
+	test "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ||
 	die "fatal: $0 cannot be used without a working tree."
 }
 
@@ -157,6 +170,13 @@ get_author_ident_from_commit () {
 	encoding=$(git config i18n.commitencoding || echo UTF-8)
 	git show -s --pretty=raw --encoding="$encoding" "$1" -- |
 	LANG=C LC_ALL=C sed -ne "$pick_author_script"
+}
+
+# Clear repo-local GIT_* environment variables. Useful when switching to
+# another repository (e.g. when entering a submodule). See also the env
+# list in git_connect()
+clear_local_git_env() {
+	unset $(git rev-parse --local-env-vars)
 }
 
 # Make sure we are in a valid repository of a vintage we understand,

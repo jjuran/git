@@ -54,6 +54,10 @@ unset GIT_OBJECT_DIRECTORY
 unset GIT_CEILING_DIRECTORIES
 unset SHA1_FILE_DIRECTORIES
 unset SHA1_FILE_DIRECTORY
+unset GIT_NOTES_REF
+unset GIT_NOTES_DISPLAY_REF
+unset GIT_NOTES_REWRITE_REF
+unset GIT_NOTES_REWRITE_MODE
 GIT_MERGE_VERBOSITY=5
 export GIT_MERGE_VERBOSITY
 export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
@@ -64,6 +68,8 @@ GIT_TEST_CMP=${GIT_TEST_CMP:-diff -u}
 # Protect ourselves from common misconfiguration to export
 # CDPATH into the environment
 unset CDPATH
+
+unset GREP_OPTIONS
 
 case $(echo $GIT_TRACE |tr "[A-Z]" "[a-z]") in
 	1|2|true)

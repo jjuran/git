@@ -67,19 +67,21 @@ static int child_notifier = -1;
 
 static void notify_parent(void)
 {
-	write(child_notifier, "", 1);
+	ssize_t unused;
+	unused = write(child_notifier, "", 1);
 }
 
 static NORETURN void die_child(const char *err, va_list params)
 {
 	char msg[4096];
+	ssize_t unused;
 	int len = vsnprintf(msg, sizeof(msg), err, params);
 	if (len > sizeof(msg))
 		len = sizeof(msg);
 
-	write(child_err, "fatal: ", 7);
-	write(child_err, msg, len);
-	write(child_err, "\n", 1);
+	unused = write(child_err, "fatal: ", 7);
+	unused = write(child_err, msg, len);
+	unused = write(child_err, "\n", 1);
 	exit(128);
 }
 
@@ -233,6 +235,9 @@ fail_pipe:
 		else if (need_err) {
 			dup2(fderr[1], 2);
 			close_pair(fderr);
+		} else if (cmd->err > 1) {
+			dup2(cmd->err, 2);
+			close(cmd->err);
 		}
 
 		if (cmd->no_stdout)
@@ -325,6 +330,8 @@ fail_pipe:
 		fherr = open("/dev/null", O_RDWR);
 	else if (need_err)
 		fherr = dup(fderr[1]);
+	else if (cmd->err > 2)
+		fherr = dup(cmd->err);
 
 	if (cmd->no_stdout)
 		fhout = open("/dev/null", O_RDWR);
@@ -335,8 +342,6 @@ fail_pipe:
 	else if (cmd->out > 1)
 		fhout = dup(cmd->out);
 
-	if (cmd->dir)
-		die("chdir in start_command() not implemented");
 	if (cmd->env)
 		env = make_augmented_environ(cmd->env);
 
@@ -346,7 +351,7 @@ fail_pipe:
 		cmd->argv = prepare_shell_cmd(cmd->argv);
 	}
 
-	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, env,
+	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, env, cmd->dir,
 				  fhin, fhout, fherr);
 	failed_errno = errno;
 	if (cmd->pid < 0 && (!cmd->silent_exec_failure || errno != ENOENT))
@@ -394,6 +399,8 @@ fail_pipe:
 
 	if (need_err)
 		close(fderr[1]);
+	else if (cmd->err)
+		close(cmd->err);
 
 	return 0;
 }
@@ -444,17 +451,51 @@ int run_command_v_opt_cd_env(const char **argv, int opt, const char *dir, const 
 static unsigned __stdcall run_thread(void *data)
 {
 	struct async *async = data;
-	return async->proc(async->fd_for_proc, async->data);
+	return async->proc(async->proc_in, async->proc_out, async->data);
 }
 #endif
 
 int start_async(struct async *async)
 {
-	int pipe_out[2];
+	int need_in, need_out;
+	int fdin[2], fdout[2];
+	int proc_in, proc_out;
 
-	if (pipe(pipe_out) < 0)
-		return error("cannot create pipe: %s", strerror(errno));
-	async->out = pipe_out[0];
+	need_in = async->in < 0;
+	if (need_in) {
+		if (pipe(fdin) < 0) {
+			if (async->out > 0)
+				close(async->out);
+			return error("cannot create pipe: %s", strerror(errno));
+		}
+		async->in = fdin[1];
+	}
+
+	need_out = async->out < 0;
+	if (need_out) {
+		if (pipe(fdout) < 0) {
+			if (need_in)
+				close_pair(fdin);
+			else if (async->in)
+				close(async->in);
+			return error("cannot create pipe: %s", strerror(errno));
+		}
+		async->out = fdout[0];
+	}
+
+	if (need_in)
+		proc_in = fdin[0];
+	else if (async->in)
+		proc_in = async->in;
+	else
+		proc_in = -1;
+
+	if (need_out)
+		proc_out = fdout[1];
+	else if (async->out)
+		proc_out = async->out;
+	else
+		proc_out = -1;
 
 #ifndef WIN32
 	/* Flush stdio before fork() to avoid cloning buffers */
@@ -463,24 +504,47 @@ int start_async(struct async *async)
 	async->pid = fork();
 	if (async->pid < 0) {
 		error("fork (async) failed: %s", strerror(errno));
-		close_pair(pipe_out);
-		return -1;
+		goto error;
 	}
 	if (!async->pid) {
-		close(pipe_out[0]);
-		exit(!!async->proc(pipe_out[1], async->data));
+		if (need_in)
+			close(fdin[1]);
+		if (need_out)
+			close(fdout[0]);
+		exit(!!async->proc(proc_in, proc_out, async->data));
 	}
-	close(pipe_out[1]);
+
+	if (need_in)
+		close(fdin[0]);
+	else if (async->in)
+		close(async->in);
+
+	if (need_out)
+		close(fdout[1]);
+	else if (async->out)
+		close(async->out);
 #else
-	async->fd_for_proc = pipe_out[1];
+	async->proc_in = proc_in;
+	async->proc_out = proc_out;
 	async->tid = (HANDLE) _beginthreadex(NULL, 0, run_thread, async, 0, NULL);
 	if (!async->tid) {
 		error("cannot create thread: %s", strerror(errno));
-		close_pair(pipe_out);
-		return -1;
+		goto error;
 	}
 #endif
 	return 0;
+
+error:
+	if (need_in)
+		close_pair(fdin);
+	else if (async->in)
+		close(async->in);
+
+	if (need_out)
+		close_pair(fdout);
+	else if (async->out)
+		close(async->out);
+	return -1;
 }
 
 int finish_async(struct async *async)

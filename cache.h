@@ -387,6 +387,18 @@ static inline enum object_type object_type(unsigned int mode)
 #define ATTRIBUTE_MACRO_PREFIX "[attr]"
 #define GIT_NOTES_REF_ENVIRONMENT "GIT_NOTES_REF"
 #define GIT_NOTES_DEFAULT_REF "refs/notes/commits"
+#define GIT_NOTES_DISPLAY_REF_ENVIRONMENT "GIT_NOTES_DISPLAY_REF"
+#define GIT_NOTES_REWRITE_REF_ENVIRONMENT "GIT_NOTES_REWRITE_REF"
+#define GIT_NOTES_REWRITE_MODE_ENVIRONMENT "GIT_NOTES_REWRITE_MODE"
+
+/*
+ * Repository-local GIT_* environment variables
+ * The array is NULL-terminated to simplify its usage in contexts such
+ * environment creation or simple walk of the list.
+ * The number of non-NULL entries is available as a macro.
+ */
+#define LOCAL_REPO_ENV_SIZE 8
+extern const char *const local_repo_env[LOCAL_REPO_ENV_SIZE + 1];
 
 extern int is_bare_repository_cfg;
 extern int is_bare_repository(void);
@@ -641,6 +653,10 @@ int git_mkstemp(char *path, size_t n, const char *template);
 
 int git_mkstemps(char *path, size_t n, const char *template, int suffix_len);
 
+/* set default permissions by passing mode arguments to open(2) */
+int git_mkstemps_mode(char *pattern, int suffix_len, int mode);
+int git_mkstemp_mode(char *pattern, int mode);
+
 /*
  * NOTE NOTE NOTE!!
  *
@@ -675,6 +691,7 @@ int normalize_path_copy(char *dst, const char *src);
 int longest_ancestor_length(const char *path, const char *prefix_list);
 char *strip_path_suffix(const char *path, const char *suffix);
 int daemon_avoid_alias(const char *path);
+int offset_1st_component(const char *path);
 
 /* Read and unpack a sha1 file into memory, write memory to a sha1 file */
 extern int sha1_object_info(const unsigned char *, unsigned long *);
@@ -684,7 +701,7 @@ static inline void *read_sha1_file(const unsigned char *sha1, enum object_type *
 	return read_sha1_file_repl(sha1, type, size, NULL);
 }
 extern int hash_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *sha1);
-extern int write_sha1_file(void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
+extern int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
 extern int pretend_sha1_file(void *, unsigned long, enum object_type, unsigned char *);
 extern int force_object_loose(const unsigned char *sha1, time_t mtime);
 
@@ -775,7 +792,7 @@ extern const char *git_committer_info(int);
 extern const char *fmt_ident(const char *name, const char *email, const char *date_str, int);
 extern const char *fmt_name(const char *name, const char *email);
 extern const char *git_editor(void);
-extern const char *git_pager(void);
+extern const char *git_pager(int stdout_is_tty);
 
 struct checkout {
 	const char *base_dir;
@@ -877,6 +894,7 @@ struct ref {
 extern struct ref *find_ref_by_name(const struct ref *list, const char *name);
 
 #define CONNECT_VERBOSE       (1u << 0)
+extern char *git_getpass(const char *prompt);
 extern struct child_process *git_connect(int fd[2], const char *url, const char *prog, int flags);
 extern int finish_connect(struct child_process *conn);
 extern int path_match(const char *path, int nr, char **match);
@@ -1039,5 +1057,8 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix);
 
 char *alias_lookup(const char *alias);
 int split_cmdline(char *cmdline, const char ***argv);
+
+/* builtin/merge.c */
+int checkout_fast_forward(const unsigned char *from, const unsigned char *to);
 
 #endif /* CACHE_H */

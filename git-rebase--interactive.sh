@@ -20,6 +20,7 @@ v,verbose          display a diffstat of what changed upstream
 onto=              rebase onto given branch instead of upstream
 p,preserve-merges  try to recreate merges instead of ignoring them
 s,strategy=        use the given merge strategy
+no-ff              cherry-pick all commits, even if unchanged
 m,merge            always used (no-op)
 i,interactive      always used (no-op)
  Actions:
@@ -96,6 +97,13 @@ AUTHOR_SCRIPT="$DOTEST"/author-script
 # command is processed, this file is deleted.
 AMEND="$DOTEST"/amend
 
+# For the post-rewrite hook, we make a list of rewritten commits and
+# their new sha1s.  The rewritten-pending list keeps the sha1s of
+# commits that have been processed, but not committed yet,
+# e.g. because they are waiting for a 'squash' command.
+REWRITTEN_LIST="$DOTEST"/rewritten-list
+REWRITTEN_PENDING="$DOTEST"/rewritten-pending
+
 PRESERVE_MERGES=
 STRATEGY=
 ONTO=
@@ -103,6 +111,7 @@ VERBOSE=
 OK_TO_SKIP_PRE_REBASE=
 REBASE_ROOT=
 AUTOSQUASH=
+NEVER_FF=
 
 GIT_CHERRY_PICK_HELP="  After resolving the conflicts,
 mark the corrected paths with 'git add <paths>', and
@@ -198,6 +207,7 @@ make_patch () {
 }
 
 die_with_patch () {
+	echo "$1" > "$DOTEST"/stopped-sha
 	make_patch "$1"
 	git rerere
 	die "$2"
@@ -222,8 +232,9 @@ do_with_author () {
 }
 
 pick_one () {
-	no_ff=
-	case "$1" in -n) sha1=$2; no_ff=t ;; *) sha1=$1 ;; esac
+	ff=--ff
+	case "$1" in -n) sha1=$2; ff= ;; *) sha1=$1 ;; esac
+	case "$NEVER_FF" in '') ;; ?*) ff= ;; esac
 	output git rev-parse --verify $sha1 || die "Invalid commit name: $sha1"
 	test -d "$REWRITTEN" &&
 		pick_one_preserving_merges "$@" && return
@@ -232,16 +243,7 @@ pick_one () {
 		output git cherry-pick "$@"
 		return
 	fi
-	parent_sha1=$(git rev-parse --verify $sha1^) ||
-		die "Could not get the parent of $sha1"
-	current_sha1=$(git rev-parse --verify HEAD)
-	if test -z "$no_ff" && test "$current_sha1" = "$parent_sha1"
-	then
-		output git reset --hard $sha1
-		output warn Fast-forward to $(git rev-parse --short $sha1)
-	else
-		output git cherry-pick "$@"
-	fi
+	output git cherry-pick $ff "$@"
 }
 
 pick_one_preserving_merges () {
@@ -348,6 +350,7 @@ pick_one_preserving_merges () {
 				printf "%s\n" "$msg" > "$GIT_DIR"/MERGE_MSG
 				die_with_patch $sha1 "Error redoing merge $sha1"
 			fi
+			echo "$sha1 $(git rev-parse HEAD^0)" >> "$REWRITTEN_LIST"
 			;;
 		*)
 			output git cherry-pick "$@" ||
@@ -425,6 +428,26 @@ die_failed_squash() {
 	die_with_patch $1 ""
 }
 
+flush_rewritten_pending() {
+	test -s "$REWRITTEN_PENDING" || return
+	newsha1="$(git rev-parse HEAD^0)"
+	sed "s/$/ $newsha1/" < "$REWRITTEN_PENDING" >> "$REWRITTEN_LIST"
+	rm -f "$REWRITTEN_PENDING"
+}
+
+record_in_rewritten() {
+	oldsha1="$(git rev-parse $1)"
+	echo "$oldsha1" >> "$REWRITTEN_PENDING"
+
+	case "$(peek_next_command)" in
+	    squash|s|fixup|f)
+		;;
+	    *)
+		flush_rewritten_pending
+		;;
+	esac
+}
+
 do_next () {
 	rm -f "$MSG" "$AUTHOR_SCRIPT" "$AMEND" || exit
 	read command sha1 rest < "$TODO"
@@ -438,6 +461,7 @@ do_next () {
 		mark_action_done
 		pick_one $sha1 ||
 			die_with_patch $sha1 "Could not apply $sha1... $rest"
+		record_in_rewritten $sha1
 		;;
 	reword|r)
 		comment_for_reflog reword
@@ -445,7 +469,8 @@ do_next () {
 		mark_action_done
 		pick_one $sha1 ||
 			die_with_patch $sha1 "Could not apply $sha1... $rest"
-		git commit --amend
+		git commit --amend --no-post-rewrite
+		record_in_rewritten $sha1
 		;;
 	edit|e)
 		comment_for_reflog edit
@@ -453,6 +478,7 @@ do_next () {
 		mark_action_done
 		pick_one $sha1 ||
 			die_with_patch $sha1 "Could not apply $sha1... $rest"
+		echo "$sha1" > "$DOTEST"/stopped-sha
 		make_patch $sha1
 		git rev-parse --verify HEAD > "$AMEND"
 		warn "Stopped at $sha1... $rest"
@@ -509,6 +535,7 @@ do_next () {
 			rm -f "$SQUASH_MSG" "$FIXUP_MSG"
 			;;
 		esac
+		record_in_rewritten $sha1
 		;;
 	*)
 		warn "Unknown command: $command $sha1 $rest"
@@ -537,6 +564,16 @@ do_next () {
 		test ! -f "$DOTEST"/verbose ||
 			git diff-tree --stat $(cat "$DOTEST"/head)..HEAD
 	} &&
+	{
+		test -s "$REWRITTEN_LIST" &&
+		git notes copy --for-rewrite=rebase < "$REWRITTEN_LIST" ||
+		true # we don't care if this copying failed
+	} &&
+	if test -x "$GIT_DIR"/hooks/post-rewrite &&
+		test -s "$REWRITTEN_LIST"; then
+		"$GIT_DIR"/hooks/post-rewrite rebase < "$REWRITTEN_LIST"
+		true # we don't care if this hook failed
+	fi &&
 	rm -rf "$DOTEST" &&
 	git gc --auto &&
 	warn "Successfully rebased and updated $HEADNAME."
@@ -571,7 +608,12 @@ skip_unnecessary_picks () {
 		esac
 		echo "$command${sha1:+ }$sha1${rest:+ }$rest" >&$fd
 	done <"$TODO" >"$TODO.new" 3>>"$DONE" &&
-	mv -f "$TODO".new "$TODO" ||
+	mv -f "$TODO".new "$TODO" &&
+	case "$(peek_next_command)" in
+	squash|s|fixup|f)
+		record_in_rewritten "$ONTO"
+		;;
+	esac ||
 	die "Could not skip unnecessary pick commands"
 }
 
@@ -687,6 +729,8 @@ first and then run 'git rebase --continue' again."
 			}
 		fi
 
+		record_in_rewritten "$(cat "$DOTEST"/stopped-sha)"
+
 		require_clean_work_tree
 		do_rest
 		;;
@@ -742,6 +786,9 @@ first and then run 'git rebase --continue' again."
 	-i)
 		# yeah, we know
 		;;
+	--no-ff)
+		NEVER_FF=t
+		;;
 	--root)
 		REBASE_ROOT=t
 		;;
@@ -783,8 +830,6 @@ first and then run 'git rebase --continue' again."
 
 		if test ! -z "$1"
 		then
-			output git show-ref --verify --quiet "refs/heads/$1" ||
-				die "Invalid branchname: $1"
 			output git checkout "$1" ||
 				die "Could not checkout $1"
 		fi
@@ -927,7 +972,7 @@ EOF
 		has_action "$TODO" ||
 			die_abort "Nothing to do"
 
-		test -d "$REWRITTEN" || skip_unnecessary_picks
+		test -d "$REWRITTEN" || test -n "$NEVER_FF" || skip_unnecessary_picks
 
 		git update-ref ORIG_HEAD $HEAD
 		output git checkout $ONTO && do_rest
