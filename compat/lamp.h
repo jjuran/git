@@ -11,7 +11,7 @@
 #undef TYPE_BOOL
 #endif
 
-#define GIT_VERSION "1.7.1"
+#define GIT_VERSION "1.7.1+dlmalloc"
 
 // Lamp has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)
