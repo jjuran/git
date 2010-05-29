@@ -11,6 +11,9 @@
 #undef TYPE_BOOL
 #endif
 
+// Include <ctype.h> early so git's macros don't interfere with it later
+#include <ctype.h>
+
 #define GIT_VERSION "1.7.1+dlmalloc+poll"
 
 // Lamp has small thread stacks, and 68K has a hard 32K local data limit.
