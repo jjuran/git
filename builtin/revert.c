@@ -112,6 +112,8 @@ static int get_message(const char *raw_message, struct commit_message *out)
 	if ((out->reencoded_message = reencode_string(raw_message,
 					git_commit_encoding, encoding)))
 		out->message = out->reencoded_message;
+	else
+		out->message = raw_message;
 
 	abbrev = find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV);
 	abbrev_len = strlen(abbrev);
