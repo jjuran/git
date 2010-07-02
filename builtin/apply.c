@@ -1864,13 +1864,13 @@ static int match_fragment(struct image *img,
 		if (match_end && (preimage->nr + try_lno != img->nr))
 			return 0;
 	} else if (ws_error_action == correct_ws_error &&
-		   (ws_rule & WS_BLANK_AT_EOF) && match_end) {
+		   (ws_rule & WS_BLANK_AT_EOF)) {
 		/*
-		 * This hunk that matches at the end extends beyond
-		 * the end of img, and we are removing blank lines
-		 * at the end of the file.  This many lines from the
-		 * beginning of the preimage must match with img, and
-		 * the remainder of the preimage must be blank.
+		 * This hunk extends beyond the end of img, and we are
+		 * removing blank lines at the end of the file.  This
+		 * many lines from the beginning of the preimage must
+		 * match with img, and the remainder of the preimage
+		 * must be blank.
 		 */
 		preimage_limit = img->nr - try_lno;
 	} else {
@@ -3141,11 +3141,7 @@ static void remove_file(struct patch *patch, int rmdir_empty)
 			die("unable to remove %s from index", patch->old_name);
 	}
 	if (!cached) {
-		if (S_ISGITLINK(patch->old_mode)) {
-			if (rmdir(patch->old_name))
-				warning("unable to remove submodule %s",
-					patch->old_name);
-		} else if (!unlink_or_warn(patch->old_name) && rmdir_empty) {
+		if (!remove_or_warn(patch->old_mode, patch->old_name) && rmdir_empty) {
 			remove_path(patch->old_name);
 		}
 	}

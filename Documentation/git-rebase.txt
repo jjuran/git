@@ -206,6 +206,10 @@ OPTIONS
 	--onto option is not specified, the starting point is
 	<upstream>.  May be any valid commit, and not just an
 	existing branch name.
++
+As a special case, you may use "A...B" as a shortcut for the
+merge base of A and B if there is exactly one merge base. You can
+leave out at most one of A and B, in which case it defaults to HEAD.
 
 <upstream>::
 	Upstream branch to compare against.  May be any valid commit,
@@ -295,6 +299,7 @@ link:howto/revert-a-faulty-merge.txt[revert-a-faulty-merge How-To] for details).
 --ignore-date::
 	These flags are passed to 'git am' to easily change the dates
 	of the rebased commits (see linkgit:git-am[1]).
+	Incompatible with the --interactive option.
 
 -i::
 --interactive::
@@ -305,6 +310,11 @@ link:howto/revert-a-faulty-merge.txt[revert-a-faulty-merge How-To] for details).
 -p::
 --preserve-merges::
 	Instead of ignoring merges, try to recreate them.
++
+This uses the `--interactive` machinery internally, but combining it
+with the `--interactive` option explicitly is generally not a good
+idea unless you know what you are doing (see BUGS below).
+
 
 --root::
 	Rebase all commits reachable from <branch>, instead of
@@ -605,6 +615,28 @@ The ripple effect of a "hard case" recovery is especially bad:
 'everyone' downstream from 'topic' will now have to perform a "hard
 case" recovery too!
 
+
+BUGS
+----
+The todo list presented by `--preserve-merges --interactive` does not
+represent the topology of the revision graph.  Editing commits and
+rewording their commit messages should work fine, but attempts to
+reorder commits tend to produce counterintuitive results.
+
+For example, an attempt to rearrange
+------------
+1 --- 2 --- 3 --- 4 --- 5
+------------
+to
+------------
+1 --- 2 --- 4 --- 3 --- 5
+------------
+by moving the "pick 4" line will result in the following history:
+------------
+	3
+       /
+1 --- 2 --- 4 --- 5
+------------
 
 Authors
 ------
