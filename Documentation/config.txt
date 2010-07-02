@@ -518,18 +518,12 @@ check that makes sure that existing object files will not get overwritten.
 
 core.notesRef::
 	When showing commit messages, also show notes which are stored in
-	the given ref.  This ref is expected to contain files named
-	after the full SHA-1 of the commit they annotate.  The ref
-	must be fully qualified.
+	the given ref.  The ref must be fully qualified.  If the given
+	ref does not exist, it is not an error but means that no
+	notes should be printed.
 +
-If such a file exists in the given ref, the referenced blob is read, and
-appended to the commit message, separated by a "Notes (<refname>):"
-line (shortened to "Notes:" in the case of "refs/notes/commits").  If the
-given ref itself does not exist, it is not an error, but means that no
-notes should be printed.
-+
-This setting defaults to "refs/notes/commits", and can be overridden by
-the `GIT_NOTES_REF` environment variable.
+This setting defaults to "refs/notes/commits", and it can be overridden by
+the 'GIT_NOTES_REF' environment variable.  See linkgit:git-notes[1].
 
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See section "Sparse checkout" in
@@ -1359,10 +1353,6 @@ notes.rewrite.<command>::
 	automatically copies your notes from the original to the
 	rewritten commit.  Defaults to `true`, but see
 	"notes.rewriteRef" below.
-+
-This setting can be overridden with the `GIT_NOTES_REWRITE_REF`
-environment variable, which must be a colon separated list of refs or
-globs.
 
 notes.rewriteMode::
 	When copying notes during a rewrite (see the
@@ -1382,6 +1372,10 @@ notes.rewriteRef::
 +
 Does not have a default value; you must configure this variable to
 enable note rewriting.
++
+This setting can be overridden with the `GIT_NOTES_REWRITE_REF`
+environment variable, which must be a colon separated list of refs or
+globs.
 
 pack.window::
 	The size of the window used by linkgit:git-pack-objects[1] when no
@@ -1516,7 +1510,7 @@ receive.denyDeletes::
 	the ref. Use this to prevent such a ref deletion via a push.
 
 receive.denyCurrentBranch::
-	If set to true or "refuse", receive-pack will deny a ref update
+	If set to true or "refuse", git-receive-pack will deny a ref update
 	to the currently checked out branch of a non-bare repository.
 	Such a push is potentially dangerous because it brings the HEAD
 	out of sync with the index and working tree. If set to "warn",
@@ -1642,6 +1636,7 @@ sendemail.smtppass::
 sendemail.suppresscc::
 sendemail.suppressfrom::
 sendemail.to::
+sendemail.smtpdomain::
 sendemail.smtpserver::
 sendemail.smtpserverport::
 sendemail.smtpuser::
@@ -1680,6 +1675,13 @@ status.showUntrackedFiles::
 If this variable is not specified, it defaults to 'normal'.
 This variable can be overridden with the -u|--untracked-files option
 of linkgit:git-status[1] and linkgit:git-commit[1].
+
+status.submodulesummary::
+	Defaults to false.
+	If this is set to a non zero number or true (identical to -1 or an
+	unlimited number), the submodule summary will be enabled and a
+	summary of commits for modified submodules will be shown (see
+	--summary-limit option of linkgit:git-submodule[1]).
 
 tar.umask::
 	This variable can be used to restrict the permission bits of

@@ -2,6 +2,18 @@
 #
 # Copyright (c) 2005 Junio C Hamano
 #
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
 
 # if --tee was passed, write the output not only to the terminal, but
 # additionally to the file test-results/$BASENAME.out, too.
@@ -354,8 +366,10 @@ test_debug () {
 }
 
 test_run_ () {
+	test_cleanup=:
 	eval >&3 2>&4 "$1"
-	eval_ret="$?"
+	eval_ret=$?
+	eval >&3 2>&4 "$test_cleanup"
 	return 0
 }
 
@@ -516,6 +530,22 @@ test_must_fail () {
 	test $? -gt 0 -a $? -le 129 -o $? -gt 192
 }
 
+# Similar to test_must_fail, but tolerates success, too.  This is
+# meant to be used in contexts like:
+#
+#	test_expect_success 'some command works without configuration' '
+#		test_might_fail git config --unset all.configuration &&
+#		do something
+#	'
+#
+# Writing "git config --unset all.configuration || :" would be wrong,
+# because we want to notice if it fails due to segv.
+
+test_might_fail () {
+	"$@"
+	test $? -ge 0 -a $? -le 129 -o $? -gt 192
+}
+
 # test_cmp is a helper function to compare actual and expected output.
 # You can use it like:
 #
@@ -531,6 +561,31 @@ test_must_fail () {
 
 test_cmp() {
 	$GIT_TEST_CMP "$@"
+}
+
+# This function can be used to schedule some commands to be run
+# unconditionally at the end of the test to restore sanity:
+#
+#	test_expect_success 'test core.capslock' '
+#		git config core.capslock true &&
+#		test_when_finished "git config --unset core.capslock" &&
+#		hello world
+#	'
+#
+# That would be roughly equivalent to
+#
+#	test_expect_success 'test core.capslock' '
+#		git config core.capslock true &&
+#		hello world
+#		git config --unset core.capslock
+#	'
+#
+# except that the greeting and config --unset must both succeed for
+# the test to pass.
+
+test_when_finished () {
+	test_cleanup="{ $*
+		} && (exit \"\$eval_ret\"); eval_ret=\$?; $test_cleanup"
 }
 
 # Most tests can use the created repository, but some may need to create more.

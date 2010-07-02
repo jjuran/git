@@ -48,6 +48,11 @@ static const char implicit_ident_advice[] =
 "\n"
 "    git commit --amend --author='Your Name <you@example.com>'\n";
 
+static const char empty_amend_advice[] =
+"You asked to amend the most recent commit, but doing so would make\n"
+"it empty. You can repeat your command with --allow-empty, or you can\n"
+"remove the commit entirely with \"git reset HEAD^\".\n";
+
 static unsigned char head_sha1[20];
 
 static char *use_message_buffer;
@@ -455,15 +460,21 @@ static void determine_author_info(void)
 		if (!a)
 			die("invalid commit: %s", use_message);
 
-		lb = strstr(a + 8, " <");
-		rb = strstr(a + 8, "> ");
-		eol = strchr(a + 8, '\n');
-		if (!lb || !rb || !eol)
+		lb = strchrnul(a + strlen("\nauthor "), '<');
+		rb = strchrnul(lb, '>');
+		eol = strchrnul(rb, '\n');
+		if (!*lb || !*rb || !*eol)
 			die("invalid commit: %s", use_message);
 
-		name = xstrndup(a + 8, lb - (a + 8));
-		email = xstrndup(lb + 2, rb - (lb + 2));
-		date = xstrndup(rb + 2, eol - (rb + 2));
+		if (lb == a + strlen("\nauthor "))
+			/* \nauthor <foo@example.com> */
+			name = xcalloc(1, 1);
+		else
+			name = xmemdupz(a + strlen("\nauthor "),
+					(lb - strlen(" ") -
+					 (a + strlen("\nauthor "))));
+		email = xmemdupz(lb + strlen("<"), rb - (lb + strlen("<")));
+		date = xmemdupz(rb + strlen("> "), eol - (rb + strlen("> ")));
 	}
 
 	if (force_author) {
@@ -693,6 +704,8 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	if (!commitable && !in_merge && !allow_empty &&
 	    !(amend && is_a_merge(head_sha1))) {
 		run_status(stdout, index_file, prefix, 0, s);
+		if (amend)
+			fputs(empty_amend_advice, stderr);
 		return 0;
 	}
 
@@ -1017,6 +1030,7 @@ static int git_status_config(const char *k, const char *v, void *cb)
 int cmd_status(int argc, const char **argv, const char *prefix)
 {
 	struct wt_status s;
+	int fd;
 	unsigned char sha1[20];
 	static struct option builtin_status_options[] = {
 		OPT__VERBOSE(&verbose),
@@ -1050,6 +1064,14 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 
 	read_cache_preload(s.pathspec);
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, s.pathspec, NULL, NULL);
+
+	fd = hold_locked_index(&index_lock, 0);
+	if (0 <= fd) {
+		if (!write_cache(fd, active_cache, active_nr))
+			commit_locked_index(&index_lock);
+		rollback_lock_file(&index_lock);
+	}
+
 	s.is_initial = get_sha1(s.reference, sha1) ? 1 : 0;
 	s.in_merge = in_merge;
 	wt_status_collect(&s);
@@ -1138,13 +1160,11 @@ static void print_summary(const char *prefix, const unsigned char *sha1)
 		initial_commit ? " (root-commit)" : "");
 
 	if (!log_tree_commit(&rev, commit)) {
-		struct pretty_print_context ctx = {0};
-		struct strbuf buf = STRBUF_INIT;
-		ctx.date_mode = DATE_NORMAL;
-		format_commit_message(commit, format.buf + 7, &buf, &ctx);
-		printf("%s\n", buf.buf);
-		strbuf_release(&buf);
+		rev.always_show_header = 1;
+		rev.use_terminator = 1;
+		log_tree_commit(&rev, commit);
 	}
+
 	strbuf_release(&format);
 }
 
@@ -1232,13 +1252,16 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 	}
 
 	/* Determine parents */
+	reflog_msg = getenv("GIT_REFLOG_ACTION");
 	if (initial_commit) {
-		reflog_msg = "commit (initial)";
+		if (!reflog_msg)
+			reflog_msg = "commit (initial)";
 	} else if (amend) {
 		struct commit_list *c;
 		struct commit *commit;
 
-		reflog_msg = "commit (amend)";
+		if (!reflog_msg)
+			reflog_msg = "commit (amend)";
 		commit = lookup_commit(head_sha1);
 		if (!commit || parse_commit(commit))
 			die("could not parse HEAD commit");
@@ -1249,7 +1272,8 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		struct strbuf m = STRBUF_INIT;
 		FILE *fp;
 
-		reflog_msg = "commit (merge)";
+		if (!reflog_msg)
+			reflog_msg = "commit (merge)";
 		pptr = &commit_list_insert(lookup_commit(head_sha1), pptr)->next;
 		fp = fopen(git_path("MERGE_HEAD"), "r");
 		if (fp == NULL)
@@ -1272,7 +1296,8 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		if (allow_fast_forward)
 			parents = reduce_heads(parents);
 	} else {
-		reflog_msg = "commit";
+		if (!reflog_msg)
+			reflog_msg = "commit";
 		pptr = &commit_list_insert(lookup_commit(head_sha1), pptr)->next;
 	}
 

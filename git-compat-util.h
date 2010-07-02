@@ -56,7 +56,7 @@
 # define _XOPEN_SOURCE 500
 # endif
 #elif !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__USLC__) && \
-      !defined(_M_UNIX) && !defined(sgi) && !defined(__DragonFly__)
+      !defined(_M_UNIX) && !defined(__sgi) && !defined(__DragonFly__)
 #define _XOPEN_SOURCE 600 /* glibc2 and AIX 5.3L need 500, OpenBSD needs 600 for S_ISLNK() */
 #define _XOPEN_SOURCE_EXTENDED 1 /* AIX 5.3L needs this */
 #endif
@@ -162,6 +162,13 @@ extern char *gitbasename(char *);
 
 #ifndef PATH_SEP
 #define PATH_SEP ':'
+#endif
+
+#ifdef HAVE_PATHS_H
+#include <paths.h>
+#endif
+#ifndef _PATH_DEFPATH
+#define _PATH_DEFPATH "/usr/local/bin:/usr/bin:/bin"
 #endif
 
 #ifndef STRIP_EXTENSION
@@ -356,6 +363,8 @@ static inline void *gitmempcpy(void *dest, const void *src, size_t n)
 
 extern void release_pack_memory(size_t, int);
 
+extern void set_try_to_free_routine(void (*routine)(size_t));
+
 extern char *xstrdup(const char *str);
 extern void *xmalloc(size_t size);
 extern void *xmallocz(size_t size);
@@ -479,5 +488,14 @@ void git_qsort(void *base, size_t nmemb, size_t size,
  * Always returns the return value of unlink(2).
  */
 int unlink_or_warn(const char *path);
+/*
+ * Likewise for rmdir(2).
+ */
+int rmdir_or_warn(const char *path);
+/*
+ * Calls the correct function out of {unlink,rmdir}_or_warn based on
+ * the supplied file mode.
+ */
+int remove_or_warn(unsigned int mode, const char *path);
 
 #endif

@@ -67,16 +67,8 @@ static void unlink_entry(struct cache_entry *ce)
 {
 	if (has_symlink_or_noent_leading_path(ce->name, ce_namelen(ce)))
 		return;
-	if (S_ISGITLINK(ce->ce_mode)) {
-		if (rmdir(ce->name)) {
-			warning("unable to rmdir %s: %s",
-				ce->name, strerror(errno));
-			return;
-		}
-	}
-	else
-		if (unlink_or_warn(ce->name))
-			return;
+	if (remove_or_warn(ce->ce_mode, ce->name))
+		return;
 	schedule_dir_for_removal(ce->name, ce_namelen(ce));
 }
 
@@ -528,9 +520,17 @@ static int find_cache_pos(struct traverse_info *info,
 		const char *ce_name, *ce_slash;
 		int cmp, ce_len;
 
-		if (!ce_in_traverse_path(ce, info))
+		if (ce->ce_flags & CE_UNPACKED) {
+			/*
+			 * cache_bottom entry is already unpacked, so
+			 * we can never match it; don't check it
+			 * again.
+			 */
+			if (pos == o->cache_bottom)
+				++o->cache_bottom;
 			continue;
-		if (ce->ce_flags & CE_UNPACKED)
+		}
+		if (!ce_in_traverse_path(ce, info))
 			continue;
 		ce_name = ce->name + pfxlen;
 		ce_slash = strchr(ce_name, '/');
@@ -862,7 +862,7 @@ static int verify_uptodate_1(struct cache_entry *ce,
 {
 	struct stat st;
 
-	if (o->index_only || (!ce_skip_worktree(ce) && (o->reset || ce_uptodate(ce))))
+	if (o->index_only || (!((ce->ce_flags & CE_VALID) || ce_skip_worktree(ce)) && (o->reset || ce_uptodate(ce))))
 		return 0;
 
 	if (!lstat(ce->name, &st)) {

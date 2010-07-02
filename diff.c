@@ -700,7 +700,6 @@ static void diff_words_show(struct diff_words_data *diff_words)
 {
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
-	xdemitcb_t ecb;
 	mmfile_t minus, plus;
 
 	/* special case: only removal */
@@ -718,11 +717,11 @@ static void diff_words_show(struct diff_words_data *diff_words)
 	memset(&xecfg, 0, sizeof(xecfg));
 	diff_words_fill(&diff_words->minus, &minus, diff_words->word_regex);
 	diff_words_fill(&diff_words->plus, &plus, diff_words->word_regex);
-	xpp.flags = XDF_NEED_MINIMAL;
+	xpp.flags = 0;
 	/* as only the hunk header will be parsed, we need a 0-context */
 	xecfg.ctxlen = 0;
 	xdi_diff_outf(&minus, &plus, fn_out_diff_words_aux, diff_words,
-		      &xpp, &xecfg, &ecb);
+		      &xpp, &xecfg);
 	free(minus.ptr);
 	free(plus.ptr);
 	if (diff_words->current_plus != diff_words->plus.text.ptr +
@@ -1601,6 +1600,7 @@ static void builtin_diff(const char *name_a,
 			 struct diff_filespec *one,
 			 struct diff_filespec *two,
 			 const char *xfrm_msg,
+			 int must_show_header,
 			 struct diff_options *o,
 			 int complete_rewrite)
 {
@@ -1650,21 +1650,24 @@ static void builtin_diff(const char *name_a,
 	if (lbl[0][0] == '/') {
 		/* /dev/null */
 		strbuf_addf(&header, "%snew file mode %06o%s\n", set, two->mode, reset);
-		if (xfrm_msg && xfrm_msg[0])
-			strbuf_addf(&header, "%s%s%s\n", set, xfrm_msg, reset);
+		if (xfrm_msg)
+			strbuf_addstr(&header, xfrm_msg);
+		must_show_header = 1;
 	}
 	else if (lbl[1][0] == '/') {
 		strbuf_addf(&header, "%sdeleted file mode %06o%s\n", set, one->mode, reset);
-		if (xfrm_msg && xfrm_msg[0])
-			strbuf_addf(&header, "%s%s%s\n", set, xfrm_msg, reset);
+		if (xfrm_msg)
+			strbuf_addstr(&header, xfrm_msg);
+		must_show_header = 1;
 	}
 	else {
 		if (one->mode != two->mode) {
 			strbuf_addf(&header, "%sold mode %06o%s\n", set, one->mode, reset);
 			strbuf_addf(&header, "%snew mode %06o%s\n", set, two->mode, reset);
+			must_show_header = 1;
 		}
-		if (xfrm_msg && xfrm_msg[0])
-			strbuf_addf(&header, "%s%s%s\n", set, xfrm_msg, reset);
+		if (xfrm_msg)
+			strbuf_addstr(&header, xfrm_msg);
 
 		/*
 		 * we do not run diff between different kind
@@ -1692,8 +1695,11 @@ static void builtin_diff(const char *name_a,
 	      (diff_filespec_is_binary(two) && !textconv_two) )) {
 		/* Quite common confusing case */
 		if (mf1.size == mf2.size &&
-		    !memcmp(mf1.ptr, mf2.ptr, mf1.size))
+		    !memcmp(mf1.ptr, mf2.ptr, mf1.size)) {
+			if (must_show_header)
+				fprintf(o->file, "%s", header.buf);
 			goto free_ab_and_return;
+		}
 		fprintf(o->file, "%s", header.buf);
 		strbuf_reset(&header);
 		if (DIFF_OPT_TST(o, BINARY))
@@ -1708,11 +1714,10 @@ static void builtin_diff(const char *name_a,
 		const char *diffopts = getenv("GIT_DIFF_OPTS");
 		xpparam_t xpp;
 		xdemitconf_t xecfg;
-		xdemitcb_t ecb;
 		struct emit_callback ecbdata;
 		const struct userdiff_funcname *pe;
 
-		if (!DIFF_XDL_TST(o, WHITESPACE_FLAGS)) {
+		if (!DIFF_XDL_TST(o, WHITESPACE_FLAGS) || must_show_header) {
 			fprintf(o->file, "%s", header.buf);
 			strbuf_reset(&header);
 		}
@@ -1747,7 +1752,7 @@ static void builtin_diff(const char *name_a,
 			check_blank_at_eof(&mf1, &mf2, &ecbdata);
 		ecbdata.file = o->file;
 		ecbdata.header = header.len ? &header : NULL;
-		xpp.flags = XDF_NEED_MINIMAL | o->xdl_opts;
+		xpp.flags = o->xdl_opts;
 		xecfg.ctxlen = o->context;
 		xecfg.interhunkctxlen = o->interhunkcontext;
 		xecfg.flags = XDL_EMIT_FUNCNAMES;
@@ -1780,7 +1785,7 @@ static void builtin_diff(const char *name_a,
 			}
 		}
 		xdi_diff_outf(&mf1, &mf2, fn_out_consume, &ecbdata,
-			      &xpp, &xecfg, &ecb);
+			      &xpp, &xecfg);
 		if (DIFF_OPT_TST(o, COLOR_DIFF_WORDS))
 			free_diff_words_data(&ecbdata);
 		if (textconv_one)
@@ -1833,13 +1838,12 @@ static void builtin_diffstat(const char *name_a, const char *name_b,
 		/* Crazy xdl interfaces.. */
 		xpparam_t xpp;
 		xdemitconf_t xecfg;
-		xdemitcb_t ecb;
 
 		memset(&xpp, 0, sizeof(xpp));
 		memset(&xecfg, 0, sizeof(xecfg));
-		xpp.flags = XDF_NEED_MINIMAL | o->xdl_opts;
+		xpp.flags = o->xdl_opts;
 		xdi_diff_outf(&mf1, &mf2, diffstat_consume, diffstat,
-			      &xpp, &xecfg, &ecb);
+			      &xpp, &xecfg);
 	}
 
  free_and_return:
@@ -1881,14 +1885,13 @@ static void builtin_checkdiff(const char *name_a, const char *name_b,
 		/* Crazy xdl interfaces.. */
 		xpparam_t xpp;
 		xdemitconf_t xecfg;
-		xdemitcb_t ecb;
 
 		memset(&xpp, 0, sizeof(xpp));
 		memset(&xecfg, 0, sizeof(xecfg));
 		xecfg.ctxlen = 1; /* at least one context line */
-		xpp.flags = XDF_NEED_MINIMAL;
+		xpp.flags = 0;
 		xdi_diff_outf(&mf1, &mf2, checkdiff_consume, &data,
-			      &xpp, &xecfg, &ecb);
+			      &xpp, &xecfg);
 
 		if (data.ws_rule & WS_BLANK_AT_EOF) {
 			struct emit_callback ecbdata;
@@ -2323,36 +2326,43 @@ static void fill_metainfo(struct strbuf *msg,
 			  struct diff_filespec *one,
 			  struct diff_filespec *two,
 			  struct diff_options *o,
-			  struct diff_filepair *p)
+			  struct diff_filepair *p,
+			  int *must_show_header,
+			  int use_color)
 {
+	const char *set = diff_get_color(use_color, DIFF_METAINFO);
+	const char *reset = diff_get_color(use_color, DIFF_RESET);
+
+	*must_show_header = 1;
 	strbuf_init(msg, PATH_MAX * 2 + 300);
 	switch (p->status) {
 	case DIFF_STATUS_COPIED:
-		strbuf_addf(msg, "similarity index %d%%", similarity_index(p));
-		strbuf_addstr(msg, "\ncopy from ");
+		strbuf_addf(msg, "%ssimilarity index %d%%",
+			    set, similarity_index(p));
+		strbuf_addf(msg, "%s\n%scopy from ", reset, set);
 		quote_c_style(name, msg, NULL, 0);
-		strbuf_addstr(msg, "\ncopy to ");
+		strbuf_addf(msg, "%s\n%scopy to ", reset, set);
 		quote_c_style(other, msg, NULL, 0);
-		strbuf_addch(msg, '\n');
+		strbuf_addf(msg, "%s\n", reset);
 		break;
 	case DIFF_STATUS_RENAMED:
-		strbuf_addf(msg, "similarity index %d%%", similarity_index(p));
-		strbuf_addstr(msg, "\nrename from ");
+		strbuf_addf(msg, "%ssimilarity index %d%%",
+			    set, similarity_index(p));
+		strbuf_addf(msg, "%s\n%srename from ", reset, set);
 		quote_c_style(name, msg, NULL, 0);
-		strbuf_addstr(msg, "\nrename to ");
+		strbuf_addf(msg, "%s\n%srename to ", reset, set);
 		quote_c_style(other, msg, NULL, 0);
-		strbuf_addch(msg, '\n');
+		strbuf_addf(msg, "%s\n", reset);
 		break;
 	case DIFF_STATUS_MODIFIED:
 		if (p->score) {
-			strbuf_addf(msg, "dissimilarity index %d%%\n",
-				    similarity_index(p));
+			strbuf_addf(msg, "%sdissimilarity index %d%%%s\n",
+				    set, similarity_index(p), reset);
 			break;
 		}
 		/* fallthru */
 	default:
-		/* nothing */
-		;
+		*must_show_header = 0;
 	}
 	if (one && two && hashcmp(one->sha1, two->sha1)) {
 		int abbrev = DIFF_OPT_TST(o, FULL_INDEX) ? 40 : DEFAULT_ABBREV;
@@ -2363,15 +2373,13 @@ static void fill_metainfo(struct strbuf *msg,
 			    (!fill_mmfile(&mf, two) && diff_filespec_is_binary(two)))
 				abbrev = 40;
 		}
-		strbuf_addf(msg, "index %.*s..%.*s",
+		strbuf_addf(msg, "%sindex %.*s..%.*s", set,
 			    abbrev, sha1_to_hex(one->sha1),
 			    abbrev, sha1_to_hex(two->sha1));
 		if (one->mode == two->mode)
 			strbuf_addf(msg, " %06o", one->mode);
-		strbuf_addch(msg, '\n');
+		strbuf_addf(msg, "%s\n", reset);
 	}
-	if (msg->len)
-		strbuf_setlen(msg, msg->len - 1);
 }
 
 static void run_diff_cmd(const char *pgm,
@@ -2386,11 +2394,7 @@ static void run_diff_cmd(const char *pgm,
 {
 	const char *xfrm_msg = NULL;
 	int complete_rewrite = (p->status == DIFF_STATUS_MODIFIED) && p->score;
-
-	if (msg) {
-		fill_metainfo(msg, name, other, one, two, o, p);
-		xfrm_msg = msg->len ? msg->buf : NULL;
-	}
+	int must_show_header = 0;
 
 	if (!DIFF_OPT_TST(o, ALLOW_EXTERNAL))
 		pgm = NULL;
@@ -2400,6 +2404,17 @@ static void run_diff_cmd(const char *pgm,
 			pgm = drv->external;
 	}
 
+	if (msg) {
+		/*
+		 * don't use colors when the header is intended for an
+		 * external diff driver
+		 */
+		fill_metainfo(msg, name, other, one, two, o, p,
+			      &must_show_header,
+			      DIFF_OPT_TST(o, COLOR_DIFF) && !pgm);
+		xfrm_msg = msg->len ? msg->buf : NULL;
+	}
+
 	if (pgm) {
 		run_external_diff(pgm, name, other, one, two, xfrm_msg,
 				  complete_rewrite);
@@ -2407,7 +2422,8 @@ static void run_diff_cmd(const char *pgm,
 	}
 	if (one && two)
 		builtin_diff(name, other ? other : name,
-			     one, two, xfrm_msg, o, complete_rewrite);
+			     one, two, xfrm_msg, must_show_header,
+			     o, complete_rewrite);
 	else
 		fprintf(o->file, "* Unmerged path %s\n", name);
 }
@@ -3383,7 +3399,6 @@ static int diff_get_patch_id(struct diff_options *options, unsigned char *sha1)
 	for (i = 0; i < q->nr; i++) {
 		xpparam_t xpp;
 		xdemitconf_t xecfg;
-		xdemitcb_t ecb;
 		mmfile_t mf1, mf2;
 		struct diff_filepair *p = q->queue[i];
 		int len1, len2;
@@ -3441,11 +3456,11 @@ static int diff_get_patch_id(struct diff_options *options, unsigned char *sha1)
 					len2, p->two->path);
 		git_SHA1_Update(&ctx, buffer, len1);
 
-		xpp.flags = XDF_NEED_MINIMAL;
+		xpp.flags = 0;
 		xecfg.ctxlen = 3;
 		xecfg.flags = XDL_EMIT_FUNCNAMES;
 		xdi_diff_outf(&mf1, &mf2, patch_id_consume, &data,
-			      &xpp, &xecfg, &ecb);
+			      &xpp, &xecfg);
 	}
 
 	git_SHA1_Final(sha1, &ctx);

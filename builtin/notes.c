@@ -313,7 +313,7 @@ int commit_notes(struct notes_tree *t, const char *msg)
 	return 0;
 }
 
-combine_notes_fn *parse_combine_notes_fn(const char *v)
+combine_notes_fn parse_combine_notes_fn(const char *v)
 {
 	if (!strcasecmp(v, "overwrite"))
 		return combine_notes_overwrite;
@@ -416,7 +416,7 @@ int notes_copy_from_stdin(int force, const char *rewrite_cmd)
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct notes_rewrite_cfg *c = NULL;
-	struct notes_tree *t;
+	struct notes_tree *t = NULL;
 	int ret = 0;
 
 	if (rewrite_cmd) {
@@ -614,6 +614,10 @@ static int copy(int argc, const char **argv, const char *prefix)
 		}
 	}
 
+	if (argc < 2) {
+		error("too few parameters");
+		usage_with_options(git_notes_copy_usage, options);
+	}
 	if (2 < argc) {
 		error("too many parameters");
 		usage_with_options(git_notes_copy_usage, options);

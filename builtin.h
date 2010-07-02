@@ -16,6 +16,7 @@ extern const char *help_unknown_cmd(const char *cmd);
 extern void prune_packed_objects(int);
 extern int fmt_merge_msg(int merge_summary, struct strbuf *in,
 	struct strbuf *out);
+extern int fmt_merge_msg_shortlog(struct strbuf *in, struct strbuf *out);
 extern int commit_tree(const char *msg, unsigned char *tree,
 		struct commit_list *parents, unsigned char *ret,
 		const char *author);
@@ -25,13 +26,13 @@ struct notes_rewrite_cfg {
 	struct notes_tree **trees;
 	const char *cmd;
 	int enabled;
-	combine_notes_fn *combine;
+	combine_notes_fn combine;
 	struct string_list *refs;
 	int refs_from_env;
 	int mode_from_env;
 };
 
-combine_notes_fn *parse_combine_notes_fn(const char *v);
+combine_notes_fn parse_combine_notes_fn(const char *v);
 struct notes_rewrite_cfg *init_copy_notes_for_rewrite(const char *cmd);
 int copy_note_for_rewrite(struct notes_rewrite_cfg *c,
 			  const unsigned char *from_obj, const unsigned char *to_obj);
