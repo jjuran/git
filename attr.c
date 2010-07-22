@@ -465,7 +465,7 @@ static void drop_attr_stack(void)
 	}
 }
 
-const char *git_etc_gitattributes(void)
+static const char *git_etc_gitattributes(void)
 {
 	static const char *system_wide;
 	if (!system_wide)
@@ -473,12 +473,12 @@ const char *git_etc_gitattributes(void)
 	return system_wide;
 }
 
-int git_attr_system(void)
+static int git_attr_system(void)
 {
 	return !git_env_bool("GIT_ATTR_NOSYSTEM", 0);
 }
 
-int git_attr_global(void)
+static int git_attr_global(void)
 {
 	return !git_env_bool("GIT_ATTR_NOGLOBAL", 0);
 }
