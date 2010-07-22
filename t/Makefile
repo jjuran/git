@@ -3,6 +3,7 @@
 # Copyright (c) 2005 Junio C Hamano
 #
 
+-include ../config.mak.autogen
 -include ../config.mak
 
 #GIT_TEST_OPTS=--verbose --debug
@@ -35,7 +36,9 @@ aggregate-results-and-cleanup: $(T)
 	$(MAKE) clean
 
 aggregate-results:
-	'$(SHELL_PATH_SQ)' ./aggregate-results.sh test-results/t*-*
+	for f in test-results/t*-*.counts; do \
+		echo "$$f"; \
+	done | '$(SHELL_PATH_SQ)' ./aggregate-results.sh
 
 # we can test NO_OPTIMIZE_COMMITS independently of LC_ALL
 full-svn-test:

@@ -211,7 +211,6 @@ static void combine_diff(const unsigned char *parent, unsigned int mode,
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
 	mmfile_t parent_file;
-	xdemitcb_t ecb;
 	struct combine_diff_state state;
 	unsigned long sz;
 
@@ -221,7 +220,7 @@ static void combine_diff(const unsigned char *parent, unsigned int mode,
 	parent_file.ptr = grab_blob(parent, mode, &sz);
 	parent_file.size = sz;
 	memset(&xpp, 0, sizeof(xpp));
-	xpp.flags = XDF_NEED_MINIMAL;
+	xpp.flags = 0;
 	memset(&xecfg, 0, sizeof(xecfg));
 	memset(&state, 0, sizeof(state));
 	state.nmask = nmask;
@@ -231,7 +230,7 @@ static void combine_diff(const unsigned char *parent, unsigned int mode,
 	state.n = n;
 
 	xdi_diff_outf(&parent_file, result_file, consume_line, &state,
-		      &xpp, &xecfg, &ecb);
+		      &xpp, &xecfg);
 	free(parent_file.ptr);
 
 	/* Assign line numbers for this parent.

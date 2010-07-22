@@ -117,6 +117,7 @@ extern void append_remote_object_url(struct strbuf *buf, const char *url,
 				     int only_two_digit_prefix);
 extern char *get_remote_object_url(const char *url, const char *hex,
 				   int only_two_digit_prefix);
+extern void end_url_with_slash(struct strbuf *buf, const char *url);
 
 /* Options for http_request_*() */
 #define HTTP_NO_CACHE		1
@@ -126,6 +127,8 @@ extern char *get_remote_object_url(const char *url, const char *hex,
 #define HTTP_MISSING_TARGET	1
 #define HTTP_ERROR		2
 #define HTTP_START_FAILED	3
+#define HTTP_REAUTH	4
+#define HTTP_NOAUTH	5
 
 /*
  * Requests an url and stores the result in a strbuf.
@@ -152,7 +155,6 @@ struct http_pack_request
 	struct packed_git *target;
 	struct packed_git **lst;
 	FILE *packfile;
-	char filename[PATH_MAX];
 	char tmpfile[PATH_MAX];
 	struct curl_slist *range_header;
 	struct active_request_slot *slot;
@@ -167,7 +169,6 @@ extern void release_http_pack_request(struct http_pack_request *preq);
 struct http_object_request
 {
 	char *url;
-	char filename[PATH_MAX];
 	char tmpfile[PATH_MAX];
 	int localfile;
 	CURLcode curl_result;

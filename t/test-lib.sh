@@ -2,6 +2,18 @@
 #
 # Copyright (c) 2005 Junio C Hamano
 #
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
 
 # if --tee was passed, write the output not only to the terminal, but
 # additionally to the file test-results/$BASENAME.out, too.
@@ -63,7 +75,6 @@ export GIT_MERGE_VERBOSITY
 export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
 export GIT_COMMITTER_EMAIL GIT_COMMITTER_NAME
 export EDITOR
-GIT_TEST_CMP=${GIT_TEST_CMP:-diff -u}
 
 # Protect ourselves from common misconfiguration to export
 # CDPATH into the environment
@@ -149,7 +160,7 @@ if test -n "$color"; then
 			*) test -n "$quiet" && return;;
 		esac
 		shift
-		printf "* %s" "$*"
+		printf "%s" "$*"
 		tput sgr0
 		echo
 		)
@@ -158,7 +169,7 @@ else
 	say_color() {
 		test -z "$1" && test -n "$quiet" && return
 		shift
-		echo "* $*"
+		echo "$*"
 	}
 fi
 
@@ -194,6 +205,8 @@ test_count=0
 test_fixed=0
 test_broken=0
 test_success=0
+
+test_external_has_tap=0
 
 die () {
 	code=$?
@@ -328,25 +341,25 @@ test_have_prereq () {
 
 test_ok_ () {
 	test_success=$(($test_success + 1))
-	say_color "" "  ok $test_count: $@"
+	say_color "" "ok $test_count - $@"
 }
 
 test_failure_ () {
 	test_failure=$(($test_failure + 1))
-	say_color error "FAIL $test_count: $1"
+	say_color error "not ok - $test_count $1"
 	shift
-	echo "$@" | sed -e 's/^/	/'
+	echo "$@" | sed -e 's/^/#	/'
 	test "$immediate" = "" || { GIT_EXIT_OK=t; exit 1; }
 }
 
 test_known_broken_ok_ () {
 	test_fixed=$(($test_fixed+1))
-	say_color "" "  FIXED $test_count: $@"
+	say_color "" "ok $test_count - $@ # TODO known breakage"
 }
 
 test_known_broken_failure_ () {
 	test_broken=$(($test_broken+1))
-	say_color skip "  still broken $test_count: $@"
+	say_color skip "not ok $test_count - $@ # TODO known breakage"
 }
 
 test_debug () {
@@ -354,8 +367,13 @@ test_debug () {
 }
 
 test_run_ () {
+	test_cleanup=:
 	eval >&3 2>&4 "$1"
-	eval_ret="$?"
+	eval_ret=$?
+	eval >&3 2>&4 "$test_cleanup"
+	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"; then
+		echo ""
+	fi
 	return 0
 }
 
@@ -367,6 +385,7 @@ test_skip () {
 		case $this_test.$test_count in
 		$skp)
 			to_skip=t
+			break
 		esac
 	done
 	if test -z "$to_skip" && test -n "$prereq" &&
@@ -377,7 +396,7 @@ test_skip () {
 	case "$to_skip" in
 	t)
 		say_color skip >&3 "skipping test: $@"
-		say_color skip "skip $test_count: $1"
+		say_color skip "ok $test_count # skip $1"
 		: true
 		;;
 	*)
@@ -443,7 +462,7 @@ test_expect_code () {
 # test_external runs external test scripts that provide continuous
 # test output about their progress, and succeeds/fails on
 # zero/non-zero exit code.  It outputs the test output on stdout even
-# in non-verbose mode, and announces the external script with "* run
+# in non-verbose mode, and announces the external script with "# run
 # <n>: ..." before running it.  When providing relative paths, keep in
 # mind that all scripts run in "trash directory".
 # Usage: test_external description command arguments...
@@ -458,16 +477,29 @@ test_external () {
 	then
 		# Announce the script to reduce confusion about the
 		# test output that follows.
-		say_color "" " run $test_count: $descr ($*)"
+		say_color "" "# run $test_count: $descr ($*)"
+		# Export TEST_DIRECTORY, TRASH_DIRECTORY and GIT_TEST_LONG
+		# to be able to use them in script
+		export TEST_DIRECTORY TRASH_DIRECTORY GIT_TEST_LONG
 		# Run command; redirect its stderr to &4 as in
 		# test_run_, but keep its stdout on our stdout even in
 		# non-verbose mode.
 		"$@" 2>&4
 		if [ "$?" = 0 ]
 		then
-			test_ok_ "$descr"
+			if test $test_external_has_tap -eq 0; then
+				test_ok_ "$descr"
+			else
+				say_color "" "# test_external test $descr was ok"
+				test_success=$(($test_success + 1))
+			fi
 		else
-			test_failure_ "$descr" "$@"
+			if test $test_external_has_tap -eq 0; then
+				test_failure_ "$descr" "$@"
+			else
+				say_color error "# test_external test $descr failed: $@"
+				test_failure=$(($test_failure + 1))
+			fi
 		fi
 	fi
 }
@@ -483,19 +515,30 @@ test_external_without_stderr () {
 	[ -f "$stderr" ] || error "Internal error: $stderr disappeared."
 	descr="no stderr: $1"
 	shift
-	say >&3 "expecting no stderr from previous command"
+	say >&3 "# expecting no stderr from previous command"
 	if [ ! -s "$stderr" ]; then
 		rm "$stderr"
-		test_ok_ "$descr"
+
+		if test $test_external_has_tap -eq 0; then
+			test_ok_ "$descr"
+		else
+			say_color "" "# test_external_without_stderr test $descr was ok"
+			test_success=$(($test_success + 1))
+		fi
 	else
 		if [ "$verbose" = t ]; then
-			output=`echo; echo Stderr is:; cat "$stderr"`
+			output=`echo; echo "# Stderr is:"; cat "$stderr"`
 		else
 			output=
 		fi
 		# rm first in case test_failure exits.
 		rm "$stderr"
-		test_failure_ "$descr" "$@" "$output"
+		if test $test_external_has_tap -eq 0; then
+			test_failure_ "$descr" "$@" "$output"
+		else
+			say_color error "# test_external_without_stderr test $descr failed: $@: $output"
+			test_failure=$(($test_failure + 1))
+		fi
 	fi
 }
 
@@ -516,6 +559,22 @@ test_must_fail () {
 	test $? -gt 0 -a $? -le 129 -o $? -gt 192
 }
 
+# Similar to test_must_fail, but tolerates success, too.  This is
+# meant to be used in contexts like:
+#
+#	test_expect_success 'some command works without configuration' '
+#		test_might_fail git config --unset all.configuration &&
+#		do something
+#	'
+#
+# Writing "git config --unset all.configuration || :" would be wrong,
+# because we want to notice if it fails due to segv.
+
+test_might_fail () {
+	"$@"
+	test $? -ge 0 -a $? -le 129 -o $? -gt 192
+}
+
 # test_cmp is a helper function to compare actual and expected output.
 # You can use it like:
 #
@@ -531,6 +590,31 @@ test_must_fail () {
 
 test_cmp() {
 	$GIT_TEST_CMP "$@"
+}
+
+# This function can be used to schedule some commands to be run
+# unconditionally at the end of the test to restore sanity:
+#
+#	test_expect_success 'test core.capslock' '
+#		git config core.capslock true &&
+#		test_when_finished "git config --unset core.capslock" &&
+#		hello world
+#	'
+#
+# That would be roughly equivalent to
+#
+#	test_expect_success 'test core.capslock' '
+#		git config core.capslock true &&
+#		hello world
+#		git config --unset core.capslock
+#	'
+#
+# except that the greeting and config --unset must both succeed for
+# the test to pass.
+
+test_when_finished () {
+	test_cleanup="{ $*
+		} && (exit \"\$eval_ret\"); eval_ret=\$?; $test_cleanup"
 }
 
 # Most tests can use the created repository, but some may need to create more.
@@ -552,7 +636,7 @@ test_done () {
 	GIT_EXIT_OK=t
 	test_results_dir="$TEST_DIRECTORY/test-results"
 	mkdir -p "$test_results_dir"
-	test_results_path="$test_results_dir/${0%.sh}-$$"
+	test_results_path="$test_results_dir/${0%.sh}-$$.counts"
 
 	echo "total $test_count" >> $test_results_path
 	echo "success $test_success" >> $test_results_path
@@ -563,18 +647,24 @@ test_done () {
 
 	if test "$test_fixed" != 0
 	then
-		say_color pass "fixed $test_fixed known breakage(s)"
+		say_color pass "# fixed $test_fixed known breakage(s)"
 	fi
 	if test "$test_broken" != 0
 	then
-		say_color error "still have $test_broken known breakage(s)"
+		say_color error "# still have $test_broken known breakage(s)"
 		msg="remaining $(($test_count-$test_broken)) test(s)"
 	else
 		msg="$test_count test(s)"
 	fi
 	case "$test_failure" in
 	0)
-		say_color pass "passed all $msg"
+		# Maybe print SKIP message
+		[ -z "$skip_all" ] || skip_all=" # SKIP $skip_all"
+
+		if test $test_external_has_tap -eq 0; then
+			say_color pass "# passed all $msg"
+			say "1..$test_count$skip_all"
+		fi
 
 		test -d "$remove_trash" &&
 		cd "$(dirname "$remove_trash")" &&
@@ -583,7 +673,11 @@ test_done () {
 		exit 0 ;;
 
 	*)
-		say_color error "failed $test_failure among $msg"
+		if test $test_external_has_tap -eq 0; then
+			say_color error "# failed $test_failure among $msg"
+			say "1..$test_count"
+		fi
+
 		exit 1 ;;
 
 	esac
@@ -682,6 +776,16 @@ export PATH GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_NOSYSTEM GIT_CONFIG_NOGLOB
 
 . ../GIT-BUILD-OPTIONS
 
+if test -z "$GIT_TEST_CMP"
+then
+	if test -n "$GIT_TEST_CMP_USE_COPIED_CONTEXT"
+	then
+		GIT_TEST_CMP="$DIFF -c"
+	else
+		GIT_TEST_CMP="$DIFF -u"
+	fi
+fi
+
 GITPERLLIB=$(pwd)/../perl/blib/lib:$(pwd)/../perl/blib/arch/auto/Git
 export GITPERLLIB
 test -d ../templates/blt || {
@@ -726,18 +830,10 @@ this_test=${0##*/}
 this_test=${this_test%%-*}
 for skp in $GIT_SKIP_TESTS
 do
-	to_skip=
-	for skp in $GIT_SKIP_TESTS
-	do
-		case "$this_test" in
-		$skp)
-			to_skip=t
-		esac
-	done
-	case "$to_skip" in
-	t)
+	case "$this_test" in
+	$skp)
 		say_color skip >&3 "skipping test $this_test altogether"
-		say_color skip "skip all tests in $this_test"
+		skip_all="skip all tests in $this_test"
 		test_done
 	esac
 done

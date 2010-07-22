@@ -10,8 +10,9 @@ among other things.
 '
 . ./test-lib.sh
 
-GIT_AUTHOR_EMAIL=bogus_email_address
-export GIT_AUTHOR_EMAIL
+GIT_AUTHOR_NAME=author@name
+GIT_AUTHOR_EMAIL=bogus@email@address
+export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
 
 test_expect_success \
     'prepare repository with topic branches' \
@@ -80,6 +81,10 @@ test_expect_success \
     'the rebase operation should not have destroyed author information' \
     '! (git log | grep "Author:" | grep "<>")'
 
+test_expect_success \
+    'the rebase operation should not have destroyed author information (2)' \
+    "git log -1 | grep 'Author: $GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>'"
+
 test_expect_success 'HEAD was detached during rebase' '
      test $(git rev-parse HEAD@{1}) != $(git rev-parse my-topic-branch@{1})
 '
@@ -126,9 +131,20 @@ test_expect_success 'Show verbose error when HEAD could not be detached' '
      test_must_fail git rebase topic 2> output.err > output.out &&
      grep "Untracked working tree file .B. would be overwritten" output.err
 '
+rm -f B
+
+test_expect_success 'dump usage when upstream arg is missing' '
+     git checkout -b usage topic &&
+     test_must_fail git rebase 2>error1 &&
+     grep "[Uu]sage" error1 &&
+     test_must_fail git rebase --abort 2>error2 &&
+     grep "No rebase in progress" error2 &&
+     test_must_fail git rebase --onto master 2>error3 &&
+     grep "[Uu]sage" error3 &&
+     ! grep "can.t shift" error3
+'
 
 test_expect_success 'rebase -q is quiet' '
-     rm B &&
      git checkout -b quiet topic &&
      git rebase -q master > output.out 2>&1 &&
      test ! -s output.out

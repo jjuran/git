@@ -18,7 +18,7 @@
  * combine_notes_concatenate(), which appends the contents of the new note to
  * the contents of the existing note.
  */
-typedef int combine_notes_fn(unsigned char *cur_sha1, const unsigned char *new_sha1);
+typedef int (*combine_notes_fn)(unsigned char *cur_sha1, const unsigned char *new_sha1);
 
 /* Common notes combinators */
 int combine_notes_concatenate(unsigned char *cur_sha1, const unsigned char *new_sha1);
@@ -38,7 +38,7 @@ extern struct notes_tree {
 	struct int_node *root;
 	struct non_note *first_non_note, *prev_non_note;
 	char *ref;
-	combine_notes_fn *combine_notes;
+	combine_notes_fn combine_notes;
 	int initialized;
 	int dirty;
 } default_notes_tree;
@@ -171,6 +171,9 @@ int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
  */
 int write_notes_tree(struct notes_tree *t, unsigned char *result);
 
+/* Flags controlling the operation of prune */
+#define NOTES_PRUNE_VERBOSE 1
+#define NOTES_PRUNE_DRYRUN 2
 /*
  * Remove all notes annotating non-existing objects from the given notes tree
  *
@@ -181,7 +184,7 @@ int write_notes_tree(struct notes_tree *t, unsigned char *result);
  * structure are not persistent until a subsequent call to write_notes_tree()
  * returns zero.
  */
-void prune_notes(struct notes_tree *t);
+void prune_notes(struct notes_tree *t, int flags);
 
 /*
  * Free (and de-initialize) the given notes_tree structure
