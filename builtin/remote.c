@@ -1398,11 +1398,19 @@ static int set_remote_branches(const char *remotename, const char **branches,
 
 static int set_branches(int argc, const char **argv)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int add_mode = 0;
 	struct option options[] = {
 		OPT_BOOLEAN('\0', "add", &add_mode, "add branch"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options,
 			     builtin_remote_setbranches_usage, 0);

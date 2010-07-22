@@ -841,6 +841,10 @@ static int remove_cmd(int argc, const char **argv, const char *prefix)
 
 static int prune(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct notes_tree *t;
 	int show_only = 0, verbose = 0;
 	struct option options[] = {
@@ -848,6 +852,10 @@ static int prune(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN('v', NULL, &verbose, "report pruned notes"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, git_notes_prune_usage,
 			     0);
