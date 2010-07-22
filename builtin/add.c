@@ -261,11 +261,13 @@ static int edit_patch(int argc, const char **argv, const char *prefix)
 {
 	char *file = xstrdup(git_path("ADD_EDIT.patch"));
 	const char *apply_argv[] = { "apply", "--recount", "--cached",
-		file, NULL };
+		NULL, NULL };
 	struct child_process child;
 	struct rev_info rev;
 	int out;
 	struct stat st;
+
+	apply_argv[3] = file;
 
 	git_config(git_diff_basic_config, NULL); /* no "diff" UI options */
 
@@ -308,7 +310,7 @@ static const char ignore_error[] =
 "The following paths are ignored by one of your .gitignore files:\n";
 
 static int verbose = 0, show_only = 0, ignored_too = 0, refresh_only = 0;
-static int ignore_add_errors, addremove, intent_to_add;
+static int ignore_add_errors, addremove, intent_to_add, ignore_missing = 0;
 
 static struct option builtin_add_options[] = {
 	OPT__DRY_RUN(&show_only),
@@ -323,6 +325,7 @@ static struct option builtin_add_options[] = {
 	OPT_BOOLEAN('A', "all", &addremove, "add all, noticing removal of tracked files"),
 	OPT_BOOLEAN( 0 , "refresh", &refresh_only, "don't add, only refresh the index"),
 	OPT_BOOLEAN( 0 , "ignore-errors", &ignore_add_errors, "just skip files which cannot be added because of errors"),
+	OPT_BOOLEAN( 0 , "ignore-missing", &ignore_missing, "check if - even missing - files are ignored in dry run"),
 	OPT_END(),
 };
 
@@ -383,6 +386,8 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 
 	if (addremove && take_worktree_changes)
 		die("-A and -u are mutually incompatible");
+	if (!show_only && ignore_missing)
+		die("Option --ignore-missing can only be used together with --dry-run");
 	if ((addremove || take_worktree_changes) && !argc) {
 		static const char *here[2] = { ".", NULL };
 		argc = 1;
@@ -439,9 +444,14 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 			seen = find_used_pathspec(pathspec);
 		for (i = 0; pathspec[i]; i++) {
 			if (!seen[i] && pathspec[i][0]
-			    && !file_exists(pathspec[i]))
-				die("pathspec '%s' did not match any files",
-				    pathspec[i]);
+			    && !file_exists(pathspec[i])) {
+				if (ignore_missing) {
+					if (excluded(&dir, pathspec[i], DT_UNKNOWN))
+						dir_add_ignored(&dir, pathspec[i], strlen(pathspec[i]));
+				} else
+					die("pathspec '%s' did not match any files",
+					    pathspec[i]);
+			}
 		}
 		free(seen);
 	}

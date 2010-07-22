@@ -443,6 +443,8 @@ static int handle_config(const char *key, const char *value, void *cb)
 	} else if (!strcmp(subkey, ".tagopt")) {
 		if (!strcmp(value, "--no-tags"))
 			remote->fetch_tags = -1;
+		else if (!strcmp(value, "--tags"))
+			remote->fetch_tags = 2;
 	} else if (!strcmp(subkey, ".proxy")) {
 		return git_config_string((const char **)&remote->http_proxy,
 					 key, value);
@@ -657,10 +659,9 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 
 int valid_fetch_refspec(const char *fetch_refspec_str)
 {
-	const char *fetch_refspec[] = { fetch_refspec_str };
 	struct refspec *refspec;
 
-	refspec = parse_refspec_internal(1, fetch_refspec, 1, 1);
+	refspec = parse_refspec_internal(1, &fetch_refspec_str, 1, 1);
 	free_refspecs(refspec, 1);
 	return !!refspec;
 }
@@ -761,7 +762,7 @@ void ref_remove_duplicates(struct ref *ref_map)
 		if (!ref_map->peer_ref)
 			continue;
 
-		item = string_list_lookup(ref_map->peer_ref->name, &refs);
+		item = string_list_lookup(&refs, ref_map->peer_ref->name);
 		if (item) {
 			if (strcmp(((struct ref *)item->util)->name,
 				   ref_map->name))
@@ -776,7 +777,7 @@ void ref_remove_duplicates(struct ref *ref_map)
 			continue;
 		}
 
-		item = string_list_insert(ref_map->peer_ref->name, &refs);
+		item = string_list_insert(&refs, ref_map->peer_ref->name);
 		item->util = ref_map;
 	}
 	string_list_clear(&refs, 0);
@@ -1709,7 +1710,7 @@ struct ref *get_stale_heads(struct remote *remote, struct ref *fetch_map)
 	info.ref_names = &ref_names;
 	info.stale_refs_tail = &stale_refs;
 	for (ref = fetch_map; ref; ref = ref->next)
-		string_list_append(ref->name, &ref_names);
+		string_list_append(&ref_names, ref->name);
 	sort_string_list(&ref_names);
 	for_each_ref(get_stale_heads_cb, &info);
 	string_list_clear(&ref_names, 0);

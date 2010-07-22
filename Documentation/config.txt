@@ -196,20 +196,17 @@ core.quotepath::
 	quoted without `-z` regardless of the setting of this
 	variable.
 
-core.autocrlf::
-	If true, makes git convert `CRLF` at the end of lines in text files to
-	`LF` when reading from the work tree, and convert in reverse when
-	writing to the work tree.  The variable can be set to
-	'input', in which case the conversion happens only while
-	reading from the work tree but files are written out to the work
-	tree with `LF` at the end of lines.  A file is considered
-	"text" (i.e. be subjected to the autocrlf mechanism) based on
-	the file's `crlf` attribute, or if `crlf` is unspecified,
-	based on the file's contents.  See linkgit:gitattributes[5].
+core.eol::
+	Sets the line ending type to use in the working directory for
+	files that have the `text` property set.  Alternatives are
+	'lf', 'crlf' and 'native', which uses the platform's native
+	line ending.  The default value is `native`.  See
+	linkgit:gitattributes[5] for more information on end-of-line
+	conversion.
 
 core.safecrlf::
-	If true, makes git check if converting `CRLF` as controlled by
-	`core.autocrlf` is reversible.  Git will verify if a command
+	If true, makes git check if converting `CRLF` is reversible when
+	end-of-line conversion is active.  Git will verify if a command
 	modifies a file in the work tree either directly or indirectly.
 	For example, committing a file followed by checking out the
 	same file should yield the original file in the work tree.  If
@@ -219,7 +216,7 @@ core.safecrlf::
 	irreversible conversion but continue the operation.
 +
 CRLF conversion bears a slight chance of corrupting data.
-autocrlf=true will convert CRLF to LF during commit and LF to
+When it is enabled, git will convert CRLF to LF during commit and LF to
 CRLF during checkout.  A file that contains a mixture of LF and
 CRLF before the commit cannot be recreated by git.  For text
 files this is the right thing to do: it corrects line endings
@@ -243,14 +240,24 @@ converting CRLFs corrupts data.
 +
 Note, this safety check does not mean that a checkout will generate a
 file identical to the original file for a different setting of
-`core.autocrlf`, but only for the current one.  For example, a text
-file with `LF` would be accepted with `core.autocrlf=input` and could
-later be checked out with `core.autocrlf=true`, in which case the
+`core.eol` and `core.autocrlf`, but only for the current one.  For
+example, a text file with `LF` would be accepted with `core.eol=lf`
+and could later be checked out with `core.eol=crlf`, in which case the
 resulting file would contain `CRLF`, although the original file
 contained `LF`.  However, in both work trees the line endings would be
 consistent, that is either all `LF` or all `CRLF`, but never mixed.  A
 file with mixed line endings would be reported by the `core.safecrlf`
 mechanism.
+
+core.autocrlf::
+	Setting this variable to "true" is almost the same as setting
+	the `text` attribute to "auto" on all files except that text
+	files are not guaranteed to be normalized: files that contain
+	`CRLF` in the repository will not be touched.  Use this
+	setting if you want to have `CRLF` line endings in your
+	working directory even though the repository does not have
+	normalized line endings.  This variable can be set to 'input',
+	in which case no output conversion is performed.
 
 core.symlinks::
 	If false, symbolic links are checked out as small plain files that
@@ -481,6 +488,8 @@ core.whitespace::
   error (enabled by default).
 * `indent-with-non-tab` treats a line that is indented with 8 or more
   space characters as an error (not enabled by default).
+* `tab-in-indent` treats a tab character in the initial indent part of
+  the line as an error (not enabled by default).
 * `blank-at-eof` treats blank lines added at the end of file as an error
   (enabled by default).
 * `trailing-space` is a short-hand to cover both `blank-at-eol` and
@@ -681,6 +690,11 @@ color.diff.<slot>::
 	(highlighting whitespace errors). The values of these variables may be
 	specified as in color.branch.<slot>.
 
+color.decorate.<slot>::
+	Use customized color for 'git log --decorate' output.  `<slot>` is one
+	of `branch`, `remoteBranch`, `tag`, `stash` or `HEAD` for local
+	branches, remote tracking branches, tags, stash and HEAD, respectively.
+
 color.grep::
 	When set to `always`, always highlight matches.  When `false` (or
 	`never`), never.  When set to `true` or `auto`, use color only
@@ -790,6 +804,8 @@ diff.mnemonicprefix::
 	standard "a/" and "b/" depending on what is being compared.  When
 	this configuration is in effect, reverse diff output also swaps
 	the order of the prefixes:
+diff.noprefix::
+	If set, 'git diff' does not show any source or destination prefix.
 `git diff`;;
 	compares the (i)ndex and the (w)ork tree;
 `git diff HEAD`;;
@@ -870,13 +886,21 @@ format.headers::
 	Additional email headers to include in a patch to be submitted
 	by mail.  See linkgit:git-format-patch[1].
 
+format.to::
 format.cc::
-	Additional "Cc:" headers to include in a patch to be submitted
-	by mail.  See the --cc option in linkgit:git-format-patch[1].
+	Additional recipients to include in a patch to be submitted
+	by mail.  See the --to and --cc options in
+	linkgit:git-format-patch[1].
 
 format.subjectprefix::
 	The default for format-patch is to output files with the '[PATCH]'
 	subject prefix. Use this variable to change that prefix.
+
+format.signature::
+	The default for format-patch is to output a signature containing
+	the git version number. Use this variable to change that default.
+	Set this variable to the empty string ("") to suppress
+	signature generation.
 
 format.suffix::
 	The default for format-patch is to output files with the suffix
@@ -938,13 +962,19 @@ gc.pruneexpire::
 	unreachable objects immediately.
 
 gc.reflogexpire::
+gc.<pattern>.reflogexpire::
 	'git reflog expire' removes reflog entries older than
-	this time; defaults to 90 days.
+	this time; defaults to 90 days.  With "<pattern>" (e.g.
+	"refs/stash") in the middle the setting applies only to
+	the refs that match the <pattern>.
 
 gc.reflogexpireunreachable::
+gc.<ref>.reflogexpireunreachable::
 	'git reflog expire' removes reflog entries older than
 	this time and are not reachable from the current tip;
-	defaults to 30 days.
+	defaults to 30 days.  With "<pattern>" (e.g. "refs/stash")
+	in the middle, the setting applies only to the refs that
+	match the <pattern>.
 
 gc.rerereresolved::
 	Records of conflicted merge you resolved earlier are
@@ -969,13 +999,15 @@ gitcvs.logfile::
 	various stuff. See linkgit:git-cvsserver[1].
 
 gitcvs.usecrlfattr::
-	If true, the server will look up the `crlf` attribute for
-	files to determine the '-k' modes to use. If `crlf` is set,
-	the '-k' mode will be left blank, so cvs clients will
-	treat it as text. If `crlf` is explicitly unset, the file
+	If true, the server will look up the end-of-line conversion
+	attributes for files to determine the '-k' modes to use. If
+	the attributes force git to treat a file as text,
+	the '-k' mode will be left blank so cvs clients will
+	treat it as text. If they suppress text conversion, the file
 	will be set with '-kb' mode, which suppresses any newline munging
-	the client might otherwise do. If `crlf` is not specified,
-	then 'gitcvs.allbinary' is used. See linkgit:gitattributes[5].
+	the client might otherwise do. If the attributes do not allow
+	the file type to be determined, then 'gitcvs.allbinary' is
+	used. See linkgit:gitattributes[5].
 
 gitcvs.allbinary::
 	This is used if 'gitcvs.usecrlfattr' does not resolve
@@ -1262,6 +1294,13 @@ log.date::
 	following alternatives: {relative,local,default,iso,rfc,short}.
 	See linkgit:git-log[1].
 
+log.decorate::
+	Print out the ref names of any commits that are shown by the log
+	command. If 'short' is specified, the ref name prefixes 'refs/heads/',
+	'refs/tags/' and 'refs/remotes/' will not be printed. If 'full' is
+	specified, the full ref name (including prefix) will be printed.
+	This is the same as the log commands '--decorate' option.
+
 log.showroot::
 	If true, the initial commit will be shown as a big creation event.
 	This is equivalent to a diff against an empty tree.
@@ -1460,6 +1499,16 @@ pager.<cmd>::
 	it takes precedence over this option.  To disable pagination for
 	all commands, set `core.pager` or `GIT_PAGER` to `cat`.
 
+pretty.<name>::
+	Alias for a --pretty= format string, as specified in
+	linkgit:git-log[1]. Any aliases defined here can be used just
+	as the built-in pretty formats could. For example,
+	running `git config pretty.changelog "format:{asterisk} %H %s"`
+	would cause the invocation `git log --pretty=changelog`
+	to be equivalent to running `git log "--pretty=format:{asterisk} %H %s"`.
+	Note that an alias with the same name as a built-in format
+	will be silently ignored.
+
 pull.octopus::
 	The default merge strategy to use when pulling multiple branches
 	at once.
@@ -1572,7 +1621,9 @@ remote.<name>.uploadpack::
 
 remote.<name>.tagopt::
 	Setting this value to \--no-tags disables automatic tag following when
-	fetching from remote <name>
+	fetching from remote <name>. Setting it to \--tags will fetch every
+	tag from remote <name>, even if they are not reachable from remote
+	branch heads.
 
 remote.<name>.vcs::
 	Setting this to a value <vcs> will cause git to interact with
@@ -1682,6 +1733,15 @@ status.submodulesummary::
 	unlimited number), the submodule summary will be enabled and a
 	summary of commits for modified submodules will be shown (see
 	--summary-limit option of linkgit:git-submodule[1]).
+
+submodule.<name>.path::
+submodule.<name>.url::
+submodule.<name>.update::
+	The path within this project, URL, and the updating strategy
+	for a submodule.  These variables are initially populated
+	by 'git submodule init'; edit them to override the
+	URL and other values found in the `.gitmodules` file.  See
+	linkgit:git-submodule[1] and linkgit:gitmodules[5] for details.
 
 tar.umask::
 	This variable can be used to restrict the permission bits of

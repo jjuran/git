@@ -33,6 +33,7 @@ struct checkout_opts {
 	int writeout_error;
 
 	const char *new_branch;
+	const char *new_orphan_branch;
 	int new_branch_log;
 	enum branch_track track;
 };
@@ -492,8 +493,26 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 	struct strbuf msg = STRBUF_INIT;
 	const char *old_desc;
 	if (opts->new_branch) {
-		create_branch(old->name, opts->new_branch, new->name, 0,
-			      opts->new_branch_log, opts->track);
+		if (opts->new_orphan_branch) {
+			if (opts->new_branch_log && !log_all_ref_updates) {
+				int temp;
+				char log_file[PATH_MAX];
+				char *ref_name = mkpath("refs/heads/%s", opts->new_orphan_branch);
+
+				temp = log_all_ref_updates;
+				log_all_ref_updates = 1;
+				if (log_ref_setup(ref_name, log_file, sizeof(log_file))) {
+					fprintf(stderr, "Can not do reflog for '%s'\n",
+					    opts->new_orphan_branch);
+					log_all_ref_updates = temp;
+					return;
+				}
+				log_all_ref_updates = temp;
+			}
+		}
+		else
+			create_branch(old->name, opts->new_branch, new->name, 0,
+				      opts->new_branch_log, opts->track);
 		new->name = opts->new_branch;
 		setup_branch_path(new);
 	}
@@ -514,6 +533,14 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 				fprintf(stderr, "Switched to%s branch '%s'\n",
 					opts->new_branch ? " a new" : "",
 					new->name);
+		}
+		if (old->path && old->name) {
+			char log_file[PATH_MAX], ref_file[PATH_MAX];
+
+			git_snpath(log_file, sizeof(log_file), "logs/%s", old->path);
+			git_snpath(ref_file, sizeof(ref_file), "%s", old->path);
+			if (!file_exists(ref_file) && file_exists(log_file))
+				remove_path(log_file);
 		}
 	} else if (strcmp(new->name, "HEAD")) {
 		update_ref(msg.buf, "HEAD", new->commit->object.sha1, NULL,
@@ -609,7 +636,8 @@ static int check_tracking_name(const char *refname, const unsigned char *sha1,
 
 static const char *unique_tracking_name(const char *name)
 {
-	struct tracking_name_data cb_data = { name, NULL, 1 };
+	struct tracking_name_data cb_data = { NULL, NULL, 1 };
+	cb_data.name = name;
 	for_each_ref(check_tracking_name, &cb_data);
 	if (cb_data.unique)
 		return cb_data.remote;
@@ -633,6 +661,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN('l', NULL, &opts.new_branch_log, "log for new branch"),
 		OPT_SET_INT('t', "track",  &opts.track, "track",
 			BRANCH_TRACK_EXPLICIT),
+		OPT_STRING(0, "orphan", &opts.new_orphan_branch, "new branch", "new unparented branch"),
 		OPT_SET_INT('2', "ours", &opts.writeout_stage, "stage",
 			    2),
 		OPT_SET_INT('3', "theirs", &opts.writeout_stage, "stage",
@@ -676,6 +705,14 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		if (!argv0 || !argv0[1])
 			die ("Missing branch name; try -b");
 		opts.new_branch = argv0 + 1;
+	}
+
+	if (opts.new_orphan_branch) {
+		if (opts.new_branch)
+			die("--orphan and -b are mutually exclusive");
+		if (opts.track > 0)
+			die("--orphan cannot be used with -t");
+		opts.new_branch = opts.new_orphan_branch;
 	}
 
 	if (conflict_style) {

@@ -5,7 +5,7 @@
 # Copyright (c) 2007 Lars Hjemli
 
 dashless=$(basename "$0" | sed -e 's/-/ /')
-USAGE="[--quiet] add [-b branch] [--reference <repository>] [--] <repository> [<path>]
+USAGE="[--quiet] add [-b branch] [-f|--force] [--reference <repository>] [--] <repository> [<path>]
    or: $dashless [--quiet] status [--cached] [--recursive] [--] [<path>...]
    or: $dashless [--quiet] init [--] [<path>...]
    or: $dashless [--quiet] update [--init] [-N|--no-fetch] [--rebase] [--reference <repository>] [--merge] [--recursive] [--] [<path>...]
@@ -19,6 +19,7 @@ require_work_tree
 
 command=
 branch=
+force=
 reference=
 cached=
 recursive=
@@ -133,6 +134,9 @@ cmd_add()
 			branch=$2
 			shift
 			;;
+		-f | --force)
+			force=$1
+			;;
 		-q|--quiet)
 			GIT_QUIET=1
 			;;
@@ -201,6 +205,14 @@ cmd_add()
 	git ls-files --error-unmatch "$path" > /dev/null 2>&1 &&
 	die "'$path' already exists in the index"
 
+	if test -z "$force" && ! git add --dry-run --ignore-missing "$path" > /dev/null 2>&1
+	then
+		echo >&2 "The following path is ignored by one of your .gitignore files:" &&
+		echo >&2 $path &&
+		echo >&2 "Use -f if you really want to add it."
+		exit 1
+	fi
+
 	# perhaps the path exists and is already a git repo, else clone it
 	if test -e "$path"
 	then
@@ -234,12 +246,12 @@ cmd_add()
 		) || die "Unable to checkout submodule '$path'"
 	fi
 
-	git add "$path" ||
+	git add $force "$path" ||
 	die "Failed to add submodule '$path'"
 
 	git config -f .gitmodules submodule."$path".path "$path" &&
 	git config -f .gitmodules submodule."$path".url "$repo" &&
-	git add .gitmodules ||
+	git add --force .gitmodules ||
 	die "Failed to register submodule '$path'"
 }
 
@@ -270,6 +282,8 @@ cmd_foreach()
 		esac
 		shift
 	done
+
+	toplevel=$(pwd)
 
 	module_list |
 	while read mode sha1 stage path
@@ -578,7 +592,7 @@ cmd_summary() {
 
 	cd_to_toplevel
 	# Get modified modules cared by user
-	modules=$(git $diff_cmd $cached --raw $head -- "$@" |
+	modules=$(git $diff_cmd $cached --ignore-submodules=dirty --raw $head -- "$@" |
 		sane_egrep '^:([0-7]* )?160000' |
 		while read mod_src mod_dst sha1_src sha1_dst status name
 		do
@@ -592,7 +606,7 @@ cmd_summary() {
 
 	test -z "$modules" && return
 
-	git $diff_cmd $cached --raw $head -- $modules |
+	git $diff_cmd $cached --ignore-submodules=dirty --raw $head -- $modules |
 	sane_egrep '^:([0-7]* )?160000' |
 	cut -c2- |
 	while read mod_src mod_dst sha1_src sha1_dst status name
@@ -650,7 +664,7 @@ cmd_summary() {
 				range=$sha1_dst
 			fi
 			GIT_DIR="$name/.git" \
-			git log --pretty=oneline --first-parent $range | wc -l
+			git rev-list --first-parent $range -- | wc -l
 			)
 			total_commits=" ($(($total_commits + 0)))"
 			;;
@@ -758,7 +772,7 @@ cmd_status()
 			continue;
 		fi
 		set_name_rev "$path" "$sha1"
-		if git diff-files --quiet -- "$path"
+		if git diff-files --ignore-submodules=dirty --quiet -- "$path"
 		then
 			say " $sha1 $displaypath$revname"
 		else

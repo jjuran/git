@@ -38,7 +38,7 @@ test_expect_success setup '
 	test_commit "$msg" &&
 	echo "$msg" >expect &&
 	git show -s --format=%s > actual &&
-	diff actual expect
+	test_cmp actual expect
 
 '
 
@@ -85,7 +85,7 @@ do
 		git --exec-path=. commit --amend &&
 		git show -s --pretty=oneline |
 		sed -e "s/^[0-9a-f]* //" >actual &&
-		diff actual expect
+		test_cmp actual expect
 	'
 done
 
@@ -107,13 +107,13 @@ do
 		git --exec-path=. commit --amend &&
 		git show -s --pretty=oneline |
 		sed -e "s/^[0-9a-f]* //" >actual &&
-		diff actual expect
+		test_cmp actual expect
 	'
 done
 
 if ! echo 'echo space > "$1"' > "e space.sh"
 then
-	say "Skipping; FS does not support spaces in filenames"
+	skip_all="Skipping; FS does not support spaces in filenames"
 	test_done
 fi
 

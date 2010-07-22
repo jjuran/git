@@ -10,17 +10,17 @@ enum grep_pat_token {
 	GREP_OPEN_PAREN,
 	GREP_CLOSE_PAREN,
 	GREP_NOT,
-	GREP_OR,
+	GREP_OR
 };
 
 enum grep_context {
 	GREP_CONTEXT_HEAD,
-	GREP_CONTEXT_BODY,
+	GREP_CONTEXT_BODY
 };
 
 enum grep_header_field {
 	GREP_HEADER_AUTHOR = 0,
-	GREP_HEADER_COMMITTER,
+	GREP_HEADER_COMMITTER
 };
 
 struct grep_pat {
@@ -29,6 +29,7 @@ struct grep_pat {
 	int no;
 	enum grep_pat_token token;
 	const char *pattern;
+	size_t patternlen;
 	enum grep_header_field field;
 	regex_t regexp;
 	unsigned fixed:1;
@@ -40,7 +41,7 @@ enum grep_expr_node {
 	GREP_NODE_ATOM,
 	GREP_NODE_NOT,
 	GREP_NODE_AND,
-	GREP_NODE_OR,
+	GREP_NODE_OR
 };
 
 struct grep_expr {
@@ -104,6 +105,7 @@ struct grep_opt {
 	void *output_priv;
 };
 
+extern void append_grep_pat(struct grep_opt *opt, const char *pat, size_t patlen, const char *origin, int no, enum grep_pat_token t);
 extern void append_grep_pattern(struct grep_opt *opt, const char *pat, const char *origin, int no, enum grep_pat_token t);
 extern void append_header_grep_pattern(struct grep_opt *, enum grep_header_field, const char *);
 extern void compile_grep_patterns(struct grep_opt *opt);

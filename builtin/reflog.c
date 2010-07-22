@@ -34,8 +34,13 @@ struct cmd_reflog_expire_cb {
 
 struct expire_reflog_cb {
 	FILE *newlog;
-	const char *ref;
-	struct commit *ref_commit;
+	enum {
+		UE_NORMAL,
+		UE_ALWAYS,
+		UE_HEAD
+	} unreachable_expire_kind;
+	struct commit_list *mark_list;
+	unsigned long mark_limit;
 	struct cmd_reflog_expire_cb *cmd;
 	unsigned char last_kept_sha1[20];
 };
@@ -210,6 +215,51 @@ static int keep_entry(struct commit **it, unsigned char *sha1)
 	return 1;
 }
 
+/*
+ * Starting from commits in the cb->mark_list, mark commits that are
+ * reachable from them.  Stop the traversal at commits older than
+ * the expire_limit and queue them back, so that the caller can call
+ * us again to restart the traversal with longer expire_limit.
+ */
+static void mark_reachable(struct expire_reflog_cb *cb)
+{
+	struct commit *commit;
+	struct commit_list *pending;
+	unsigned long expire_limit = cb->mark_limit;
+	struct commit_list *leftover = NULL;
+
+	for (pending = cb->mark_list; pending; pending = pending->next)
+		pending->item->object.flags &= ~REACHABLE;
+
+	pending = cb->mark_list;
+	while (pending) {
+		struct commit_list *entry = pending;
+		struct commit_list *parent;
+		pending = entry->next;
+		commit = entry->item;
+		free(entry);
+		if (commit->object.flags & REACHABLE)
+			continue;
+		if (parse_commit(commit))
+			continue;
+		commit->object.flags |= REACHABLE;
+		if (commit->date < expire_limit) {
+			commit_list_insert(commit, &leftover);
+			continue;
+		}
+		commit->object.flags |= REACHABLE;
+		parent = commit->parents;
+		while (parent) {
+			commit = parent->item;
+			parent = parent->next;
+			if (commit->object.flags & REACHABLE)
+				continue;
+			commit_list_insert(commit, &pending);
+		}
+	}
+	cb->mark_list = leftover;
+}
+
 static int unreachable(struct expire_reflog_cb *cb, struct commit *commit, unsigned char *sha1)
 {
 	/*
@@ -230,48 +280,13 @@ static int unreachable(struct expire_reflog_cb *cb, struct commit *commit, unsig
 	/* Reachable from the current ref?  Don't prune. */
 	if (commit->object.flags & REACHABLE)
 		return 0;
-	if (in_merge_bases(commit, &cb->ref_commit, 1))
-		return 0;
 
-	/* We can't reach it - prune it. */
-	return 1;
-}
-
-static void mark_reachable(struct commit *commit, unsigned long expire_limit)
-{
-	/*
-	 * We need to compute whether the commit on either side of a reflog
-	 * entry is reachable from the tip of the ref for all entries.
-	 * Mark commits that are reachable from the tip down to the
-	 * time threshold first; we know a commit marked thusly is
-	 * reachable from the tip without running in_merge_bases()
-	 * at all.
-	 */
-	struct commit_list *pending = NULL;
-
-	commit_list_insert(commit, &pending);
-	while (pending) {
-		struct commit_list *entry = pending;
-		struct commit_list *parent;
-		pending = entry->next;
-		commit = entry->item;
-		free(entry);
-		if (commit->object.flags & REACHABLE)
-			continue;
-		if (parse_commit(commit))
-			continue;
-		commit->object.flags |= REACHABLE;
-		if (commit->date < expire_limit)
-			continue;
-		parent = commit->parents;
-		while (parent) {
-			commit = parent->item;
-			parent = parent->next;
-			if (commit->object.flags & REACHABLE)
-				continue;
-			commit_list_insert(commit, &pending);
-		}
+	if (cb->mark_list && cb->mark_limit) {
+		cb->mark_limit = 0; /* dig down to the root */
+		mark_reachable(cb);
 	}
+
+	return !(commit->object.flags & REACHABLE);
 }
 
 static int expire_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
@@ -293,7 +308,7 @@ static int expire_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 		goto prune;
 
 	if (timestamp < cb->cmd->expire_unreachable) {
-		if (!cb->ref_commit)
+		if (cb->unreachable_expire_kind == UE_ALWAYS)
 			goto prune;
 		if (unreachable(cb, old, osha1) || unreachable(cb, new, nsha1))
 			goto prune;
@@ -320,12 +335,27 @@ static int expire_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 	return 0;
 }
 
+static int push_tip_to_list(const char *refname, const unsigned char *sha1, int flags, void *cb_data)
+{
+	struct commit_list **list = cb_data;
+	struct commit *tip_commit;
+	if (flags & REF_ISSYMREF)
+		return 0;
+	tip_commit = lookup_commit_reference_gently(sha1, 1);
+	if (!tip_commit)
+		return 0;
+	commit_list_insert(tip_commit, list);
+	return 0;
+}
+
 static int expire_reflog(const char *ref, const unsigned char *sha1, int unused, void *cb_data)
 {
 	struct cmd_reflog_expire_cb *cmd = cb_data;
 	struct expire_reflog_cb cb;
 	struct ref_lock *lock;
 	char *log_file, *newlog_path = NULL;
+	struct commit *tip_commit;
+	struct commit_list *tips;
 	int status = 0;
 
 	memset(&cb, 0, sizeof(cb));
@@ -345,14 +375,49 @@ static int expire_reflog(const char *ref, const unsigned char *sha1, int unused,
 		cb.newlog = fopen(newlog_path, "w");
 	}
 
-	cb.ref_commit = lookup_commit_reference_gently(sha1, 1);
-	cb.ref = ref;
 	cb.cmd = cmd;
-	if (cb.ref_commit)
-		mark_reachable(cb.ref_commit, cmd->expire_total);
+
+	if (!cmd->expire_unreachable || !strcmp(ref, "HEAD")) {
+		tip_commit = NULL;
+		cb.unreachable_expire_kind = UE_HEAD;
+	} else {
+		tip_commit = lookup_commit_reference_gently(sha1, 1);
+		if (!tip_commit)
+			cb.unreachable_expire_kind = UE_ALWAYS;
+		else
+			cb.unreachable_expire_kind = UE_NORMAL;
+	}
+
+	if (cmd->expire_unreachable <= cmd->expire_total)
+		cb.unreachable_expire_kind = UE_ALWAYS;
+
+	cb.mark_list = NULL;
+	tips = NULL;
+	if (cb.unreachable_expire_kind != UE_ALWAYS) {
+		if (cb.unreachable_expire_kind == UE_HEAD) {
+			struct commit_list *elem;
+			for_each_ref(push_tip_to_list, &tips);
+			for (elem = tips; elem; elem = elem->next)
+				commit_list_insert(elem->item, &cb.mark_list);
+		} else {
+			commit_list_insert(tip_commit, &cb.mark_list);
+		}
+		cb.mark_limit = cmd->expire_total;
+		mark_reachable(&cb);
+	}
+
 	for_each_reflog_ent(ref, expire_reflog_ent, &cb);
-	if (cb.ref_commit)
-		clear_commit_marks(cb.ref_commit, REACHABLE);
+
+	if (cb.unreachable_expire_kind != UE_ALWAYS) {
+		if (cb.unreachable_expire_kind == UE_HEAD) {
+			struct commit_list *elem;
+			for (elem = tips; elem; elem = elem->next)
+				clear_commit_marks(tip_commit, REACHABLE);
+			free_commit_list(tips);
+		} else {
+			clear_commit_marks(tip_commit, REACHABLE);
+		}
+	}
  finish:
 	if (cb.newlog) {
 		if (fclose(cb.newlog)) {

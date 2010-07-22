@@ -59,7 +59,7 @@ static void garbage_collect(struct string_list *rr)
 		cutoff = (has_rerere_resolution(e->d_name)
 			  ? cutoff_resolve : cutoff_noresolve);
 		if (then < now - cutoff * 86400)
-			string_list_append(e->d_name, &to_remove);
+			string_list_append(&to_remove, e->d_name);
 	}
 	for (i = 0; i < to_remove.nr; i++)
 		unlink_rr_item(to_remove.items[i].string);
@@ -135,7 +135,7 @@ int cmd_rerere(int argc, const char **argv, const char *prefix)
 			if (!has_rerere_resolution(name))
 				unlink_rr_item(name);
 		}
-		unlink_or_warn(git_path("rr-cache/MERGE_RR"));
+		unlink_or_warn(git_path("MERGE_RR"));
 	} else if (!strcmp(argv[1], "gc"))
 		garbage_collect(&merge_rr);
 	else if (!strcmp(argv[1], "status"))

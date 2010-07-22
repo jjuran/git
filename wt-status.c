@@ -9,6 +9,8 @@
 #include "quote.h"
 #include "run-command.h"
 #include "remote.h"
+#include "refs.h"
+#include "submodule.h"
 
 static char default_wt_status_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_NORMAL, /* WT_STATUS_HEADER */
@@ -17,6 +19,8 @@ static char default_wt_status_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_RED,    /* WT_STATUS_UNTRACKED */
 	GIT_COLOR_RED,    /* WT_STATUS_NOBRANCH */
 	GIT_COLOR_RED,    /* WT_STATUS_UNMERGED */
+	GIT_COLOR_GREEN,  /* WT_STATUS_LOCAL_BRANCH */
+	GIT_COLOR_RED,    /* WT_STATUS_REMOTE_BRANCH */
 };
 
 static const char *color(int slot, struct wt_status *s)
@@ -42,6 +46,7 @@ void wt_status_prepare(struct wt_status *s)
 	s->index_file = get_index_file();
 	s->change.strdup_strings = 1;
 	s->untracked.strdup_strings = 1;
+	s->ignored.strdup_strings = 1;
 }
 
 static void wt_status_print_unmerged_header(struct wt_status *s)
@@ -96,13 +101,15 @@ static void wt_status_print_dirty_header(struct wt_status *s,
 	color_fprintf_ln(s->fp, c, "#");
 }
 
-static void wt_status_print_untracked_header(struct wt_status *s)
+static void wt_status_print_other_header(struct wt_status *s,
+					 const char *what,
+					 const char *how)
 {
 	const char *c = color(WT_STATUS_HEADER, s);
-	color_fprintf_ln(s->fp, c, "# Untracked files:");
+	color_fprintf_ln(s->fp, c, "# %s files:", what);
 	if (!advice_status_hints)
 		return;
-	color_fprintf_ln(s->fp, c, "#   (use \"git add <file>...\" to include in what will be committed)");
+	color_fprintf_ln(s->fp, c, "#   (use \"git %s <file>...\" to include in what will be committed)", how);
 	color_fprintf_ln(s->fp, c, "#");
 }
 
@@ -229,7 +236,7 @@ static void wt_status_collect_changed_cb(struct diff_queue_struct *q,
 		struct wt_status_change_data *d;
 
 		p = q->queue[i];
-		it = string_list_insert(p->one->path, &s->change);
+		it = string_list_insert(&s->change, p->one->path);
 		d = it->util;
 		if (!d) {
 			d = xcalloc(1, sizeof(*d));
@@ -276,7 +283,7 @@ static void wt_status_collect_updated_cb(struct diff_queue_struct *q,
 		struct wt_status_change_data *d;
 
 		p = q->queue[i];
-		it = string_list_insert(p->two->path, &s->change);
+		it = string_list_insert(&s->change, p->two->path);
 		d = it->util;
 		if (!d) {
 			d = xcalloc(1, sizeof(*d));
@@ -306,6 +313,8 @@ static void wt_status_collect_changes_worktree(struct wt_status *s)
 	DIFF_OPT_SET(&rev.diffopt, DIRTY_SUBMODULES);
 	if (!s->show_untracked_files)
 		DIFF_OPT_SET(&rev.diffopt, IGNORE_UNTRACKED_IN_SUBMODULES);
+	if (s->ignore_submodule_arg)
+		handle_ignore_submodules_arg(&rev.diffopt, s->ignore_submodule_arg);
 	rev.diffopt.format_callback = wt_status_collect_changed_cb;
 	rev.diffopt.format_callback_data = s;
 	rev.prune_data = s->pathspec;
@@ -321,6 +330,9 @@ static void wt_status_collect_changes_index(struct wt_status *s)
 	memset(&opt, 0, sizeof(opt));
 	opt.def = s->is_initial ? EMPTY_TREE_SHA1_HEX : s->reference;
 	setup_revisions(0, NULL, &rev, &opt);
+
+	if (s->ignore_submodule_arg)
+		handle_ignore_submodules_arg(&rev.diffopt, s->ignore_submodule_arg);
 
 	rev.diffopt.output_format |= DIFF_FORMAT_CALLBACK;
 	rev.diffopt.format_callback = wt_status_collect_updated_cb;
@@ -343,7 +355,7 @@ static void wt_status_collect_changes_initial(struct wt_status *s)
 
 		if (!ce_path_match(ce, s->pathspec))
 			continue;
-		it = string_list_insert(ce->name, &s->change);
+		it = string_list_insert(&s->change, ce->name);
 		d = it->util;
 		if (!d) {
 			d = xcalloc(1, sizeof(*d));
@@ -378,9 +390,26 @@ static void wt_status_collect_untracked(struct wt_status *s)
 			continue;
 		if (!match_pathspec(s->pathspec, ent->name, ent->len, 0, NULL))
 			continue;
-		s->workdir_untracked = 1;
-		string_list_insert(ent->name, &s->untracked);
+		string_list_insert(&s->untracked, ent->name);
+		free(ent);
 	}
+
+	if (s->show_ignored_files) {
+		dir.nr = 0;
+		dir.flags = DIR_SHOW_IGNORED | DIR_SHOW_OTHER_DIRECTORIES;
+		fill_directory(&dir, s->pathspec);
+		for (i = 0; i < dir.nr; i++) {
+			struct dir_entry *ent = dir.entries[i];
+			if (!cache_name_is_other(ent->name, ent->len))
+				continue;
+			if (!match_pathspec(s->pathspec, ent->name, ent->len, 0, NULL))
+				continue;
+			string_list_insert(&s->ignored, ent->name);
+			free(ent);
+		}
+	}
+
+	free(dir.entries);
 }
 
 void wt_status_collect(struct wt_status *s)
@@ -498,17 +527,18 @@ static void wt_status_print_submodule_summary(struct wt_status *s, int uncommitt
 	struct child_process sm_summary;
 	char summary_limit[64];
 	char index[PATH_MAX];
-	const char *env[] = { index, NULL };
-	const char *argv[] = {
-		"submodule",
-		"summary",
-		uncommitted ? "--files" : "--cached",
-		"--for-status",
-		"--summary-limit",
-		summary_limit,
-		uncommitted ? NULL : (s->amend ? "HEAD^" : "HEAD"),
-		NULL
-	};
+	const char *env[] = { NULL, NULL };
+	const char *argv[8];
+
+	env[0] =	index;
+	argv[0] =	"submodule";
+	argv[1] =	"summary";
+	argv[2] =	uncommitted ? "--files" : "--cached";
+	argv[3] =	"--for-status";
+	argv[4] =	"--summary-limit";
+	argv[5] =	summary_limit;
+	argv[6] =	uncommitted ? NULL : (s->amend ? "HEAD^" : "HEAD");
+	argv[7] =	NULL;
 
 	sprintf(summary_limit, "%d", s->submodule_summary);
 	snprintf(index, sizeof(index), "GIT_INDEX_FILE=%s", s->index_file);
@@ -523,7 +553,10 @@ static void wt_status_print_submodule_summary(struct wt_status *s, int uncommitt
 	run_command(&sm_summary);
 }
 
-static void wt_status_print_untracked(struct wt_status *s)
+static void wt_status_print_other(struct wt_status *s,
+				  struct string_list *l,
+				  const char *what,
+				  const char *how)
 {
 	int i;
 	struct strbuf buf = STRBUF_INIT;
@@ -531,10 +564,11 @@ static void wt_status_print_untracked(struct wt_status *s)
 	if (!s->untracked.nr)
 		return;
 
-	wt_status_print_untracked_header(s);
-	for (i = 0; i < s->untracked.nr; i++) {
+	wt_status_print_other_header(s, what, how);
+
+	for (i = 0; i < l->nr; i++) {
 		struct string_list_item *it;
-		it = &(s->untracked.items[i]);
+		it = &(l->items[i]);
 		color_fprintf(s->fp, color(WT_STATUS_HEADER, s), "#\t");
 		color_fprintf_ln(s->fp, color(WT_STATUS_UNTRACKED, s), "%s",
 				 quote_path(it->string, strlen(it->string),
@@ -618,13 +652,17 @@ void wt_status_print(struct wt_status *s)
 	wt_status_print_updated(s);
 	wt_status_print_unmerged(s);
 	wt_status_print_changed(s);
-	if (s->submodule_summary) {
+	if (s->submodule_summary &&
+	    (!s->ignore_submodule_arg ||
+	     strcmp(s->ignore_submodule_arg, "all"))) {
 		wt_status_print_submodule_summary(s, 0);  /* staged */
 		wt_status_print_submodule_summary(s, 1);  /* unstaged */
 	}
-	if (s->show_untracked_files)
-		wt_status_print_untracked(s);
-	else if (s->commitable)
+	if (s->show_untracked_files) {
+		wt_status_print_other(s, &s->untracked, "Untracked", "add");
+		if (s->show_ignored_files)
+			wt_status_print_other(s, &s->ignored, "Ignored", "add -f");
+	} else if (s->commitable)
 		fprintf(s->fp, "# Untracked files not listed%s\n",
 			advice_status_hints
 			? " (use -u option to show untracked files)" : "");
@@ -715,24 +753,84 @@ static void wt_shortstatus_status(int null_termination, struct string_list_item 
 	}
 }
 
-static void wt_shortstatus_untracked(int null_termination, struct string_list_item *it,
-			    struct wt_status *s)
+static void wt_shortstatus_other(int null_termination, struct string_list_item *it,
+				 struct wt_status *s, const char *sign)
 {
 	if (null_termination) {
-		fprintf(stdout, "?? %s%c", it->string, 0);
+		fprintf(stdout, "%s %s%c", sign, it->string, 0);
 	} else {
 		struct strbuf onebuf = STRBUF_INIT;
 		const char *one;
 		one = quote_path(it->string, -1, &onebuf, s->prefix);
-		color_fprintf(s->fp, color(WT_STATUS_UNTRACKED, s), "??");
+		color_fprintf(s->fp, color(WT_STATUS_UNTRACKED, s), "%s", sign);
 		printf(" %s\n", one);
 		strbuf_release(&onebuf);
 	}
 }
 
-void wt_shortstatus_print(struct wt_status *s, int null_termination)
+static void wt_shortstatus_print_tracking(struct wt_status *s)
+{
+	struct branch *branch;
+	const char *header_color = color(WT_STATUS_HEADER, s);
+	const char *branch_color_local = color(WT_STATUS_LOCAL_BRANCH, s);
+	const char *branch_color_remote = color(WT_STATUS_REMOTE_BRANCH, s);
+
+	const char *base;
+	const char *branch_name;
+	int num_ours, num_theirs;
+
+	color_fprintf(s->fp, color(WT_STATUS_HEADER, s), "## ");
+
+	if (!s->branch)
+		return;
+	branch_name = s->branch;
+
+	if (!prefixcmp(branch_name, "refs/heads/"))
+		branch_name += 11;
+	else if (!strcmp(branch_name, "HEAD")) {
+		branch_name = "HEAD (no branch)";
+		branch_color_local = color(WT_STATUS_NOBRANCH, s);
+	}
+
+	branch = branch_get(s->branch + 11);
+	if (s->is_initial)
+		color_fprintf(s->fp, header_color, "Initial commit on ");
+	if (!stat_tracking_info(branch, &num_ours, &num_theirs)) {
+		color_fprintf_ln(s->fp, branch_color_local,
+			"%s", branch_name);
+		return;
+	}
+
+	base = branch->merge[0]->dst;
+	base = shorten_unambiguous_ref(base, 0);
+	color_fprintf(s->fp, branch_color_local, "%s", branch_name);
+	color_fprintf(s->fp, header_color, "...");
+	color_fprintf(s->fp, branch_color_remote, "%s", base);
+
+	color_fprintf(s->fp, header_color, " [");
+	if (!num_ours) {
+		color_fprintf(s->fp, header_color, "behind ");
+		color_fprintf(s->fp, branch_color_remote, "%d", num_theirs);
+	} else if (!num_theirs) {
+		color_fprintf(s->fp, header_color, "ahead ");
+		color_fprintf(s->fp, branch_color_local, "%d", num_ours);
+	} else {
+		color_fprintf(s->fp, header_color, "ahead ");
+		color_fprintf(s->fp, branch_color_local, "%d", num_ours);
+		color_fprintf(s->fp, header_color, ", behind ");
+		color_fprintf(s->fp, branch_color_remote, "%d", num_theirs);
+	}
+
+	color_fprintf_ln(s->fp, header_color, "]");
+}
+
+void wt_shortstatus_print(struct wt_status *s, int null_termination, int show_branch)
 {
 	int i;
+
+	if (show_branch)
+		wt_shortstatus_print_tracking(s);
+
 	for (i = 0; i < s->change.nr; i++) {
 		struct wt_status_change_data *d;
 		struct string_list_item *it;
@@ -748,7 +846,13 @@ void wt_shortstatus_print(struct wt_status *s, int null_termination)
 		struct string_list_item *it;
 
 		it = &(s->untracked.items[i]);
-		wt_shortstatus_untracked(null_termination, it, s);
+		wt_shortstatus_other(null_termination, it, s, "??");
+	}
+	for (i = 0; i < s->ignored.nr; i++) {
+		struct string_list_item *it;
+
+		it = &(s->ignored.items[i]);
+		wt_shortstatus_other(null_termination, it, s, "!!");
 	}
 }
 
@@ -757,5 +861,5 @@ void wt_porcelain_print(struct wt_status *s, int null_termination)
 	s->use_color = 0;
 	s->relative_paths = 0;
 	s->prefix = NULL;
-	wt_shortstatus_print(s, null_termination);
+	wt_shortstatus_print(s, null_termination, 0);
 }

@@ -5,6 +5,7 @@
 #include "refs.h"
 #include "run-command.h"
 #include "remote.h"
+#include "url.h"
 
 static char *server_capabilities;
 
@@ -131,7 +132,7 @@ int path_match(const char *path, int nr, char **match)
 enum protocol {
 	PROTO_LOCAL = 1,
 	PROTO_SSH,
-	PROTO_GIT,
+	PROTO_GIT
 };
 
 static enum protocol get_protocol(const char *name)
@@ -450,7 +451,7 @@ static struct child_process no_fork;
 struct child_process *git_connect(int fd[2], const char *url_orig,
 				  const char *prog, int flags)
 {
-	char *url = xstrdup(url_orig);
+	char *url;
 	char *host, *path;
 	char *end;
 	int c;
@@ -465,6 +466,11 @@ struct child_process *git_connect(int fd[2], const char *url_orig,
 	 * what happened to our children.
 	 */
 	signal(SIGCHLD, SIG_DFL);
+
+	if (is_url(url_orig))
+		url = url_decode(url_orig);
+	else
+		url = xstrdup(url_orig);
 
 	host = strstr(url, "://");
 	if (host) {

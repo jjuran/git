@@ -20,6 +20,7 @@
 #include "mailmap.h"
 #include "parse-options.h"
 #include "utf8.h"
+#include "userdiff.h"
 
 static char blame_usage[] = "git blame [options] [rev-opts] [rev] [--] file";
 
@@ -86,16 +87,50 @@ struct origin {
 };
 
 /*
+ * Prepare diff_filespec and convert it using diff textconv API
+ * if the textconv driver exists.
+ * Return 1 if the conversion succeeds, 0 otherwise.
+ */
+int textconv_object(const char *path,
+		    const unsigned char *sha1,
+		    char **buf,
+		    unsigned long *buf_size)
+{
+	struct diff_filespec *df;
+	struct userdiff_driver *textconv;
+
+	df = alloc_filespec(path);
+	fill_filespec(df, sha1, S_IFREG | 0664);
+	textconv = get_textconv(df);
+	if (!textconv) {
+		free_filespec(df);
+		return 0;
+	}
+
+	*buf_size = fill_textconv(textconv, df, buf);
+	free_filespec(df);
+	return 1;
+}
+
+/*
  * Given an origin, prepare mmfile_t structure to be used by the
  * diff machinery
  */
-static void fill_origin_blob(struct origin *o, mmfile_t *file)
+static void fill_origin_blob(struct diff_options *opt,
+			     struct origin *o, mmfile_t *file)
 {
 	if (!o->file.ptr) {
 		enum object_type type;
+		unsigned long file_size;
+
 		num_read_blob++;
-		file->ptr = read_sha1_file(o->blob_sha1, &type,
-					   (unsigned long *)(&(file->size)));
+		if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
+		    textconv_object(o->path, o->blob_sha1, &file->ptr, &file_size))
+			;
+		else
+			file->ptr = read_sha1_file(o->blob_sha1, &type, &file_size);
+		file->size = file_size;
+
 		if (!file->ptr)
 			die("Cannot read blob %s for path %s",
 			    sha1_to_hex(o->blob_sha1),
@@ -282,7 +317,6 @@ static struct origin *get_origin(struct scoreboard *sb,
 static int fill_blob_sha1(struct origin *origin)
 {
 	unsigned mode;
-
 	if (!is_null_sha1(origin->blob_sha1))
 		return 0;
 	if (get_tree_entry(origin->commit->object.sha1,
@@ -733,16 +767,17 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 {
 	int last_in_target;
 	mmfile_t file_p, file_o;
-	struct blame_chunk_cb_data d = { sb, target, parent, 0, 0 };
+	struct blame_chunk_cb_data d;
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
-
+	memset(&d, 0, sizeof(d));
+	d.sb = sb; d.target = target; d.parent = parent;
 	last_in_target = find_last_in_target(sb, target);
 	if (last_in_target < 0)
 		return 1; /* nothing remains for this target */
 
-	fill_origin_blob(parent, &file_p);
-	fill_origin_blob(target, &file_o);
+	fill_origin_blob(&sb->revs->diffopt, parent, &file_p);
+	fill_origin_blob(&sb->revs->diffopt, target, &file_o);
 	num_get_patch++;
 
 	memset(&xpp, 0, sizeof(xpp));
@@ -875,10 +910,11 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	const char *cp;
 	int cnt;
 	mmfile_t file_o;
-	struct handle_split_cb_data d = { sb, ent, parent, split, 0, 0 };
+	struct handle_split_cb_data d;
 	xpparam_t xpp;
 	xdemitconf_t xecfg;
-
+	memset(&d, 0, sizeof(d));
+	d.sb = sb; d.ent = ent; d.parent = parent; d.split = split;
 	/*
 	 * Prepare mmfile that contains only the lines in ent.
 	 */
@@ -922,7 +958,7 @@ static int find_move_in_parent(struct scoreboard *sb,
 	if (last_in_target < 0)
 		return 1; /* nothing remains for this target */
 
-	fill_origin_blob(parent, &file_p);
+	fill_origin_blob(&sb->revs->diffopt, parent, &file_p);
 	if (!file_p.ptr)
 		return 0;
 
@@ -1063,7 +1099,7 @@ static int find_copy_in_parent(struct scoreboard *sb,
 
 			norigin = get_origin(sb, parent, p->one->path);
 			hashcpy(norigin->blob_sha1, p->one->sha1);
-			fill_origin_blob(norigin, &file_p);
+			fill_origin_blob(&sb->revs->diffopt, norigin, &file_p);
 			if (!file_p.ptr)
 				continue;
 
@@ -1983,6 +2019,16 @@ static int git_blame_config(const char *var, const char *value, void *cb)
 		blame_date_mode = parse_date_format(value);
 		return 0;
 	}
+
+	switch (userdiff_config(var, value)) {
+	case 0:
+		break;
+	case -1:
+		return -1;
+	default:
+		return 0;
+	}
+
 	return git_default_config(var, value, cb);
 }
 
@@ -1990,7 +2036,9 @@ static int git_blame_config(const char *var, const char *value, void *cb)
  * Prepare a dummy commit that represents the work tree (or staged) item.
  * Note that annotating work tree item never works in the reverse.
  */
-static struct commit *fake_working_tree_commit(const char *path, const char *contents_from)
+static struct commit *fake_working_tree_commit(struct diff_options *opt,
+					       const char *path,
+					       const char *contents_from)
 {
 	struct commit *commit;
 	struct origin *origin;
@@ -2018,6 +2066,7 @@ static struct commit *fake_working_tree_commit(const char *path, const char *con
 	if (!contents_from || strcmp("-", contents_from)) {
 		struct stat st;
 		const char *read_from;
+		unsigned long buf_len;
 
 		if (contents_from) {
 			if (stat(contents_from, &st) < 0)
@@ -2030,9 +2079,13 @@ static struct commit *fake_working_tree_commit(const char *path, const char *con
 			read_from = path;
 		}
 		mode = canon_mode(st.st_mode);
+
 		switch (st.st_mode & S_IFMT) {
 		case S_IFREG:
-			if (strbuf_read_file(&buf, read_from, st.st_size) != st.st_size)
+			if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
+			    textconv_object(read_from, null_sha1, &buf.buf, &buf_len))
+				buf.len = buf_len;
+			else if (strbuf_read_file(&buf, read_from, st.st_size) != st.st_size)
 				die_errno("cannot open or read '%s'", read_from);
 			break;
 		case S_IFLNK:
@@ -2248,6 +2301,7 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 	git_config(git_blame_config, NULL);
 	init_revisions(&revs, NULL);
 	revs.date_mode = blame_date_mode;
+	DIFF_OPT_SET(&revs.diffopt, ALLOW_TEXTCONV);
 
 	save_commit_buffer = 0;
 	dashdash_pos = 0;
@@ -2384,7 +2438,8 @@ parse_done:
 		 * or "--contents".
 		 */
 		setup_work_tree();
-		sb.final = fake_working_tree_commit(path, contents_from);
+		sb.final = fake_working_tree_commit(&sb.revs->diffopt,
+						    path, contents_from);
 		add_pending_object(&revs, &(sb.final->object), ":");
 	}
 	else if (contents_from)
@@ -2411,8 +2466,14 @@ parse_done:
 		if (fill_blob_sha1(o))
 			die("no such path %s in %s", path, final_commit_name);
 
-		sb.final_buf = read_sha1_file(o->blob_sha1, &type,
-					      &sb.final_buf_size);
+		if (DIFF_OPT_TST(&sb.revs->diffopt, ALLOW_TEXTCONV) &&
+		    textconv_object(path, o->blob_sha1, (char **) &sb.final_buf,
+				    &sb.final_buf_size))
+			;
+		else
+			sb.final_buf = read_sha1_file(o->blob_sha1, &type,
+						      &sb.final_buf_size);
+
 		if (!sb.final_buf)
 			die("Cannot read blob %s for path %s",
 			    sha1_to_hex(o->blob_sha1),
