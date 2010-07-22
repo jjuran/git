@@ -10,7 +10,7 @@ struct merge_options {
 	enum {
 		MERGE_RECURSIVE_NORMAL = 0,
 		MERGE_RECURSIVE_OURS,
-		MERGE_RECURSIVE_THEIRS,
+		MERGE_RECURSIVE_THEIRS
 	} recursive_variant;
 	const char *subtree_shift;
 	unsigned buffer_output : 1;
@@ -53,5 +53,8 @@ int merge_recursive_generic(struct merge_options *o,
 
 void init_merge_options(struct merge_options *o);
 struct tree *write_tree_from_memory(struct merge_options *o);
+
+/* builtin/merge.c */
+int try_merge_command(const char *strategy, struct commit_list *common, const char *head_arg, struct commit_list *remotes);
 
 #endif

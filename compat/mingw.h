@@ -80,7 +80,7 @@ static inline int fork(void)
 static inline unsigned int alarm(unsigned int seconds)
 { return 0; }
 static inline int fsync(int fd)
-{ return 0; }
+{ return _commit(fd); }
 static inline int getppid(void)
 { return 1; }
 static inline void sync(void)
@@ -89,7 +89,7 @@ static inline int getuid()
 { return 1; }
 static inline struct passwd *getpwnam(const char *name)
 { return NULL; }
-static inline int fcntl(int fd, int cmd, long arg)
+static inline int fcntl(int fd, int cmd, ...)
 {
 	if (cmd == F_GETFD || cmd == F_SETFD)
 		return 0;
@@ -169,6 +169,9 @@ int link(const char *oldpath, const char *newpath);
 
 int mingw_open (const char *filename, int oflags, ...);
 #define open mingw_open
+
+ssize_t mingw_write(int fd, const void *buf, size_t count);
+#define write mingw_write
 
 FILE *mingw_fopen (const char *filename, const char *otype);
 #define fopen mingw_fopen

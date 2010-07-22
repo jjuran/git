@@ -56,7 +56,7 @@
 # define _XOPEN_SOURCE 500
 # endif
 #elif !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__USLC__) && \
-      !defined(_M_UNIX) && !defined(sgi) && !defined(__DragonFly__)
+      !defined(_M_UNIX) && !defined(__sgi) && !defined(__DragonFly__)
 #define _XOPEN_SOURCE 600 /* glibc2 and AIX 5.3L need 500, OpenBSD needs 600 for S_ISLNK() */
 #define _XOPEN_SOURCE_EXTENDED 1 /* AIX 5.3L needs this */
 #endif
@@ -164,6 +164,13 @@ extern char *gitbasename(char *);
 #define PATH_SEP ':'
 #endif
 
+#ifdef HAVE_PATHS_H
+#include <paths.h>
+#endif
+#ifndef _PATH_DEFPATH
+#define _PATH_DEFPATH "/usr/local/bin:/usr/bin:/bin"
+#endif
+
 #ifndef STRIP_EXTENSION
 #define STRIP_EXTENSION ""
 #endif
@@ -193,6 +200,7 @@ extern char *gitbasename(char *);
 #include "compat/bswap.h"
 
 /* General helper functions */
+extern void vreportf(const char *prefix, const char *err, va_list params);
 extern NORETURN void usage(const char *err);
 extern NORETURN void usagef(const char *err, ...) __attribute__((format (printf, 1, 2)));
 extern NORETURN void die(const char *err, ...) __attribute__((format (printf, 1, 2)));
@@ -217,7 +225,6 @@ static inline const char *skip_prefix(const char *str, const char *prefix)
 #define PROT_READ 1
 #define PROT_WRITE 2
 #define MAP_PRIVATE 1
-#define MAP_FAILED ((void*)-1)
 #endif
 
 #define mmap git_mmap
@@ -245,6 +252,10 @@ extern int git_munmap(void *start, size_t length);
 		: 32 * 1024 * 1024)
 
 #endif /* NO_MMAP */
+
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void *)-1)
+#endif
 
 #ifdef NO_ST_BLOCKS_IN_STRUCT_STAT
 #define on_disk_bytes(st) ((st).st_size)
@@ -355,6 +366,9 @@ static inline void *gitmempcpy(void *dest, const void *src, size_t n)
 #endif
 
 extern void release_pack_memory(size_t, int);
+
+typedef void (*try_to_free_t)(size_t);
+extern try_to_free_t set_try_to_free_routine(try_to_free_t);
 
 extern char *xstrdup(const char *str);
 extern void *xmalloc(size_t size);
@@ -479,5 +493,14 @@ void git_qsort(void *base, size_t nmemb, size_t size,
  * Always returns the return value of unlink(2).
  */
 int unlink_or_warn(const char *path);
+/*
+ * Likewise for rmdir(2).
+ */
+int rmdir_or_warn(const char *path);
+/*
+ * Calls the correct function out of {unlink,rmdir}_or_warn based on
+ * the supplied file mode.
+ */
+int remove_or_warn(unsigned int mode, const char *path);
 
 #endif

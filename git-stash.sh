@@ -57,7 +57,7 @@ create_stash () {
 	# state of the base commit
 	if b_commit=$(git rev-parse --verify HEAD)
 	then
-		head=$(git log --no-color --abbrev-commit --pretty=oneline -n 1 HEAD --)
+		head=$(git rev-list --oneline -n 1 HEAD --)
 	else
 		die "You do not have the initial commit yet"
 	fi
@@ -86,7 +86,7 @@ create_stash () {
 			GIT_INDEX_FILE="$TMP-index" &&
 			export GIT_INDEX_FILE &&
 			git read-tree -m $i_tree &&
-			git add -u &&
+			git diff --name-only -z HEAD | git update-index -z --add --remove --stdin &&
 			git write-tree &&
 			rm -f "$TMP-index"
 		) ) ||
