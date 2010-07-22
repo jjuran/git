@@ -52,6 +52,16 @@ else
 	HAS_HEAD=
 fi
 
+cmdline="git am"
+if test '' != "$interactive"
+then
+	cmdline="$cmdline -i"
+fi
+if test '' != "$threeway"
+then
+	cmdline="$cmdline -3"
+fi
+
 sq () {
 	git rev-parse --sq-quote "$@"
 }
@@ -65,15 +75,6 @@ stop_here_user_resolve () {
     if [ -n "$resolvemsg" ]; then
 	    printf '%s\n' "$resolvemsg"
 	    stop_here $1
-    fi
-    cmdline="git am"
-    if test '' != "$interactive"
-    then
-        cmdline="$cmdline -i"
-    fi
-    if test '' != "$threeway"
-    then
-        cmdline="$cmdline -3"
     fi
     echo "When you have resolved this problem run \"$cmdline --resolved\"."
     echo "If you would prefer to skip this patch, instead run \"$cmdline --skip\"."
@@ -591,9 +592,11 @@ do
 
 		test -s "$dotest/patch" || {
 			echo "Patch is empty.  Was it split wrong?"
+			echo "If you would prefer to skip this patch, instead run \"$cmdline --skip\"."
+			echo "To restore the original branch and stop patching run \"$cmdline --abort\"."
 			stop_here $this
 		}
-		rm -f "$dotest/original-commit"
+		rm -f "$dotest/original-commit" "$dotest/author-script"
 		if test -f "$dotest/rebasing" &&
 			commit=$(sed -e 's/^From \([0-9a-f]*\) .*/\1/' \
 				-e q "$dotest/$msgnum") &&
@@ -602,6 +605,7 @@ do
 			git cat-file commit "$commit" |
 			sed -e '1,/^$/d' >"$dotest/msg-clean"
 			echo "$commit" > "$dotest/original-commit"
+			get_author_ident_from_commit "$commit" > "$dotest/author-script"
 		else
 			{
 				sed -n '/^Subject/ s/Subject: //p' "$dotest/info"
@@ -613,9 +617,14 @@ do
 		;;
 	esac
 
-	GIT_AUTHOR_NAME="$(sed -n '/^Author/ s/Author: //p' "$dotest/info")"
-	GIT_AUTHOR_EMAIL="$(sed -n '/^Email/ s/Email: //p' "$dotest/info")"
-	GIT_AUTHOR_DATE="$(sed -n '/^Date/ s/Date: //p' "$dotest/info")"
+	if test -f "$dotest/author-script"
+	then
+		eval $(cat "$dotest/author-script")
+	else
+		GIT_AUTHOR_NAME="$(sed -n '/^Author/ s/Author: //p' "$dotest/info")"
+		GIT_AUTHOR_EMAIL="$(sed -n '/^Email/ s/Email: //p' "$dotest/info")"
+		GIT_AUTHOR_DATE="$(sed -n '/^Date/ s/Date: //p' "$dotest/info")"
+	fi
 
 	if test -z "$GIT_AUTHOR_EMAIL"
 	then
@@ -690,7 +699,13 @@ do
 	else
 	    action=yes
 	fi
-	FIRSTLINE=$(sed 1q "$dotest/final-commit")
+
+	if test -f "$dotest/final-commit"
+	then
+		FIRSTLINE=$(sed 1q "$dotest/final-commit")
+	else
+		FIRSTLINE=""
+	fi
 
 	if test $action = skip
 	then
@@ -726,6 +741,8 @@ do
 		resolved=
 		git diff-index --quiet --cached HEAD -- && {
 			echo "No changes - did you forget to use 'git add'?"
+			echo "If there is nothing left to stage, chances are that something else"
+			echo "already introduced the same changes; you might want to skip this patch."
 			stop_here_user_resolve $this
 		}
 		unmerged=$(git ls-files -u)
@@ -740,7 +757,7 @@ do
 		;;
 	esac
 
-	if test $apply_status = 1 && test "$threeway" = t
+	if test $apply_status != 0 && test "$threeway" = t
 	then
 		if (fall_back_3way)
 		then

@@ -82,7 +82,7 @@ static int handle_line(char *line)
 
 	item = unsorted_string_list_lookup(&srcs, src);
 	if (!item) {
-		item = string_list_append(src, &srcs);
+		item = string_list_append(&srcs, src);
 		item->util = xcalloc(1, sizeof(struct src_data));
 		init_src_data(item->util);
 	}
@@ -93,19 +93,19 @@ static int handle_line(char *line)
 		src_data->head_status |= 1;
 	} else if (!prefixcmp(line, "branch ")) {
 		origin = line + 7;
-		string_list_append(origin, &src_data->branch);
+		string_list_append(&src_data->branch, origin);
 		src_data->head_status |= 2;
 	} else if (!prefixcmp(line, "tag ")) {
 		origin = line;
-		string_list_append(origin + 4, &src_data->tag);
+		string_list_append(&src_data->tag, origin + 4);
 		src_data->head_status |= 2;
 	} else if (!prefixcmp(line, "remote branch ")) {
 		origin = line + 14;
-		string_list_append(origin, &src_data->r_branch);
+		string_list_append(&src_data->r_branch, origin);
 		src_data->head_status |= 2;
 	} else {
 		origin = src;
-		string_list_append(line, &src_data->generic);
+		string_list_append(&src_data->generic, line);
 		src_data->head_status |= 2;
 	}
 
@@ -118,7 +118,7 @@ static int handle_line(char *line)
 		sprintf(new_origin, "%s of %s", origin, src);
 		origin = new_origin;
 	}
-	string_list_append(origin, &origins)->util = sha1;
+	string_list_append(&origins, origin)->util = sha1;
 	return 0;
 }
 
@@ -176,10 +176,10 @@ static void shortlog(const char *name, unsigned char *sha1,
 		strbuf_ltrim(&sb);
 
 		if (!sb.len)
-			string_list_append(sha1_to_hex(commit->object.sha1),
-					   &subjects);
+			string_list_append(&subjects,
+					   sha1_to_hex(commit->object.sha1));
 		else
-			string_list_append(strbuf_detach(&sb, NULL), &subjects);
+			string_list_append(&subjects, strbuf_detach(&sb, NULL));
 	}
 
 	if (count > limit)
@@ -202,35 +202,10 @@ static void shortlog(const char *name, unsigned char *sha1,
 	string_list_clear(&subjects, 0);
 }
 
-int fmt_merge_msg(int merge_summary, struct strbuf *in, struct strbuf *out) {
-	int limit = 20, i = 0, pos = 0;
+static void do_fmt_merge_msg_title(struct strbuf *out,
+	const char *current_branch) {
+	int i = 0;
 	char *sep = "";
-	unsigned char head_sha1[20];
-	const char *current_branch;
-
-	/* get current branch */
-	current_branch = resolve_ref("HEAD", head_sha1, 1, NULL);
-	if (!current_branch)
-		die("No current branch");
-	if (!prefixcmp(current_branch, "refs/heads/"))
-		current_branch += 11;
-
-	/* get a line */
-	while (pos < in->len) {
-		int len;
-		char *newline, *p = in->buf + pos;
-
-		newline = strchr(p, '\n');
-		len = newline ? newline - p : strlen(p);
-		pos += len + !!newline;
-		i++;
-		p[len] = 0;
-		if (handle_line(p))
-			die ("Error in line %d: %.*s", i, len, p);
-	}
-
-	if (!srcs.nr)
-		return 0;
 
 	strbuf_addstr(out, "Merge ");
 	for (i = 0; i < srcs.nr; i++) {
@@ -278,6 +253,40 @@ int fmt_merge_msg(int merge_summary, struct strbuf *in, struct strbuf *out) {
 		strbuf_addch(out, '\n');
 	else
 		strbuf_addf(out, " into %s\n", current_branch);
+}
+
+static int do_fmt_merge_msg(int merge_title, int merge_summary,
+	struct strbuf *in, struct strbuf *out) {
+	int limit = 20, i = 0, pos = 0;
+	unsigned char head_sha1[20];
+	const char *current_branch;
+
+	/* get current branch */
+	current_branch = resolve_ref("HEAD", head_sha1, 1, NULL);
+	if (!current_branch)
+		die("No current branch");
+	if (!prefixcmp(current_branch, "refs/heads/"))
+		current_branch += 11;
+
+	/* get a line */
+	while (pos < in->len) {
+		int len;
+		char *newline, *p = in->buf + pos;
+
+		newline = strchr(p, '\n');
+		len = newline ? newline - p : strlen(p);
+		pos += len + !!newline;
+		i++;
+		p[len] = 0;
+		if (handle_line(p))
+			die ("Error in line %d: %.*s", i, len, p);
+	}
+
+	if (!srcs.nr)
+		return 0;
+
+	if (merge_title)
+		do_fmt_merge_msg_title(out, current_branch);
 
 	if (merge_summary) {
 		struct commit *head;
@@ -289,11 +298,22 @@ int fmt_merge_msg(int merge_summary, struct strbuf *in, struct strbuf *out) {
 		rev.ignore_merges = 1;
 		rev.limited = 1;
 
+		if (suffixcmp(out->buf, "\n"))
+			strbuf_addch(out, '\n');
+
 		for (i = 0; i < origins.nr; i++)
 			shortlog(origins.items[i].string, origins.items[i].util,
 					head, &rev, limit, out);
 	}
 	return 0;
+}
+
+int fmt_merge_msg(int merge_summary, struct strbuf *in, struct strbuf *out) {
+	return do_fmt_merge_msg(1, merge_summary, in, out);
+}
+
+int fmt_merge_msg_shortlog(struct strbuf *in, struct strbuf *out) {
+	return do_fmt_merge_msg(0, 1, in, out);
 }
 
 int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)

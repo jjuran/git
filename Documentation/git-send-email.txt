@@ -101,6 +101,15 @@ See the CONFIGURATION section for 'sendemail.multiedit'.
 +
 The --to option must be repeated for each user you want on the to list.
 
+--8bit-encoding=<encoding>::
+	When encountering a non-ASCII message or subject that does not
+	declare its encoding, add headers/quoting to indicate it is
+	encoded in <encoding>.  Default is the value of the
+	'sendemail.assume8bitEncoding'; if that is unspecified, this
+	will be prompted for if any non-ASCII files are encountered.
++
+Note that no attempts whatsoever are made to validate the encoding.
+
 
 Sending
 ~~~~~~~
@@ -118,6 +127,13 @@ Sending
 	Specify the encryption to use, either 'ssl' or 'tls'.  Any other
 	value reverts to plain SMTP.  Default is the value of
 	'sendemail.smtpencryption'.
+
+--smtp-domain=<FQDN>::
+	Specifies the Fully Qualified Domain Name (FQDN) used in the
+	HELO/EHLO command to the SMTP server.  Some servers require the
+	FQDN to match your IP address.  If not set, git send-email attempts
+	to determine your FQDN automatically.  Default is the value of
+	'sendemail.smtpdomain'.
 
 --smtp-pass[=<password>]::
 	Password for SMTP-AUTH. The argument is optional: If no
@@ -298,6 +314,21 @@ sendemail.confirm::
 	Sets the default for whether to confirm before sending. Must be
 	one of 'always', 'never', 'cc', 'compose', or 'auto'. See '--confirm'
 	in the previous section for the meaning of these values.
+
+
+Use gmail as the smtp server
+----------------------------
+
+Add the following section to the config file:
+
+	[sendemail]
+		smtpencryption = tls
+		smtpserver = smtp.gmail.com
+		smtpuser = yourname@gmail.com
+		smtpserverport = 587
+
+Note: the following perl modules are required
+      Net::SMTP::SSL, MIME::Base64 and Authen::SASL
 
 
 Author

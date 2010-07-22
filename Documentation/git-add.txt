@@ -10,7 +10,8 @@ SYNOPSIS
 [verse]
 'git add' [-n] [-v] [--force | -f] [--interactive | -i] [--patch | -p]
 	  [--edit | -e] [--all | [--update | -u]] [--intent-to-add | -N]
-	  [--refresh] [--ignore-errors] [--] [<filepattern>...]
+	  [--refresh] [--ignore-errors] [--ignore-missing] [--]
+	  [<filepattern>...]
 
 DESCRIPTION
 -----------
@@ -57,7 +58,8 @@ OPTIONS
 
 -n::
 --dry-run::
-        Don't actually add the file(s), just show if they exist.
+	Don't actually add the file(s), just show if they exist and/or will
+	be ignored.
 
 -v::
 --verbose::
@@ -130,6 +132,12 @@ subdirectories.
 	If some files could not be added because of errors indexing
 	them, do not abort the operation, but continue adding the
 	others. The command shall still exit with non-zero status.
+
+--ignore-missing::
+	This option can only be used together with --dry-run. By using
+	this option the user can check if any of the given files would
+	be ignored, no matter if they are already present in the work
+	tree or not.
 
 \--::
 	This option can be used to separate command-line options from
@@ -266,9 +274,9 @@ patch::
 
        y - stage this hunk
        n - do not stage this hunk
-       q - quit, do not stage this hunk nor any of the remaining ones
-       a - stage this and all the remaining hunks in the file
-       d - do not stage this hunk nor any of the remaining hunks in the file
+       q - quit; do not stage this hunk nor any of the remaining ones
+       a - stage this hunk and all later hunks in the file
+       d - do not stage this hunk nor any of the later hunks in the file
        g - select a hunk to go to
        / - search for a hunk matching the given regex
        j - leave this hunk undecided, see next undecided hunk

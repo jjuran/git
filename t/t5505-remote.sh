@@ -320,6 +320,69 @@ test_expect_success 'add alt && prune' '
 	 git rev-parse --verify refs/remotes/origin/side2)
 '
 
+cat >test/expect <<\EOF
+some-tag
+EOF
+
+test_expect_success 'add with reachable tags (default)' '
+	(cd one &&
+	 >foobar &&
+	 git add foobar &&
+	 git commit -m "Foobar" &&
+	 git tag -a -m "Foobar tag" foobar-tag &&
+	 git reset --hard HEAD~1 &&
+	 git tag -a -m "Some tag" some-tag) &&
+	(mkdir add-tags &&
+	 cd add-tags &&
+	 git init &&
+	 git remote add -f origin ../one &&
+	 git tag -l some-tag >../test/output &&
+	 git tag -l foobar-tag >>../test/output &&
+	 test_must_fail git config remote.origin.tagopt) &&
+	test_cmp test/expect test/output
+'
+
+cat >test/expect <<\EOF
+some-tag
+foobar-tag
+--tags
+EOF
+
+test_expect_success 'add --tags' '
+	(rm -rf add-tags &&
+	 mkdir add-tags &&
+	 cd add-tags &&
+	 git init &&
+	 git remote add -f --tags origin ../one &&
+	 git tag -l some-tag >../test/output &&
+	 git tag -l foobar-tag >>../test/output &&
+	 git config remote.origin.tagopt >>../test/output) &&
+	test_cmp test/expect test/output
+'
+
+cat >test/expect <<\EOF
+--no-tags
+EOF
+
+test_expect_success 'add --no-tags' '
+	(rm -rf add-tags &&
+	 mkdir add-no-tags &&
+	 cd add-no-tags &&
+	 git init &&
+	 git remote add -f --no-tags origin ../one &&
+	 git tag -l some-tag >../test/output &&
+	 git tag -l foobar-tag >../test/output &&
+	 git config remote.origin.tagopt >>../test/output) &&
+	(cd one &&
+	 git tag -d some-tag foobar-tag) &&
+	test_cmp test/expect test/output
+'
+
+test_expect_success 'reject --no-no-tags' '
+	(cd add-no-tags &&
+	 test_must_fail git remote add -f --no-no-tags neworigin ../one)
+'
+
 cat > one/expect << EOF
   apis/master
   apis/side
@@ -532,6 +595,94 @@ test_expect_success 'show empty remote' '
 		cd empty-clone &&
 		git remote show origin
 	)
+'
+
+test_expect_success 'remote set-branches requires a remote' '
+	test_must_fail git remote set-branches &&
+	test_must_fail git remote set-branches --add
+'
+
+test_expect_success 'remote set-branches' '
+	echo "+refs/heads/*:refs/remotes/scratch/*" >expect.initial &&
+	sort <<-\EOF >expect.add &&
+	+refs/heads/*:refs/remotes/scratch/*
+	+refs/heads/other:refs/remotes/scratch/other
+	EOF
+	sort <<-\EOF >expect.replace &&
+	+refs/heads/maint:refs/remotes/scratch/maint
+	+refs/heads/master:refs/remotes/scratch/master
+	+refs/heads/next:refs/remotes/scratch/next
+	EOF
+	sort <<-\EOF >expect.add-two &&
+	+refs/heads/maint:refs/remotes/scratch/maint
+	+refs/heads/master:refs/remotes/scratch/master
+	+refs/heads/next:refs/remotes/scratch/next
+	+refs/heads/pu:refs/remotes/scratch/pu
+	+refs/heads/t/topic:refs/remotes/scratch/t/topic
+	EOF
+	sort <<-\EOF >expect.setup-ffonly &&
+	refs/heads/master:refs/remotes/scratch/master
+	+refs/heads/next:refs/remotes/scratch/next
+	EOF
+	sort <<-\EOF >expect.respect-ffonly &&
+	refs/heads/master:refs/remotes/scratch/master
+	+refs/heads/next:refs/remotes/scratch/next
+	+refs/heads/pu:refs/remotes/scratch/pu
+	EOF
+
+	git clone .git/ setbranches &&
+	(
+		cd setbranches &&
+		git remote rename origin scratch &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.initial &&
+
+		git remote set-branches scratch --add other &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.add &&
+
+		git remote set-branches scratch maint master next &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.replace &&
+
+		git remote set-branches --add scratch pu t/topic &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.add-two &&
+
+		git config --unset-all remote.scratch.fetch &&
+		git config remote.scratch.fetch \
+			refs/heads/master:refs/remotes/scratch/master &&
+		git config --add remote.scratch.fetch \
+			+refs/heads/next:refs/remotes/scratch/next &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.setup-ffonly &&
+
+		git remote set-branches --add scratch pu &&
+		git config --get-all remote.scratch.fetch >config-result &&
+		sort <config-result >../actual.respect-ffonly
+	) &&
+	test_cmp expect.initial actual.initial &&
+	test_cmp expect.add actual.add &&
+	test_cmp expect.replace actual.replace &&
+	test_cmp expect.add-two actual.add-two &&
+	test_cmp expect.setup-ffonly actual.setup-ffonly &&
+	test_cmp expect.respect-ffonly actual.respect-ffonly
+'
+
+test_expect_success 'remote set-branches with --mirror' '
+	echo "+refs/*:refs/*" >expect.initial &&
+	echo "+refs/heads/master:refs/heads/master" >expect.replace &&
+	git clone --mirror .git/ setbranches-mirror &&
+	(
+		cd setbranches-mirror &&
+		git remote rename origin scratch &&
+		git config --get-all remote.scratch.fetch >../actual.initial &&
+
+		git remote set-branches scratch heads/master &&
+		git config --get-all remote.scratch.fetch >../actual.replace
+	) &&
+	test_cmp expect.initial actual.initial &&
+	test_cmp expect.replace actual.replace
 '
 
 test_expect_success 'new remote' '

@@ -60,6 +60,7 @@ static void *result(struct merge_list *entry, unsigned long *size)
 {
 	enum object_type type;
 	struct blob *base, *our, *their;
+	const char *path = entry->path;
 
 	if (!entry->stage)
 		return read_sha1_file(entry->blob->object.sha1, &type, size);
@@ -76,7 +77,7 @@ static void *result(struct merge_list *entry, unsigned long *size)
 	their = NULL;
 	if (entry)
 		their = entry->blob;
-	return merge_file(entry->path, base, our, their, size);
+	return merge_file(path, base, our, their, size);
 }
 
 static void *origin(struct merge_list *entry, unsigned long *size)
@@ -106,7 +107,7 @@ static void show_diff(struct merge_list *entry)
 	xdemitconf_t xecfg;
 	xdemitcb_t ecb;
 
-	xpp.flags = XDF_NEED_MINIMAL;
+	xpp.flags = 0;
 	memset(&xecfg, 0, sizeof(xecfg));
 	xecfg.ctxlen = 3;
 	ecb.outf = show_outf;

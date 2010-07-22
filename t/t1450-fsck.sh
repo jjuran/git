@@ -5,7 +5,9 @@ test_description='git fsck random collection of tests'
 . ./test-lib.sh
 
 test_expect_success setup '
+	git config i18n.commitencoding ISO-8859-1 &&
 	test_commit A fileA one &&
+	git config --unset i18n.commitencoding &&
 	git checkout HEAD^0 &&
 	test_commit B fileB two &&
 	git tag -d A B &&
@@ -26,6 +28,12 @@ test_expect_success 'loose objects borrowed from alternate are not missing' '
 		git fsck >out &&
 		! grep "missing blob" out
 	)
+'
+
+test_expect_success 'valid objects appear valid' '
+	{ git fsck 2>out; true; } &&
+	! grep error out &&
+	! grep fatal out
 '
 
 # Corruption tests follow.  Make sure to remove all traces of the
@@ -56,6 +64,34 @@ test_expect_success 'branch pointing to non-commit' '
 	grep "not a commit" out &&
 	git update-ref -d refs/heads/invalid
 '
+
+new=nothing
+test_expect_success 'email without @ is okay' '
+	git cat-file commit HEAD >basis &&
+	sed "s/@/AT/" basis >okay &&
+	new=$(git hash-object -t commit -w --stdin <okay) &&
+	echo "$new" &&
+	git update-ref refs/heads/bogus "$new" &&
+	git fsck 2>out &&
+	cat out &&
+	! grep "error in commit $new" out
+'
+git update-ref -d refs/heads/bogus
+rm -f ".git/objects/$new"
+
+new=nothing
+test_expect_success 'email with embedded > is not okay' '
+	git cat-file commit HEAD >basis &&
+	sed "s/@[a-z]/&>/" basis >bad-email &&
+	new=$(git hash-object -t commit -w --stdin <bad-email) &&
+	echo "$new" &&
+	git update-ref refs/heads/bogus "$new" &&
+	git fsck 2>out &&
+	cat out &&
+	grep "error in commit $new" out
+'
+git update-ref -d refs/heads/bogus
+rm -f ".git/objects/$new"
 
 cat > invalid-tag <<EOF
 object ffffffffffffffffffffffffffffffffffffffff

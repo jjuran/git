@@ -679,8 +679,8 @@ static int handle_one_ref(const char *path,
 
 /*
  * This interprets names like ':/Initial revision of "git"' by searching
- * through history and returning the first commit whose message starts
- * with the given string.
+ * through history and returning the first commit whose message matches
+ * the given regular expression.
  *
  * For future extension, ':/!' is reserved. If you want to match a message
  * beginning with a '!', you have to repeat the exclamation mark.
@@ -692,12 +692,17 @@ static int get_sha1_oneline(const char *prefix, unsigned char *sha1)
 	struct commit_list *list = NULL, *backup = NULL, *l;
 	int retval = -1;
 	char *temp_commit_buffer = NULL;
+	regex_t regex;
 
 	if (prefix[0] == '!') {
 		if (prefix[1] != '!')
 			die ("Invalid search pattern: %s", prefix);
 		prefix++;
 	}
+
+	if (regcomp(&regex, prefix, REG_EXTENDED))
+		die("Invalid search pattern: %s", prefix);
+
 	for_each_ref(handle_one_ref, &list);
 	for (l = list; l; l = l->next)
 		commit_list_insert(l->item, &backup);
@@ -721,12 +726,13 @@ static int get_sha1_oneline(const char *prefix, unsigned char *sha1)
 		}
 		if (!(p = strstr(p, "\n\n")))
 			continue;
-		if (!prefixcmp(p + 2, prefix)) {
+		if (!regexec(&regex, p + 2, 0, NULL, 0)) {
 			hashcpy(sha1, commit->object.sha1);
 			retval = 0;
 			break;
 		}
 	}
+	regfree(&regex);
 	free(temp_commit_buffer);
 	free_commit_list(list);
 	for (l = backup; l; l = l->next)
@@ -933,8 +939,8 @@ int interpret_branch_name(const char *name, struct strbuf *buf)
  */
 int get_sha1(const char *name, unsigned char *sha1)
 {
-	unsigned unused;
-	return get_sha1_with_mode(name, sha1, &unused);
+	struct object_context unused;
+	return get_sha1_with_context(name, sha1, &unused);
 }
 
 /* Must be called only when object_name:filename doesn't exist. */
@@ -1032,11 +1038,23 @@ static void diagnose_invalid_index_path(int stage,
 
 int get_sha1_with_mode_1(const char *name, unsigned char *sha1, unsigned *mode, int gently, const char *prefix)
 {
+	struct object_context oc;
+	int ret;
+	ret = get_sha1_with_context_1(name, sha1, &oc, gently, prefix);
+	*mode = oc.mode;
+	return ret;
+}
+
+int get_sha1_with_context_1(const char *name, unsigned char *sha1,
+			    struct object_context *oc,
+			    int gently, const char *prefix)
+{
 	int ret, bracket_depth;
 	int namelen = strlen(name);
 	const char *cp;
 
-	*mode = S_IFINVALID;
+	memset(oc, 0, sizeof(*oc));
+	oc->mode = S_IFINVALID;
 	ret = get_sha1_1(name, namelen, sha1);
 	if (!ret)
 		return ret;
@@ -1059,6 +1077,11 @@ int get_sha1_with_mode_1(const char *name, unsigned char *sha1, unsigned *mode, 
 			cp = name + 3;
 		}
 		namelen = namelen - (cp - name);
+
+		strncpy(oc->path, cp,
+			sizeof(oc->path));
+		oc->path[sizeof(oc->path)-1] = '\0';
+
 		if (!active_cache)
 			read_cache();
 		pos = cache_name_pos(cp, namelen);
@@ -1071,7 +1094,6 @@ int get_sha1_with_mode_1(const char *name, unsigned char *sha1, unsigned *mode, 
 				break;
 			if (ce_stage(ce) == stage) {
 				hashcpy(sha1, ce->sha1);
-				*mode = ce->ce_mode;
 				return 0;
 			}
 			pos++;
@@ -1098,12 +1120,17 @@ int get_sha1_with_mode_1(const char *name, unsigned char *sha1, unsigned *mode, 
 		}
 		if (!get_sha1_1(name, cp-name, tree_sha1)) {
 			const char *filename = cp+1;
-			ret = get_tree_entry(tree_sha1, filename, sha1, mode);
+			ret = get_tree_entry(tree_sha1, filename, sha1, &oc->mode);
 			if (!gently) {
 				diagnose_invalid_sha1_path(prefix, filename,
 							   tree_sha1, object_name);
 				free(object_name);
 			}
+			hashcpy(oc->tree, tree_sha1);
+			strncpy(oc->path, filename,
+				sizeof(oc->path));
+			oc->path[sizeof(oc->path)-1] = '\0';
+
 			return ret;
 		} else {
 			if (!gently)

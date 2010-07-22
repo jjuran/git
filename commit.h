@@ -28,6 +28,7 @@ extern const char *commit_type;
 extern struct decoration name_decoration;
 struct name_decoration {
 	struct name_decoration *next;
+	int type;
 	char name[1];
 };
 
@@ -60,7 +61,7 @@ enum cmit_fmt {
 	CMIT_FMT_EMAIL,
 	CMIT_FMT_USERFORMAT,
 
-	CMIT_FMT_UNSPECIFIED,
+	CMIT_FMT_UNSPECIFIED
 };
 
 struct pretty_print_context
@@ -162,5 +163,9 @@ static inline int single_parent(struct commit *commit)
 }
 
 struct commit_list *reduce_heads(struct commit_list *heads);
+
+extern int commit_tree(const char *msg, unsigned char *tree,
+		struct commit_list *parents, unsigned char *ret,
+		const char *author);
 
 #endif /* COMMIT_H */

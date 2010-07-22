@@ -54,6 +54,7 @@ git send-email [options] <file | directory | rev-list options >
     --in-reply-to           <str>  * Email "In-Reply-To:"
     --annotate                     * Review each patch that will be sent in an editor.
     --compose                      * Open an editor for introduction.
+    --8bit-encoding         <str>  * Encoding to assume 8bit mails if undeclared
 
   Sending:
     --envelope-sender       <str>  * Email envelope sender.
@@ -132,8 +133,6 @@ my $have_email_valid = eval { require Email::Valid; 1 };
 my $have_mail_address = eval { require Mail::Address; 1 };
 my $smtp;
 my $auth;
-my $mail_domain_default = "localhost.localdomain";
-my $mail_domain;
 
 sub unique_email_list(@);
 sub cleanup_compose_files();
@@ -190,9 +189,10 @@ sub do_edit {
 # Variables with corresponding config settings
 my ($thread, $chain_reply_to, $suppress_from, $signed_off_by_cc, $cc_cmd);
 my ($smtp_server, $smtp_server_port, $smtp_authuser, $smtp_encryption);
-my ($identity, $aliasfiletype, @alias_files, @smtp_host_parts);
+my ($identity, $aliasfiletype, @alias_files, @smtp_host_parts, $smtp_domain);
 my ($validate, $confirm);
 my (@suppress_cc);
+my ($auto_8bit_encoding);
 
 my ($debug_net_smtp) = 0;		# Net::SMTP, see send_message()
 
@@ -212,6 +212,7 @@ my %config_settings = (
     "smtpserverport" => \$smtp_server_port,
     "smtpuser" => \$smtp_authuser,
     "smtppass" => \$smtp_authpass,
+	"smtpdomain" => \$smtp_domain,
     "to" => \@to,
     "cc" => \@initial_cc,
     "cccmd" => \$cc_cmd,
@@ -223,6 +224,7 @@ my %config_settings = (
     "multiedit" => \$multiedit,
     "confirm"   => \$confirm,
     "from" => \$sender,
+    "assume8bitencoding" => \$auto_8bit_encoding,
 );
 
 # Help users prepare for 1.7.0
@@ -283,7 +285,7 @@ my $rc = GetOptions("sender|from=s" => \$sender,
 		    "smtp-ssl" => sub { $smtp_encryption = 'ssl' },
 		    "smtp-encryption=s" => \$smtp_encryption,
 		    "smtp-debug:i" => \$debug_net_smtp,
-		    "smtp-domain:s" => \$mail_domain,
+		    "smtp-domain:s" => \$smtp_domain,
 		    "identity=s" => \$identity,
 		    "annotate" => \$annotate,
 		    "compose" => \$compose,
@@ -298,6 +300,7 @@ my $rc = GetOptions("sender|from=s" => \$sender,
 		    "thread!" => \$thread,
 		    "validate!" => \$validate,
 		    "format-patch!" => \$format_patch,
+		    "8bit-encoding=s" => \$auto_8bit_encoding,
 	 );
 
 unless ($rc) {
@@ -670,6 +673,35 @@ sub ask {
 	return undef;
 }
 
+my %broken_encoding;
+
+sub file_declares_8bit_cte($) {
+	my $fn = shift;
+	open (my $fh, '<', $fn);
+	while (my $line = <$fh>) {
+		last if ($line =~ /^$/);
+		return 1 if ($line =~ /^Content-Transfer-Encoding: .*8bit.*$/);
+	}
+	close $fh;
+	return 0;
+}
+
+foreach my $f (@files) {
+	next unless (body_or_subject_has_nonascii($f)
+		     && !file_declares_8bit_cte($f));
+	$broken_encoding{$f} = 1;
+}
+
+if (!defined $auto_8bit_encoding && scalar %broken_encoding) {
+	print "The following files are 8bit, but do not declare " .
+		"a Content-Transfer-Encoding.\n";
+	foreach my $f (sort keys %broken_encoding) {
+		print "    $f\n";
+	}
+	$auto_8bit_encoding = ask("Which 8bit encoding should I declare [UTF-8]? ",
+				  default => "UTF-8");
+}
+
 my $prompting = 0;
 if (!defined $sender) {
 	$sender = $repoauthor || $repocommitter || '';
@@ -761,8 +793,7 @@ sub extract_valid_address {
 # We'll setup a template for the message id, using the "from" address:
 
 my ($message_id_stamp, $message_id_serial);
-sub make_message_id
-{
+sub make_message_id {
 	my $uniq;
 	if (!defined $message_id_stamp) {
 		$message_id_stamp = sprintf("%s-%s", time, $$);
@@ -817,8 +848,7 @@ sub is_rfc2047_quoted {
 }
 
 # use the simplest quoting being able to handle the recipient
-sub sanitize_address
-{
+sub sanitize_address {
 	my ($recipient) = @_;
 	my ($recipient_name, $recipient_addr) = ($recipient =~ /^(.*?)\s*(<.*)/);
 
@@ -863,21 +893,23 @@ sub sanitize_address
 # This maildomain*() code is based on ideas in Perl library Test::Reporter
 # /usr/share/perl5/Test/Reporter/Mail/Util.pm ==> sub _maildomain ()
 
-sub maildomain_net
-{
+sub valid_fqdn {
+	my $domain = shift;
+	return !($^O eq 'darwin' && $domain =~ /\.local$/) && $domain =~ /\./;
+}
+
+sub maildomain_net {
 	my $maildomain;
 
 	if (eval { require Net::Domain; 1 }) {
 		my $domain = Net::Domain::domainname();
-		$maildomain = $domain
-			unless $^O eq 'darwin' && $domain =~ /\.local$/;
+		$maildomain = $domain if valid_fqdn($domain);
 	}
 
 	return $maildomain;
 }
 
-sub maildomain_mta
-{
+sub maildomain_mta {
 	my $maildomain;
 
 	if (eval { require Net::SMTP; 1 }) {
@@ -887,8 +919,7 @@ sub maildomain_mta
 				my $domain = $smtp->domain;
 				$smtp->quit;
 
-				$maildomain = $domain
-					unless $^O eq 'darwin' && $domain =~ /\.local$/;
+				$maildomain = $domain if valid_fqdn($domain);
 
 				last if $maildomain;
 			}
@@ -898,17 +929,15 @@ sub maildomain_mta
 	return $maildomain;
 }
 
-sub maildomain
-{
-	return maildomain_net() || maildomain_mta() || $mail_domain_default;
+sub maildomain {
+	return maildomain_net() || maildomain_mta() || 'localhost.localdomain';
 }
 
 # Returns 1 if the message was sent, and 0 otherwise.
 # In actuality, the whole program dies when there
 # is an error sending a message.
 
-sub send_message
-{
+sub send_message {
 	my @recipients = unique_email_list(@to);
 	@cc = (grep { my $cc = extract_valid_address($_);
 		      not grep { $cc eq $_ } @recipients
@@ -1005,18 +1034,18 @@ X-Mailer: git-send-email $gitversion
 		if ($smtp_encryption eq 'ssl') {
 			$smtp_server_port ||= 465; # ssmtp
 			require Net::SMTP::SSL;
-			$mail_domain ||= maildomain();
+			$smtp_domain ||= maildomain();
 			$smtp ||= Net::SMTP::SSL->new($smtp_server,
-						      Hello => $mail_domain,
+						      Hello => $smtp_domain,
 						      Port => $smtp_server_port);
 		}
 		else {
 			require Net::SMTP;
-			$mail_domain ||= maildomain();
+			$smtp_domain ||= maildomain();
 			$smtp ||= Net::SMTP->new((defined $smtp_server_port)
 						 ? "$smtp_server:$smtp_server_port"
 						 : $smtp_server,
-						 Hello => $mail_domain,
+						 Hello => $smtp_domain,
 						 Debug => $debug_net_smtp);
 			if ($smtp_encryption eq 'tls' && $smtp) {
 				require Net::SMTP::SSL;
@@ -1039,7 +1068,7 @@ X-Mailer: git-send-email $gitversion
 			die "Unable to initialize SMTP properly. Check config and use --smtp-debug. ",
 			    "VALUES: server=$smtp_server ",
 			    "encryption=$smtp_encryption ",
-			    "maildomain=$mail_domain",
+			    "hello=$smtp_domain",
 			    defined $smtp_server_port ? "port=$smtp_server_port" : "";
 		}
 
@@ -1225,6 +1254,18 @@ foreach my $t (@files) {
 			or die "(cc-cmd) failed to close pipe to '$cc_cmd'";
 	}
 
+	if ($broken_encoding{$t} && !$has_content_type) {
+		$has_content_type = 1;
+		push @xh, "MIME-Version: 1.0",
+			"Content-Type: text/plain; charset=$auto_8bit_encoding",
+			"Content-Transfer-Encoding: 8bit";
+		$body_encoding = $auto_8bit_encoding;
+	}
+
+	if ($broken_encoding{$t} && !is_rfc2047_quoted($subject)) {
+		$subject = quote_rfc2047($subject, $auto_8bit_encoding);
+	}
+
 	if (defined $author and $author ne $sender) {
 		$message = "From: $author\n\n$message";
 		if (defined $author_encoding) {
@@ -1237,6 +1278,7 @@ foreach my $t (@files) {
 				}
 			}
 			else {
+				$has_content_type = 1;
 				push @xh,
 				  'MIME-Version: 1.0',
 				  "Content-Type: text/plain; charset=$author_encoding",
@@ -1309,6 +1351,20 @@ sub file_has_nonascii {
 	my $fn = shift;
 	open(my $fh, '<', $fn)
 		or die "unable to open $fn: $!\n";
+	while (my $line = <$fh>) {
+		return 1 if $line =~ /[^[:ascii:]]/;
+	}
+	return 0;
+}
+
+sub body_or_subject_has_nonascii {
+	my $fn = shift;
+	open(my $fh, '<', $fn)
+		or die "unable to open $fn: $!\n";
+	while (my $line = <$fh>) {
+		last if $line =~ /^$/;
+		return 1 if $line =~ /^Subject.*[^[:ascii:]]/;
+	}
 	while (my $line = <$fh>) {
 		return 1 if $line =~ /[^[:ascii:]]/;
 	}

@@ -229,6 +229,7 @@ static const struct {
 
 	{ "GMT",    0, 0, },	/* Greenwich Mean */
 	{ "UTC",    0, 0, },	/* Universal (Coordinated) */
+	{ "Z",      0, 0, },    /* Zulu, alias for UTC */
 
 	{ "WET",    0, 0, },	/* Western European */
 	{ "BST",    0, 1, },	/* British Summer */
@@ -305,7 +306,7 @@ static int match_alpha(const char *date, struct tm *tm, int *offset)
 
 	for (i = 0; i < ARRAY_SIZE(timezone_names); i++) {
 		int match = match_string(date, timezone_names[i].name);
-		if (match >= 3) {
+		if (match >= 3 || match == strlen(timezone_names[i].name)) {
 			int off = timezone_names[i].offset;
 
 			/* This is bogus, but we like summer */
@@ -585,11 +586,17 @@ static int date_string(unsigned long date, int offset, char *buf, int len)
 
 /* Gr. strptime is crap for this; it doesn't have a way to require RFC2822
    (i.e. English) day/month names, and it doesn't work correctly with %z. */
-int parse_date(const char *date, char *result, int maxlen)
+int parse_date_toffset(const char *date, unsigned long *timestamp, int *offset)
 {
 	struct tm tm;
-	int offset, tm_gmt;
-	time_t then;
+	int tm_gmt;
+	unsigned long dummy_timestamp;
+	int dummy_offset;
+
+	if (!timestamp)
+		timestamp = &dummy_timestamp;
+	if (!offset)
+		offset = &dummy_offset;
 
 	memset(&tm, 0, sizeof(tm));
 	tm.tm_year = -1;
@@ -599,7 +606,7 @@ int parse_date(const char *date, char *result, int maxlen)
 	tm.tm_hour = -1;
 	tm.tm_min = -1;
 	tm.tm_sec = -1;
-	offset = -1;
+	*offset = -1;
 	tm_gmt = 0;
 
 	for (;;) {
@@ -611,11 +618,11 @@ int parse_date(const char *date, char *result, int maxlen)
 			break;
 
 		if (isalpha(c))
-			match = match_alpha(date, &tm, &offset);
+			match = match_alpha(date, &tm, offset);
 		else if (isdigit(c))
-			match = match_digit(date, &tm, &offset, &tm_gmt);
+			match = match_digit(date, &tm, offset, &tm_gmt);
 		else if ((c == '-' || c == '+') && isdigit(date[1]))
-			match = match_tz(date, &offset);
+			match = match_tz(date, offset);
 
 		if (!match) {
 			/* BAD CRAP */
@@ -626,16 +633,26 @@ int parse_date(const char *date, char *result, int maxlen)
 	}
 
 	/* mktime uses local timezone */
-	then = tm_to_time_t(&tm);
-	if (offset == -1)
-		offset = (then - mktime(&tm)) / 60;
+	*timestamp = tm_to_time_t(&tm);
+	if (*offset == -1)
+		*offset = ((time_t)*timestamp - mktime(&tm)) / 60;
 
-	if (then == -1)
+	if (*timestamp == -1)
 		return -1;
 
 	if (!tm_gmt)
-		then -= offset * 60;
-	return date_string(then, offset, result, maxlen);
+		*timestamp -= *offset * 60;
+	return 1; /* success */
+}
+
+int parse_date(const char *date, char *result, int maxlen)
+{
+	unsigned long timestamp;
+	int offset;
+	if (parse_date_toffset(date, &timestamp, &offset) > 0)
+		return date_string(timestamp, offset, result, maxlen);
+	else
+		return -1;
 }
 
 enum date_mode parse_date_format(const char *format)
@@ -983,11 +1000,12 @@ static unsigned long approxidate_str(const char *date,
 
 unsigned long approxidate_relative(const char *date, const struct timeval *tv)
 {
-	char buffer[50];
+	unsigned long timestamp;
+	int offset;
 	int errors = 0;
 
-	if (parse_date(date, buffer, sizeof(buffer)) > 0)
-		return strtoul(buffer, NULL, 0);
+	if (parse_date_toffset(date, &timestamp, &offset) > 0)
+		return timestamp;
 
 	return approxidate_str(date, tv, &errors);
 }
@@ -995,14 +1013,15 @@ unsigned long approxidate_relative(const char *date, const struct timeval *tv)
 unsigned long approxidate_careful(const char *date, int *error_ret)
 {
 	struct timeval tv;
-	char buffer[50];
+	unsigned long timestamp;
+	int offset;
 	int dummy = 0;
 	if (!error_ret)
 		error_ret = &dummy;
 
-	if (parse_date(date, buffer, sizeof(buffer)) > 0) {
+	if (parse_date_toffset(date, &timestamp, &offset) > 0) {
 		*error_ret = 0;
-		return strtoul(buffer, NULL, 0);
+		return timestamp;
 	}
 
 	gettimeofday(&tv, NULL);
