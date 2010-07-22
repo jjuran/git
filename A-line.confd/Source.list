@@ -162,6 +162,7 @@ merge-file.c
 merge-recursive.c
 name-hash.c
 notes.c
+notes-cache.c
 object.c
 pack-check.c
 pack-refs.c
@@ -224,6 +225,7 @@ tree-walk.c
 tree.c
 unpack-trees.c
 upload-pack.c
+url.c
 usage.c
 userdiff.c
 utf8.c
