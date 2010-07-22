@@ -80,7 +80,7 @@ static inline int fork(void)
 static inline unsigned int alarm(unsigned int seconds)
 { return 0; }
 static inline int fsync(int fd)
-{ return 0; }
+{ return _commit(fd); }
 static inline int getppid(void)
 { return 1; }
 static inline void sync(void)
@@ -89,7 +89,7 @@ static inline int getuid()
 { return 1; }
 static inline struct passwd *getpwnam(const char *name)
 { return NULL; }
-static inline int fcntl(int fd, int cmd, long arg)
+static inline int fcntl(int fd, int cmd, ...)
 {
 	if (cmd == F_GETFD || cmd == F_SETFD)
 		return 0;

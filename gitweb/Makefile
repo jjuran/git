@@ -4,15 +4,18 @@ all::
 # Define V=1 to have a more verbose compile.
 #
 # Define JSMIN to point to JavaScript minifier that functions as
-# a filter to have gitweb.js minified.
+# a filter to have static/gitweb.js minified.
 #
 # Define CSSMIN to point to a CSS minifier in order to generate a minified
-# version of gitweb.css
+# version of static/gitweb.css
 #
 
 prefix ?= $(HOME)
 bindir ?= $(prefix)/bin
+gitwebdir ?= /var/www/cgi-bin
+
 RM ?= rm -f
+INSTALL ?= install
 
 # default configuration for gitweb
 GITWEB_CONFIG = gitweb_config.perl
@@ -26,10 +29,10 @@ GITWEB_STRICT_EXPORT =
 GITWEB_BASE_URL =
 GITWEB_LIST =
 GITWEB_HOMETEXT = indextext.html
-GITWEB_CSS = gitweb.css
-GITWEB_LOGO = git-logo.png
-GITWEB_FAVICON = git-favicon.png
-GITWEB_JS = gitweb.js
+GITWEB_CSS = static/gitweb.css
+GITWEB_LOGO = static/git-logo.png
+GITWEB_FAVICON = static/git-favicon.png
+GITWEB_JS = static/gitweb.js
 GITWEB_SITE_HEADER =
 GITWEB_SITE_FOOTER =
 
@@ -49,9 +52,12 @@ SHELL_PATH ?= $(SHELL)
 PERL_PATH  ?= /usr/bin/perl
 
 # Shell quote;
-bindir_SQ = $(subst ','\'',$(bindir))         #'
-SHELL_PATH_SQ = $(subst ','\'',$(SHELL_PATH)) #'
-PERL_PATH_SQ  = $(subst ','\'',$(PERL_PATH))  #'
+bindir_SQ = $(subst ','\'',$(bindir))#'
+gitwebdir_SQ = $(subst ','\'',$(gitwebdir))#'
+gitwebstaticdir_SQ = $(subst ','\'',$(gitwebdir)/static)#'
+SHELL_PATH_SQ = $(subst ','\'',$(SHELL_PATH))#'
+PERL_PATH_SQ  = $(subst ','\'',$(PERL_PATH))#'
+DESTDIR_SQ    = $(subst ','\'',$(DESTDIR))#'
 
 # Quiet generation (unless V=1)
 QUIET_SUBDIR0  = +$(MAKE) -C # space to separate -C and subdir
@@ -80,19 +86,29 @@ endif
 
 all:: gitweb.cgi
 
+GITWEB_PROGRAMS = gitweb.cgi
+
 ifdef JSMIN
-GITWEB_JS = gitweb.min.js
-all:: gitweb.min.js
-gitweb.min.js: gitweb.js GITWEB-BUILD-OPTIONS
+GITWEB_FILES += static/gitweb.min.js
+GITWEB_JS = static/gitweb.min.js
+all:: static/gitweb.min.js
+static/gitweb.min.js: static/gitweb.js GITWEB-BUILD-OPTIONS
 	$(QUIET_GEN)$(JSMIN) <$< >$@
+else
+GITWEB_FILES += static/gitweb.js
 endif
 
 ifdef CSSMIN
-GITWEB_CSS = gitweb.min.css
-all:: gitweb.min.css
-gitweb.min.css: gitweb.css GITWEB-BUILD-OPTIONS
+GITWEB_FILES += static/gitweb.min.css
+GITWEB_CSS = static/gitweb.min.css
+all:: static/gitweb.min.css
+static/gitweb.min.css: static/gitweb.css GITWEB-BUILD-OPTIONS
 	$(QUIET_GEN)$(CSSMIN) <$< >$@
+else
+GITWEB_FILES += static/gitweb.css
 endif
+
+GITWEB_FILES += static/git-logo.png static/git-favicon.png
 
 GITWEB_REPLACE = \
 	-e 's|++GIT_VERSION++|$(GIT_VERSION)|g' \
@@ -127,8 +143,18 @@ gitweb.cgi: gitweb.perl GITWEB-BUILD-OPTIONS
 	chmod +x $@+ && \
 	mv $@+ $@
 
-clean:
-	$(RM) gitweb.cgi gitweb.min.js gitweb.min.css GITWEB-BUILD-OPTIONS
+### Installation rules
 
-.PHONY: all clean .FORCE-GIT-VERSION-FILE FORCE
+install: all
+	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(gitwebdir_SQ)'
+	$(INSTALL) -m 755 $(GITWEB_PROGRAMS) '$(DESTDIR_SQ)$(gitwebdir_SQ)'
+	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(gitwebstaticdir_SQ)'
+	$(INSTALL) -m 644 $(GITWEB_FILES) '$(DESTDIR_SQ)$(gitwebstaticdir_SQ)'
+
+### Cleaning rules
+
+clean:
+	$(RM) gitweb.cgi static/gitweb.min.js static/gitweb.min.css GITWEB-BUILD-OPTIONS
+
+.PHONY: all clean install .FORCE-GIT-VERSION-FILE FORCE
 

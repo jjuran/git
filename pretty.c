@@ -11,6 +11,17 @@
 #include "reflog-walk.h"
 
 static char *user_format;
+static struct cmt_fmt_map {
+	const char *name;
+	enum cmit_fmt format;
+	int is_tformat;
+	int is_alias;
+	const char *user_format;
+} *commit_formats;
+static size_t builtin_formats_len;
+static size_t commit_formats_len;
+static size_t commit_formats_alloc;
+static struct cmt_fmt_map *find_commit_format(const char *sought);
 
 static void save_user_format(struct rev_info *rev, const char *cp, int is_tformat)
 {
@@ -21,22 +32,118 @@ static void save_user_format(struct rev_info *rev, const char *cp, int is_tforma
 	rev->commit_format = CMIT_FMT_USERFORMAT;
 }
 
+static int git_pretty_formats_config(const char *var, const char *value, void *cb)
+{
+	struct cmt_fmt_map *commit_format = NULL;
+	const char *name;
+	const char *fmt;
+	int i;
+
+	if (prefixcmp(var, "pretty."))
+		return 0;
+
+	name = var + strlen("pretty.");
+	for (i = 0; i < builtin_formats_len; i++) {
+		if (!strcmp(commit_formats[i].name, name))
+			return 0;
+	}
+
+	for (i = builtin_formats_len; i < commit_formats_len; i++) {
+		if (!strcmp(commit_formats[i].name, name)) {
+			commit_format = &commit_formats[i];
+			break;
+		}
+	}
+
+	if (!commit_format) {
+		ALLOC_GROW(commit_formats, commit_formats_len+1,
+			   commit_formats_alloc);
+		commit_format = &commit_formats[commit_formats_len];
+		memset(commit_format, 0, sizeof(*commit_format));
+		commit_formats_len++;
+	}
+
+	commit_format->name = xstrdup(name);
+	commit_format->format = CMIT_FMT_USERFORMAT;
+	git_config_string(&fmt, var, value);
+	if (!prefixcmp(fmt, "format:") || !prefixcmp(fmt, "tformat:")) {
+		commit_format->is_tformat = fmt[0] == 't';
+		fmt = strchr(fmt, ':') + 1;
+	} else if (strchr(fmt, '%'))
+		commit_format->is_tformat = 1;
+	else
+		commit_format->is_alias = 1;
+	commit_format->user_format = fmt;
+
+	return 0;
+}
+
+static void setup_commit_formats(void)
+{
+	struct cmt_fmt_map builtin_formats[] = {
+		{ "raw",	CMIT_FMT_RAW,		0 },
+		{ "medium",	CMIT_FMT_MEDIUM,	0 },
+		{ "short",	CMIT_FMT_SHORT,		0 },
+		{ "email",	CMIT_FMT_EMAIL,		0 },
+		{ "fuller",	CMIT_FMT_FULLER,	0 },
+		{ "full",	CMIT_FMT_FULL,		0 },
+		{ "oneline",	CMIT_FMT_ONELINE,	1 }
+	};
+	commit_formats_len = ARRAY_SIZE(builtin_formats);
+	builtin_formats_len = commit_formats_len;
+	ALLOC_GROW(commit_formats, commit_formats_len, commit_formats_alloc);
+	memcpy(commit_formats, builtin_formats,
+	       sizeof(*builtin_formats)*ARRAY_SIZE(builtin_formats));
+
+	git_config(git_pretty_formats_config, NULL);
+}
+
+static struct cmt_fmt_map *find_commit_format_recursive(const char *sought,
+							const char *original,
+							int num_redirections)
+{
+	struct cmt_fmt_map *found = NULL;
+	size_t found_match_len = 0;
+	int i;
+
+	if (num_redirections >= commit_formats_len)
+		die("invalid --pretty format: "
+		    "'%s' references an alias which points to itself",
+		    original);
+
+	for (i = 0; i < commit_formats_len; i++) {
+		size_t match_len;
+
+		if (prefixcmp(commit_formats[i].name, sought))
+			continue;
+
+		match_len = strlen(commit_formats[i].name);
+		if (found == NULL || found_match_len > match_len) {
+			found = &commit_formats[i];
+			found_match_len = match_len;
+		}
+	}
+
+	if (found && found->is_alias) {
+		found = find_commit_format_recursive(found->user_format,
+						     original,
+						     num_redirections+1);
+	}
+
+	return found;
+}
+
+static struct cmt_fmt_map *find_commit_format(const char *sought)
+{
+	if (!commit_formats)
+		setup_commit_formats();
+
+	return find_commit_format_recursive(sought, sought, 0);
+}
+
 void get_commit_format(const char *arg, struct rev_info *rev)
 {
-	int i;
-	static struct cmt_fmt_map {
-		const char *n;
-		size_t cmp_len;
-		enum cmit_fmt v;
-	} cmt_fmts[] = {
-		{ "raw",	1,	CMIT_FMT_RAW },
-		{ "medium",	1,	CMIT_FMT_MEDIUM },
-		{ "short",	1,	CMIT_FMT_SHORT },
-		{ "email",	1,	CMIT_FMT_EMAIL },
-		{ "full",	5,	CMIT_FMT_FULL },
-		{ "fuller",	5,	CMIT_FMT_FULLER },
-		{ "oneline",	1,	CMIT_FMT_ONELINE },
-	};
+	struct cmt_fmt_map *commit_format;
 
 	rev->use_terminator = 0;
 	if (!arg || !*arg) {
@@ -47,21 +154,22 @@ void get_commit_format(const char *arg, struct rev_info *rev)
 		save_user_format(rev, strchr(arg, ':') + 1, arg[0] == 't');
 		return;
 	}
-	for (i = 0; i < ARRAY_SIZE(cmt_fmts); i++) {
-		if (!strncmp(arg, cmt_fmts[i].n, cmt_fmts[i].cmp_len) &&
-		    !strncmp(arg, cmt_fmts[i].n, strlen(arg))) {
-			if (cmt_fmts[i].v == CMIT_FMT_ONELINE)
-				rev->use_terminator = 1;
-			rev->commit_format = cmt_fmts[i].v;
-			return;
-		}
-	}
+
 	if (strchr(arg, '%')) {
 		save_user_format(rev, arg, 1);
 		return;
 	}
 
-	die("invalid --pretty format: %s", arg);
+	commit_format = find_commit_format(arg);
+	if (!commit_format)
+		die("invalid --pretty format: %s", arg);
+
+	rev->commit_format = commit_format->format;
+	rev->use_terminator = commit_format->is_tformat;
+	if (commit_format->format == CMIT_FMT_USERFORMAT) {
+		save_user_format(rev, commit_format->user_format,
+				 commit_format->is_tformat);
+	}
 }
 
 /*
@@ -801,6 +909,10 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 	case 'e':	/* encoding */
 		strbuf_add(sb, msg + c->encoding.off, c->encoding.len);
 		return 1;
+	case 'B':	/* raw body */
+		/* message_off is always left at the initial newline */
+		strbuf_addstr(sb, msg + c->message_off + 1);
+		return 1;
 	}
 
 	/* Now we need to parse the commit message. */
@@ -830,6 +942,7 @@ static size_t format_commit_item(struct strbuf *sb, const char *placeholder,
 		NO_MAGIC,
 		ADD_LF_BEFORE_NON_EMPTY,
 		DEL_LF_BEFORE_EMPTY,
+		ADD_SP_BEFORE_NON_EMPTY
 	} magic = NO_MAGIC;
 
 	switch (placeholder[0]) {
@@ -838,6 +951,9 @@ static size_t format_commit_item(struct strbuf *sb, const char *placeholder,
 		break;
 	case '+':
 		magic = ADD_LF_BEFORE_NON_EMPTY;
+		break;
+	case ' ':
+		magic = ADD_SP_BEFORE_NON_EMPTY;
 		break;
 	default:
 		break;
@@ -853,8 +969,11 @@ static size_t format_commit_item(struct strbuf *sb, const char *placeholder,
 	if ((orig_len == sb->len) && magic == DEL_LF_BEFORE_EMPTY) {
 		while (sb->len && sb->buf[sb->len - 1] == '\n')
 			strbuf_setlen(sb, sb->len - 1);
-	} else if ((orig_len != sb->len) && magic == ADD_LF_BEFORE_NON_EMPTY) {
-		strbuf_insert(sb, orig_len, "\n", 1);
+	} else if (orig_len != sb->len) {
+		if (magic == ADD_LF_BEFORE_NON_EMPTY)
+			strbuf_insert(sb, orig_len, "\n", 1);
+		else if (magic == ADD_SP_BEFORE_NON_EMPTY)
+			strbuf_insert(sb, orig_len, " ", 1);
 	}
 	return consumed + 1;
 }
@@ -864,7 +983,7 @@ static size_t userformat_want_item(struct strbuf *sb, const char *placeholder,
 {
 	struct userformat_want *w = context;
 
-	if (*placeholder == '+' || *placeholder == '-')
+	if (*placeholder == '+' || *placeholder == '-' || *placeholder == ' ')
 		placeholder++;
 
 	switch (*placeholder) {

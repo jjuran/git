@@ -107,9 +107,28 @@ A  dir2/added
 ?? untracked
 EOF
 
-test_expect_success 'status -s (2)' '
+test_expect_success 'status -s' '
 
 	git status -s >output &&
+	test_cmp expect output
+
+'
+
+cat >expect <<\EOF
+## master
+ M dir1/modified
+A  dir2/added
+?? dir1/untracked
+?? dir2/modified
+?? dir2/untracked
+?? expect
+?? output
+?? untracked
+EOF
+
+test_expect_success 'status -s -b' '
+
+	git status -s -b >output &&
 	test_cmp expect output
 
 '
@@ -437,6 +456,25 @@ test_expect_success 'status -s with color.status' '
 '
 
 cat >expect <<\EOF
+## <GREEN>master<RESET>
+ <RED>M<RESET> dir1/modified
+<GREEN>A<RESET>  dir2/added
+<BLUE>??<RESET> dir1/untracked
+<BLUE>??<RESET> dir2/modified
+<BLUE>??<RESET> dir2/untracked
+<BLUE>??<RESET> expect
+<BLUE>??<RESET> output
+<BLUE>??<RESET> untracked
+EOF
+
+test_expect_success 'status -s -b with color.status' '
+
+	git status -s -b | test_decode_color >output &&
+	test_cmp expect output
+
+'
+
+cat >expect <<\EOF
  M dir1/modified
 A  dir2/added
 ?? dir1/untracked
@@ -468,6 +506,13 @@ test_expect_success 'status --porcelain ignores color.status' '
 # recover unconditionally from color tests
 git config --unset color.status
 git config --unset color.ui
+
+test_expect_success 'status --porcelain ignores -b' '
+
+	git status --porcelain -b >output &&
+	test_cmp expect output
+
+'
 
 cat >expect <<\EOF
 # On branch master
@@ -761,6 +806,133 @@ test_expect_success POSIXPERM 'status succeeds in a read-only repository' '
 	status=$?
 	chmod 775 .git
 	(exit $status)
+'
+
+cat > expect << EOF
+# On branch master
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   dir1/modified
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked
+#	dir2/modified
+#	dir2/untracked
+#	expect
+#	output
+#	untracked
+no changes added to commit (use "git add" and/or "git commit -a")
+EOF
+
+test_expect_success '--ignore-submodules=untracked suppresses submodules with untracked content' '
+	echo modified > sm/untracked &&
+	git status --ignore-submodules=untracked > output &&
+	test_cmp expect output
+'
+
+test_expect_success '--ignore-submodules=dirty suppresses submodules with untracked content' '
+	git status --ignore-submodules=dirty > output &&
+	test_cmp expect output
+'
+
+test_expect_success '--ignore-submodules=dirty suppresses submodules with modified content' '
+	echo modified > sm/foo &&
+	git status --ignore-submodules=dirty > output &&
+	test_cmp expect output
+'
+
+cat > expect << EOF
+# On branch master
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#   (commit or discard the untracked or modified content in submodules)
+#
+#	modified:   dir1/modified
+#	modified:   sm (modified content)
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked
+#	dir2/modified
+#	dir2/untracked
+#	expect
+#	output
+#	untracked
+no changes added to commit (use "git add" and/or "git commit -a")
+EOF
+
+test_expect_success "--ignore-submodules=untracked doesn't suppress submodules with modified content" '
+	git status --ignore-submodules=untracked > output &&
+	test_cmp expect output
+'
+
+head2=$(cd sm && git commit -q -m "2nd commit" foo && git rev-parse --short=7 --verify HEAD)
+
+cat > expect << EOF
+# On branch master
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   dir1/modified
+#	modified:   sm (new commits)
+#
+# Submodules changed but not updated:
+#
+# * sm $head...$head2 (1):
+#   > 2nd commit
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked
+#	dir2/modified
+#	dir2/untracked
+#	expect
+#	output
+#	untracked
+no changes added to commit (use "git add" and/or "git commit -a")
+EOF
+
+test_expect_success "--ignore-submodules=untracked doesn't suppress submodule summary" '
+	git status --ignore-submodules=untracked > output &&
+	test_cmp expect output
+'
+
+test_expect_success "--ignore-submodules=dirty doesn't suppress submodule summary" '
+	git status --ignore-submodules=dirty > output &&
+	test_cmp expect output
+'
+
+cat > expect << EOF
+# On branch master
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   dir1/modified
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked
+#	dir2/modified
+#	dir2/untracked
+#	expect
+#	output
+#	untracked
+no changes added to commit (use "git add" and/or "git commit -a")
+EOF
+
+test_expect_success "--ignore-submodules=all suppresses submodule summary" '
+	git status --ignore-submodules=all > output &&
+	test_cmp expect output
 '
 
 test_done

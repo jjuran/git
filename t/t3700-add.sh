@@ -26,7 +26,7 @@ test_expect_success \
 	 chmod 755 xfoo1 &&
 	 git add xfoo1 &&
 	 case "`git ls-files --stage xfoo1`" in
-	 100644" "*xfoo1) echo ok;;
+	 100644" "*xfoo1) echo pass;;
 	 *) echo fail; git ls-files --stage xfoo1; (exit 1);;
 	 esac'
 
@@ -35,7 +35,7 @@ test_expect_success SYMLINKS 'git add: filemode=0 should not get confused by sym
 	ln -s foo xfoo1 &&
 	git add xfoo1 &&
 	case "`git ls-files --stage xfoo1`" in
-	120000" "*xfoo1) echo ok;;
+	120000" "*xfoo1) echo pass;;
 	*) echo fail; git ls-files --stage xfoo1; (exit 1);;
 	esac
 '
@@ -47,7 +47,7 @@ test_expect_success \
 	 chmod 755 xfoo2 &&
 	 git update-index --add xfoo2 &&
 	 case "`git ls-files --stage xfoo2`" in
-	 100644" "*xfoo2) echo ok;;
+	 100644" "*xfoo2) echo pass;;
 	 *) echo fail; git ls-files --stage xfoo2; (exit 1);;
 	 esac'
 
@@ -56,7 +56,7 @@ test_expect_success SYMLINKS 'git add: filemode=0 should not get confused by sym
 	ln -s foo xfoo2 &&
 	git update-index --add xfoo2 &&
 	case "`git ls-files --stage xfoo2`" in
-	120000" "*xfoo2) echo ok;;
+	120000" "*xfoo2) echo pass;;
 	*) echo fail; git ls-files --stage xfoo2; (exit 1);;
 	esac
 '
@@ -67,7 +67,7 @@ test_expect_success SYMLINKS \
 	 ln -s xfoo2 xfoo3 &&
 	 git update-index --add xfoo3 &&
 	 case "`git ls-files --stage xfoo3`" in
-	 120000" "*xfoo3) echo ok;;
+	 120000" "*xfoo3) echo pass;;
 	 *) echo fail; git ls-files --stage xfoo3; (exit 1);;
 	 esac'
 
@@ -172,7 +172,7 @@ test_expect_success 'git add --refresh' '
 	test -z "`git diff-index HEAD -- foo`" &&
 	git read-tree HEAD &&
 	case "`git diff-index HEAD -- foo`" in
-	:100644" "*"M	foo") echo ok;;
+	:100644" "*"M	foo") echo pass;;
 	*) echo fail; (exit 1);;
 	esac &&
 	git add --refresh -- foo &&
@@ -258,6 +258,31 @@ test_expect_success 'git add to resolve conflicts on otherwise ignored path' '
 test_expect_success '"add non-existent" should fail' '
 	test_must_fail git add non-existent &&
 	! (git ls-files | grep "non-existent")
+'
+
+test_expect_success 'git add --dry-run of existing changed file' "
+	echo new >>track-this &&
+	git add --dry-run track-this >actual 2>&1 &&
+	echo \"add 'track-this'\" | test_cmp - actual
+"
+
+test_expect_success 'git add --dry-run of non-existing file' "
+	echo ignored-file >>.gitignore &&
+	test_must_fail git add --dry-run track-this ignored-file >actual 2>&1 &&
+	echo \"fatal: pathspec 'ignored-file' did not match any files\" | test_cmp - actual
+"
+
+cat >expect <<EOF
+The following paths are ignored by one of your .gitignore files:
+ignored-file
+Use -f if you really want to add them.
+fatal: no files added
+add 'track-this'
+EOF
+
+test_expect_success 'git add --dry-run --ignore-missing of non-existing file' '
+	test_must_fail git add --dry-run --ignore-missing track-this ignored-file >actual 2>&1 &&
+	test_cmp expect actual
 '
 
 test_done

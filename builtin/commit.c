@@ -62,7 +62,7 @@ static struct lock_file false_lock; /* used only for partial commits */
 static enum {
 	COMMIT_AS_IS = 1,
 	COMMIT_NORMAL,
-	COMMIT_PARTIAL,
+	COMMIT_PARTIAL
 } commit_style;
 
 static const char *logfile, *force_author;
@@ -71,8 +71,8 @@ static char *edit_message, *use_message;
 static char *author_name, *author_email, *author_date;
 static int all, edit_flag, also, interactive, only, amend, signoff;
 static int quiet, verbose, no_verify, allow_empty, dry_run, renew_authorship;
-static int no_post_rewrite;
-static char *untracked_files_arg, *force_date;
+static int no_post_rewrite, allow_empty_message;
+static char *untracked_files_arg, *force_date, *ignore_submodule_arg;
 /*
  * The default commit message cleanup mode will remove the lines
  * beginning with # (shell comments) and leading and trailing
@@ -83,11 +83,12 @@ static char *untracked_files_arg, *force_date;
 static enum {
 	CLEANUP_SPACE,
 	CLEANUP_NONE,
-	CLEANUP_ALL,
+	CLEANUP_ALL
 } cleanup_mode;
 static char *cleanup_arg;
 
 static int use_editor = 1, initial_commit, in_merge, include_status = 1;
+static int show_ignored_in_status;
 static const char *only_include_assumed;
 static struct strbuf message;
 
@@ -95,8 +96,9 @@ static int null_termination;
 static enum {
 	STATUS_FORMAT_LONG,
 	STATUS_FORMAT_SHORT,
-	STATUS_FORMAT_PORCELAIN,
+	STATUS_FORMAT_PORCELAIN
 } status_format = STATUS_FORMAT_LONG;
+static int status_show_branch;
 
 static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 {
@@ -138,6 +140,7 @@ static struct option builtin_commit_options[] = {
 	OPT_BOOLEAN(0, "dry-run", &dry_run, "show what would be committed"),
 	OPT_SET_INT(0, "short", &status_format, "show status concisely",
 		    STATUS_FORMAT_SHORT),
+	OPT_BOOLEAN(0, "branch", &status_show_branch, "show branch information"),
 	OPT_SET_INT(0, "porcelain", &status_format,
 		    "show porcelain output format", STATUS_FORMAT_PORCELAIN),
 	OPT_BOOLEAN('z', "null", &null_termination,
@@ -145,8 +148,14 @@ static struct option builtin_commit_options[] = {
 	OPT_BOOLEAN(0, "amend", &amend, "amend previous commit"),
 	OPT_BOOLEAN(0, "no-post-rewrite", &no_post_rewrite, "bypass post-rewrite hook"),
 	{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, "mode", "show untracked files, optional modes: all, normal, no. (Default: all)", PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
-	OPT_BOOLEAN(0, "allow-empty", &allow_empty, "ok to record an empty change"),
 	/* end commit contents options */
+
+	{ OPTION_BOOLEAN, 0, "allow-empty", &allow_empty, NULL,
+	  "ok to record an empty change",
+	  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
+	{ OPTION_BOOLEAN, 0, "allow-empty-message", &allow_empty_message, NULL,
+	  "ok to record a change with an empty message",
+	  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
 
 	OPT_END()
 };
@@ -210,7 +219,7 @@ static int list_paths(struct string_list *list, const char *with_tree,
 			continue;
 		if (!match_pathspec(pattern, ce->name, ce_namelen(ce), 0, m))
 			continue;
-		item = string_list_insert(ce->name, list);
+		item = string_list_insert(list, ce->name);
 		if (ce_skip_worktree(ce))
 			item->util = item; /* better a valid pointer than a fake one */
 	}
@@ -334,9 +343,13 @@ static char *prepare_index(int argc, const char **argv, const char *prefix, int 
 	if (!pathspec || !*pathspec) {
 		fd = hold_locked_index(&index_lock, 1);
 		refresh_cache_or_die(refresh_flags);
-		if (write_cache(fd, active_cache, active_nr) ||
-		    commit_locked_index(&index_lock))
-			die("unable to write new_index file");
+		if (active_cache_changed) {
+			if (write_cache(fd, active_cache, active_nr) ||
+			    commit_locked_index(&index_lock))
+				die("unable to write new_index file");
+		} else {
+			rollback_lock_file(&index_lock);
+		}
 		commit_style = COMMIT_AS_IS;
 		return get_index_file();
 	}
@@ -422,7 +435,7 @@ static int run_status(FILE *fp, const char *index_file, const char *prefix, int 
 
 	switch (status_format) {
 	case STATUS_FORMAT_SHORT:
-		wt_shortstatus_print(s, null_termination);
+		wt_shortstatus_print(s, null_termination, status_show_branch);
 		break;
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(s, null_termination);
@@ -730,17 +743,8 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 
 	if (use_editor) {
 		char index[PATH_MAX];
-
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus on
-#endif
-
-		const char *env[2] = { index, NULL };
-
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus reset
-#endif
-
+		const char *env[2] = { NULL };
+		env[0] =  index;
 		snprintf(index, sizeof(index), "GIT_INDEX_FILE=%s", index_file);
 		if (launch_editor(git_path(commit_editmsg), NULL, env)) {
 			fprintf(stderr,
@@ -1049,6 +1053,8 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT__VERBOSE(&verbose),
 		OPT_SET_INT('s', "short", &status_format,
 			    "show status concisely", STATUS_FORMAT_SHORT),
+		OPT_BOOLEAN('b', "branch", &status_show_branch,
+			    "show branch information"),
 		OPT_SET_INT(0, "porcelain", &status_format,
 			    "show porcelain output format",
 			    STATUS_FORMAT_PORCELAIN),
@@ -1057,6 +1063,11 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg,
 		  "mode",
 		  "show untracked files, optional modes: all, normal, no. (Default: all)",
+		  PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
+		OPT_BOOLEAN(0, "ignored", &show_ignored_in_status,
+			    "show ignored files"),
+		{ OPTION_STRING, 0, "ignore-submodules", &ignore_submodule_arg, "when",
+		  "ignore changes to submodules, optional when: all, dirty, untracked. (Default: all)",
 		  PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
 		OPT_END(),
 	};
@@ -1071,7 +1082,8 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 			     builtin_status_options,
 			     builtin_status_usage, 0);
 	handle_untracked_files_arg(&s);
-
+	if (show_ignored_in_status)
+		s.show_ignored_files = 1;
 	if (*argv)
 		s.pathspec = get_pathspec(prefix, argv);
 
@@ -1080,13 +1092,16 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 
 	fd = hold_locked_index(&index_lock, 0);
 	if (0 <= fd) {
-		if (!write_cache(fd, active_cache, active_nr))
+		if (active_cache_changed &&
+		    !write_cache(fd, active_cache, active_nr))
 			commit_locked_index(&index_lock);
-		rollback_lock_file(&index_lock);
+		else
+			rollback_lock_file(&index_lock);
 	}
 
 	s.is_initial = get_sha1(s.reference, sha1) ? 1 : 0;
 	s.in_merge = in_merge;
+	s.ignore_submodule_arg = ignore_submodule_arg;
 	wt_status_collect(&s);
 
 	if (s.relative_paths)
@@ -1098,13 +1113,14 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 
 	switch (status_format) {
 	case STATUS_FORMAT_SHORT:
-		wt_shortstatus_print(&s, null_termination);
+		wt_shortstatus_print(&s, null_termination, status_show_branch);
 		break;
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(&s, null_termination);
 		break;
 	case STATUS_FORMAT_LONG:
 		s.verbose = verbose;
+		s.ignore_submodule_arg = ignore_submodule_arg;
 		wt_status_print(&s);
 		break;
 	}
@@ -1331,7 +1347,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 
 	if (cleanup_mode != CLEANUP_NONE)
 		stripspace(&sb, cleanup_mode == CLEANUP_ALL);
-	if (message_is_empty(&sb)) {
+	if (message_is_empty(&sb) && !allow_empty_message) {
 		rollback_index_files();
 		fprintf(stderr, "Aborting commit due to empty commit message.\n");
 		exit(1);

@@ -101,6 +101,15 @@ commit 131a310eb913d107dd3c09a65d1651175898735d
 commit 86c75cfd708a0e5868dc876ed5b8bb66c80b4873
 EOF
 
+test_format raw-body %B <<'EOF'
+commit 131a310eb913d107dd3c09a65d1651175898735d
+changed foo
+
+commit 86c75cfd708a0e5868dc876ed5b8bb66c80b4873
+added foo
+
+EOF
+
 test_format colors %Credfoo%Cgreenbar%Cbluebaz%Cresetxyzzy <<'EOF'
 commit 131a310eb913d107dd3c09a65d1651175898735d
 [31mfoo[32mbar[34mbaz[mxyzzy
@@ -189,6 +198,16 @@ test_expect_success 'add LF before non-empty (2)' '
 	git show -s --pretty=format:"%s%+b%nThanks%n" HEAD >actual &&
 	test $(wc -l <actual) = 6 &&
 	grep "^$" actual
+'
+
+test_expect_success 'add SP before non-empty (1)' '
+	git show -s --pretty=format:"%s% bThanks" HEAD^^ >actual &&
+	test $(wc -w <actual) = 2
+'
+
+test_expect_success 'add SP before non-empty (2)' '
+	git show -s --pretty=format:"%s% sThanks" HEAD^^ >actual &&
+	test $(wc -w <actual) = 4
 '
 
 test_expect_success '--abbrev' '
