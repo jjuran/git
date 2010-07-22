@@ -922,7 +922,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 		OPT_GROUP(""),
 		{ OPTION_STRING, 'O', "open-files-in-pager", &show_in_pager,
 			"pager", "show matching files in the pager",
-			PARSE_OPT_OPTARG, NULL, (intptr_t)default_pager },
+			PARSE_OPT_OPTARG, NULL, (intptr_t)(char*)default_pager },
 		OPT_BOOLEAN(0, "ext-grep", &external_grep_allowed__ignored,
 			    "allow calling of grep(1) (ignored by this build)"),
 		{ OPTION_CALLBACK, 0, "help-all", &options, NULL, "show usage",
