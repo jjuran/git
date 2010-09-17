@@ -143,11 +143,12 @@ test_expect_success 'more setup' '
 test_expect_success 'use index-filter to move into a subdirectory' '
 	git branch directorymoved &&
 	git filter-branch -f --index-filter \
-		 "git ls-files -s | sed \"s-\\t-&newsubdir/-\" |
+		 "git ls-files -s | sed \"s-	-&newsubdir/-\" |
 	          GIT_INDEX_FILE=\$GIT_INDEX_FILE.new \
 			git update-index --index-info &&
 		  mv \"\$GIT_INDEX_FILE.new\" \"\$GIT_INDEX_FILE\"" directorymoved &&
-	test -z "$(git diff HEAD directorymoved:newsubdir)"'
+	git diff --exit-code HEAD directorymoved:newsubdir
+'
 
 test_expect_success 'stops when msg filter fails' '
 	old=$(git rev-parse HEAD) &&

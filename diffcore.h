@@ -18,7 +18,7 @@
 #define MAX_SCORE 60000.0
 #define DEFAULT_RENAME_SCORE 30000 /* rename/copy similarity minimum (50%) */
 #define DEFAULT_BREAK_SCORE  30000 /* minimum for break to happen (50%) */
-#define DEFAULT_MERGE_SCORE  36000 /* maximum for break-merge to happen 60%) */
+#define DEFAULT_MERGE_SCORE  36000 /* maximum for break-merge to happen (60%) */
 
 #define MINIMUM_BREAK_SIZE     400 /* do not break a file smaller than this */
 
@@ -98,7 +98,7 @@ struct diff_queue_struct {
 		(q)->queue = NULL; \
 		(q)->nr = (q)->alloc = 0; \
 		(q)->run = 0; \
-	} while(0);
+	} while (0)
 
 extern struct diff_queue_struct diff_queued_diff;
 extern struct diff_filepair *diff_queue(struct diff_queue_struct *,
@@ -118,9 +118,9 @@ void diff_debug_filespec(struct diff_filespec *, int, const char *);
 void diff_debug_filepair(const struct diff_filepair *, int);
 void diff_debug_queue(const char *, struct diff_queue_struct *);
 #else
-#define diff_debug_filespec(a,b,c) do {} while(0)
-#define diff_debug_filepair(a,b) do {} while(0)
-#define diff_debug_queue(a,b) do {} while(0)
+#define diff_debug_filespec(a,b,c) do { /* nothing */ } while (0)
+#define diff_debug_filepair(a,b) do { /* nothing */ } while (0)
+#define diff_debug_queue(a,b) do { /* nothing */ } while (0)
 #endif
 
 extern int diffcore_count_changes(struct diff_filespec *src,
