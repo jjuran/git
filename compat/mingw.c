@@ -304,8 +304,13 @@ int mingw_utime (const char *file_name, const struct utimbuf *times)
 		goto revert_attrs;
 	}
 
-	time_t_to_filetime(times->modtime, &mft);
-	time_t_to_filetime(times->actime, &aft);
+	if (times) {
+		time_t_to_filetime(times->modtime, &mft);
+		time_t_to_filetime(times->actime, &aft);
+	} else {
+		GetSystemTimeAsFileTime(&mft);
+		aft = mft;
+	}
 	if (!SetFileTime((HANDLE)_get_osfhandle(fh), NULL, &aft, &mft)) {
 		errno = EINVAL;
 		rc = -1;
@@ -641,7 +646,7 @@ static char *lookup_prog(const char *dir, const char *cmd, int isexe, int exe_on
 }
 
 /*
- * Determines the absolute path of cmd using the the split path in path.
+ * Determines the absolute path of cmd using the split path in path.
  * If cmd contains a slash or backslash, no lookup is performed.
  */
 static char *path_lookup(const char *cmd, char **path, int exe_only)
