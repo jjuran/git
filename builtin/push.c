@@ -247,6 +247,5 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 	rc = do_push(repo, flags);
 	if (rc == -1)
 		usage_with_options(push_usage, options);
-	else
-		return rc;
+	return rc;
 }

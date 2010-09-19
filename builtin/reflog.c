@@ -779,4 +779,7 @@ int cmd_reflog(int argc, const char **argv, const char *prefix)
 
 	/* Not a recognized reflog command..*/
 	usage(reflog_usage);
+
+	/* Not reached */
+	return 0;
 }

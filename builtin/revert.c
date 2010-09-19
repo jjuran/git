@@ -205,7 +205,7 @@ static void set_author_ident_env(const char *message)
 				pend = line;
 			else
 				for (pend = email; pend != line + 1 &&
-						isspace(pend[-1]); pend--);
+						isspace(pend[-1]); pend--)
 					; /* do nothing */
 			*pend = '\0';
 			email++;

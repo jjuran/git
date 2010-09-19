@@ -100,4 +100,7 @@ int main(int argc, char **argv)
 		exit(cmd->exec(cmd->name, arg));
 	}
 	die("unrecognized command '%s'", prog);
+
+	/* Not reached */
+	return 0;
 }

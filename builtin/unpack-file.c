@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "builtin.h"
 #include "blob.h"
 #include "exec_cmd.h"
 
