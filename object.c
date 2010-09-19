@@ -202,7 +202,7 @@ struct object *parse_object(const unsigned char *sha1)
 			return NULL;
 		}
 
-		obj = parse_object_buffer(repl, type, size, buffer, &eaten);
+		obj = parse_object_buffer(sha1, type, size, buffer, &eaten);
 		if (!eaten)
 			free(buffer);
 		return obj;
@@ -214,10 +214,10 @@ struct object_list *object_list_insert(struct object *item,
 				       struct object_list **list_p)
 {
 	struct object_list *new_list = xmalloc(sizeof(struct object_list));
-        new_list->item = item;
-        new_list->next = *list_p;
-        *list_p = new_list;
-        return new_list;
+	new_list->item = item;
+	new_list->next = *list_p;
+	*list_p = new_list;
+	return new_list;
 }
 
 int object_list_contains(struct object_list *list, struct object *obj)

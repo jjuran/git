@@ -837,12 +837,12 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	int external_grep_allowed__ignored;
 	const char *show_in_pager = NULL, *default_pager = "dummy";
 	struct grep_opt opt;
-	struct object_array list = { 0, 0, NULL };
+	struct object_array list = OBJECT_ARRAY_INIT;
 	const char **paths = NULL;
-	struct string_list path_list = { NULL, 0, 0, 0 };
+	struct string_list path_list = STRING_LIST_INIT_NODUP;
 	int i;
 	int dummy;
-	int nongit = 0, use_index = 1;
+	int use_index = 1;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -942,8 +942,6 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 #pragma cplusplus reset
 #endif
 
-	prefix = setup_git_directory_gently(&nongit);
-
 	/*
 	 * 'git grep -h', unlike 'git grep -h <pattern>', is a request
 	 * to show usage information and exit.
@@ -988,7 +986,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			     PARSE_OPT_STOP_AT_NON_OPTION |
 			     PARSE_OPT_NO_INTERNAL_HELP);
 
-	if (use_index && nongit)
+	if (use_index && !startup_info->have_repository)
 		/* die the same way as if we did it at the beginning */
 		setup_git_directory();
 

@@ -362,7 +362,7 @@ static void write_remote_refs(const struct ref *local_refs)
 
 int cmd_clone(int argc, const char **argv, const char *prefix)
 {
-	int is_bundle = 0;
+	int is_bundle = 0, is_local;
 	struct stat buf;
 	const char *repo_name, *repo, *work_tree, *git_dir;
 	char *path, *dir;
@@ -415,6 +415,9 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		repo = xstrdup(make_absolute_path(repo_name));
 	else
 		repo = repo_name;
+	is_local = path && !is_bundle;
+	if (is_local && option_depth)
+		warning("--depth is ignored in local clones; use file:// instead.");
 
 	if (argc == 2)
 		dir = xstrdup(argv[1]);
@@ -515,7 +518,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	strbuf_reset(&value);
 
-	if (path && !is_bundle) {
+	if (is_local) {
 		refs = clone_local(path, git_dir);
 		mapped_refs = wanted_peer_refs(refs, refspec);
 	} else {

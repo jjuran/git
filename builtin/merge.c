@@ -54,6 +54,7 @@ static size_t use_strategies_nr, use_strategies_alloc;
 static const char **xopts;
 static size_t xopts_nr, xopts_alloc;
 static const char *branch;
+static int option_renormalize;
 static int verbosity;
 static int allow_rerere_auto;
 
@@ -131,6 +132,7 @@ static struct strategy *get_strategy(const char *name)
 
 	ret = xcalloc(1, sizeof(struct strategy));
 	ret->name = xstrdup(name);
+	ret->attr = NO_TRIVIAL;
 	return ret;
 }
 
@@ -437,7 +439,7 @@ static void merge_name(const char *remote, struct strbuf *msg)
 		strbuf_addstr(&truname, "refs/heads/");
 		strbuf_addstr(&truname, remote);
 		strbuf_setlen(&truname, truname.len - len);
-		if (resolve_ref(truname.buf, buf_sha, 0, NULL)) {
+		if (resolve_ref(truname.buf, buf_sha, 1, NULL)) {
 			strbuf_addf(msg,
 				    "%s\t\tbranch '%s'%s of .\n",
 				    sha1_to_hex(remote_head->sha1),
@@ -486,7 +488,8 @@ static int git_merge_config(const char *k, const char *v, void *cb)
 		buf = xstrdup(v);
 		argc = split_cmdline(buf, &argv);
 		if (argc < 0)
-			die("Bad branch.%s.mergeoptions string", branch);
+			die("Bad branch.%s.mergeoptions string: %s", branch,
+			    split_cmdline_strerror(argc));
 		argv = xrealloc(argv, sizeof(*argv) * (argc + 2));
 		memmove(argv + 1, argv, sizeof(*argv) * (argc + 1));
 		argc++;
@@ -503,6 +506,8 @@ static int git_merge_config(const char *k, const char *v, void *cb)
 		return git_config_string(&pull_octopus, k, v);
 	else if (!strcmp(k, "merge.log") || !strcmp(k, "merge.summary"))
 		option_log = git_config_bool(k, v);
+	else if (!strcmp(k, "merge.renormalize"))
+		option_renormalize = git_config_bool(k, v);
 	return git_diff_ui_config(k, v, cb);
 }
 
@@ -624,6 +629,11 @@ static int try_merge_strategy(const char *strategy, struct commit_list *common,
 		if (!strcmp(strategy, "subtree"))
 			o.subtree_shift = "";
 
+		o.renormalize = option_renormalize;
+
+		/*
+		 * NEEDSWORK: merge with table in builtin/merge-recursive
+		 */
 		for (x = 0; x < xopts_nr; x++) {
 			if (!strcmp(xopts[x], "ours"))
 				o.recursive_variant = MERGE_RECURSIVE_OURS;
@@ -633,6 +643,10 @@ static int try_merge_strategy(const char *strategy, struct commit_list *common,
 				o.subtree_shift = "";
 			else if (!prefixcmp(xopts[x], "subtree="))
 				o.subtree_shift = xopts[x]+8;
+			else if (!strcmp(xopts[x], "renormalize"))
+				o.renormalize = 1;
+			else if (!strcmp(xopts[x], "no-renormalize"))
+				o.renormalize = 0;
 			else
 				die("Unknown option for merge-recursive: -X%s", xopts[x]);
 		}
@@ -704,7 +718,7 @@ int checkout_fast_forward(const unsigned char *head, const unsigned char *remote
 	opts.verbose_update = 1;
 	opts.merge = 1;
 	opts.fn = twoway_merge;
-	opts.msgs = get_porcelain_error_msgs();
+	setup_unpack_trees_porcelain(&opts, "merge");
 
 	trees[nr_trees] = parse_tree_indirect(head);
 	if (!trees[nr_trees++])
@@ -816,7 +830,7 @@ static int finish_automerge(struct commit_list *common,
 	return 0;
 }
 
-static int suggest_conflicts(void)
+static int suggest_conflicts(int renormalizing)
 {
 	FILE *fp;
 	int pos;
@@ -1301,5 +1315,5 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 			"stopped before committing as requested\n");
 		return 0;
 	} else
-		return suggest_conflicts();
+		return suggest_conflicts(option_renormalize);
 }

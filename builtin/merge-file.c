@@ -28,7 +28,6 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 	xmparam_t xmp = {{0}};
 	int ret = 0, i = 0, to_stdout = 0;
 	int quiet = 0;
-	int nongit;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -59,8 +58,7 @@ int cmd_merge_file(int argc, const char **argv, const char *prefix)
 	xmp.style = 0;
 	xmp.favor = 0;
 
-	prefix = setup_git_directory_gently(&nongit);
-	if (!nongit) {
+	if (startup_info->have_repository) {
 		/* Read the configuration file */
 		git_config(git_xmerge_config, NULL);
 		if (0 <= git_xmerge_style)

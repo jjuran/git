@@ -232,6 +232,29 @@ our %avatar_size = (
 # Leave it undefined (or set to 'undef') to turn off load checking.
 our $maxload = 300;
 
+# configuration for 'highlight' (http://www.andre-simon.de/)
+# match by basename
+our %highlight_basename = (
+	#'Program' => 'py',
+	#'Library' => 'py',
+	'SConstruct' => 'py', # SCons equivalent of Makefile
+	'Makefile' => 'make',
+);
+# match by extension
+our %highlight_ext = (
+	# main extensions, defining name of syntax;
+	# see files in /usr/share/highlight/langDefs/ directory
+	map { $_ => $_ }
+		qw(py c cpp rb java css php sh pl js tex bib xml awk bat ini spec tcl),
+	# alternate extensions, see /etc/highlight/filetypes.conf
+	'h' => 'c',
+	map { $_ => 'cpp' } qw(cxx c++ cc),
+	map { $_ => 'php' } qw(php3 php4),
+	map { $_ => 'pl'  } qw(perl pm), # perhaps also 'cgi'
+	'mak' => 'make',
+	map { $_ => 'xml' } qw(xhtml html htm),
+);
+
 # You define site-wide feature defaults here; override them with
 # $GITWEB_CONFIG as necessary.
 our %feature = (
@@ -1037,7 +1060,11 @@ sub run_request {
 	reset_timer();
 
 	evaluate_uri();
+	evaluate_gitweb_config();
 	check_loadavg();
+
+	# $projectroot and $projects_list might be set in gitweb config file
+	$projects_list ||= $projectroot;
 
 	evaluate_query_params();
 	evaluate_path_info();
@@ -1086,11 +1113,7 @@ sub evaluate_argv {
 
 sub run {
 	evaluate_argv();
-	evaluate_gitweb_config();
 	evaluate_git_version();
-
-	# $projectroot and $projects_list might be set in gitweb config file
-	$projects_list ||= $projectroot;
 
 	$pre_listen_hook->()
 		if $pre_listen_hook;
@@ -1102,7 +1125,7 @@ sub run {
 
 		run_request();
 
-		$pre_dispatch_hook->()
+		$post_dispatch_hook->()
 			if $post_dispatch_hook;
 
 		last REQUEST if ($is_last_request->());
@@ -3316,30 +3339,6 @@ sub blob_contenttype {
 sub guess_file_syntax {
 	my ($highlight, $mimetype, $file_name) = @_;
 	return undef unless ($highlight && defined $file_name);
-
-	# configuration for 'highlight' (http://www.andre-simon.de/)
-	# match by basename
-	my %highlight_basename = (
-		#'Program' => 'py',
-		#'Library' => 'py',
-		'SConstruct' => 'py', # SCons equivalent of Makefile
-		'Makefile' => 'make',
-	);
-	# match by extension
-	my %highlight_ext = (
-		# main extensions, defining name of syntax;
-		# see files in /usr/share/highlight/langDefs/ directory
-		map { $_ => $_ }
-			qw(py c cpp rb java css php sh pl js tex bib xml awk bat ini spec tcl),
-		# alternate extensions, see /etc/highlight/filetypes.conf
-		'h' => 'c',
-		map { $_ => 'cpp' } qw(cxx c++ cc),
-		map { $_ => 'php' } qw(php3 php4),
-		map { $_ => 'pl'  } qw(perl pm), # perhaps also 'cgi'
-		'mak' => 'make',
-		map { $_ => 'xml' } qw(xhtml html htm),
-	);
-
 	my $basename = basename($file_name, '.in');
 	return $highlight_basename{$basename}
 		if exists $highlight_basename{$basename};
@@ -5192,15 +5191,15 @@ sub git_summary {
 }
 
 sub git_tag {
-	my $head = git_get_head_hash($project);
-	git_header_html();
-	git_print_page_nav('','', $head,undef,$head);
 	my %tag = parse_tag($hash);
 
 	if (! %tag) {
 		die_error(404, "Unknown tag object");
 	}
 
+	my $head = git_get_head_hash($project);
+	git_header_html();
+	git_print_page_nav('','', $head,undef,$head);
 	git_print_header_div('commit', esc_html($tag{'name'}), $hash);
 	print "<div class=\"title_text\">\n" .
 	      "<table class=\"object_header\">\n" .

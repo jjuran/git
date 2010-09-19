@@ -7,7 +7,7 @@
 #include "string-list.h"
 
 static const char * const fmt_merge_msg_usage[] = {
-	"git fmt-merge-msg [--log|--no-log] [--file <file>]",
+	"git fmt-merge-msg [-m <message>] [--log|--no-log] [--file <file>]",
 	NULL
 };
 
@@ -30,7 +30,7 @@ struct src_data {
 	int head_status;
 };
 
-void init_src_data(struct src_data *data)
+static void init_src_data(struct src_data *data)
 {
 	data->branch.strdup_strings = 1;
 	data->tag.strdup_strings = 1;
@@ -38,8 +38,8 @@ void init_src_data(struct src_data *data)
 	data->generic.strdup_strings = 1;
 }
 
-static struct string_list srcs = { NULL, 0, 0, 1 };
-static struct string_list origins = { NULL, 0, 0, 1 };
+static struct string_list srcs = STRING_LIST_INIT_DUP;
+static struct string_list origins = STRING_LIST_INIT_DUP;
 
 static int handle_line(char *line)
 {
@@ -146,7 +146,7 @@ static void shortlog(const char *name, unsigned char *sha1,
 	int i, count = 0;
 	struct commit *commit;
 	struct object *branch;
-	struct string_list subjects = { NULL, 0, 0, 1 };
+	struct string_list subjects = STRING_LIST_INIT_DUP;
 	int flags = UNINTERESTING | TREESAME | SEEN | SHOWN | ADDED;
 	struct strbuf sb = STRBUF_INIT;
 
@@ -319,6 +319,7 @@ int fmt_merge_msg_shortlog(struct strbuf *in, struct strbuf *out) {
 int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 {
 	const char *inpath = NULL;
+	const char *message = NULL;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -329,6 +330,8 @@ int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 		{ OPTION_BOOLEAN, 0, "summary", &merge_summary, NULL,
 		  "alias for --log (deprecated)",
 		  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
+		OPT_STRING('m', "message", &message, "text",
+			"use <text> as start of message"),
 		OPT_FILENAME('F', "file", &inpath, "file to read from"),
 		OPT_END()
 	};
@@ -346,6 +349,12 @@ int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 			     0);
 	if (argc > 0)
 		usage_with_options(fmt_merge_msg_usage, options);
+	if (message && !merge_summary) {
+		char nl = '\n';
+		write_in_full(STDOUT_FILENO, message, strlen(message));
+		write_in_full(STDOUT_FILENO, &nl, 1);
+		return 0;
+	}
 
 	if (inpath && strcmp(inpath, "-")) {
 		in = fopen(inpath, "r");
@@ -355,7 +364,12 @@ int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 
 	if (strbuf_read(&input, fileno(in), 0) < 0)
 		die_errno("could not read input file");
-	ret = fmt_merge_msg(merge_summary, &input, &output);
+	if (message) {
+		strbuf_addstr(&output, message);
+		ret = fmt_merge_msg_shortlog(&input, &output);
+	} else {
+		ret = fmt_merge_msg(merge_summary, &input, &output);
+	}
 	if (ret)
 		return ret;
 	write_in_full(STDOUT_FILENO, output.buf, output.len);

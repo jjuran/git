@@ -494,6 +494,7 @@ sub cmd_set_tree {
 
 sub cmd_dcommit {
 	my $head = shift;
+	command_noisy(qw/update-index --refresh/);
 	git_cmd_try { command_oneline(qw/diff-index --quiet HEAD/) }
 		'Cannot dcommit with a dirty index.  Commit your changes first, '
 		. "or stash them with `git stash'.\n";
@@ -1819,6 +1820,7 @@ sub read_all_remotes {
 			die("svn-remote.$remote: remote ref '$remote_ref' "
 			    . "must start with 'refs/'\n")
 				unless $remote_ref =~ m{^refs/};
+			$local_ref = uri_decode($local_ref);
 			$r->{$remote}->{fetch}->{$local_ref} = $remote_ref;
 			$r->{$remote}->{svm} = {} if $use_svm_props;
 		} elsif (m!^(.+)\.usesvmprops=\s*(.*)\s*$!) {
@@ -1831,6 +1833,7 @@ sub read_all_remotes {
 			die("svn-remote.$remote: remote ref '$remote_ref' ($t) "
 			    . "must start with 'refs/'\n")
 				unless $remote_ref =~ m{^refs/};
+			$local_ref = uri_decode($local_ref);
 			my $rs = {
 			    t => $t,
 			    remote => $remote,
@@ -2956,18 +2959,29 @@ sub other_gs {
 	my $gs = Git::SVN->find_by_url($new_url, $url, $branch_from);
 	unless ($gs) {
 		my $ref_id = $old_ref_id;
-		$ref_id =~ s/\@\d+$//;
+		$ref_id =~ s/\@\d+-*$//;
 		$ref_id .= "\@$r";
 		# just grow a tail if we're not unique enough :x
 		$ref_id .= '-' while find_ref($ref_id);
-		print STDERR "Initializing parent: $ref_id\n" unless $::_q > 1;
 		my ($u, $p, $repo_id) = ($new_url, '', $ref_id);
 		if ($u =~ s#^\Q$url\E(/|$)##) {
 			$p = $u;
 			$u = $url;
 			$repo_id = $self->{repo_id};
 		}
-		$gs = Git::SVN->init($u, $p, $repo_id, $ref_id, 1);
+		while (1) {
+			# It is possible to tag two different subdirectories at
+			# the same revision.  If the url for an existing ref
+			# does not match, we must either find a ref with a
+			# matching url or create a new ref by growing a tail.
+			$gs = Git::SVN->init($u, $p, $repo_id, $ref_id, 1);
+			my (undef, $max_commit) = $gs->rev_map_max(1);
+			last if (!$max_commit);
+			my ($url) = ::cmt_metadata($max_commit);
+			last if ($url eq $gs->full_url);
+			$ref_id .= '-';
+		}
+		print STDERR "Initializing parent: $ref_id\n" unless $::_q > 1;
 	}
 	$gs
 }
@@ -4050,6 +4064,7 @@ sub new {
 	$self->{absent_dir} = {};
 	$self->{absent_file} = {};
 	$self->{gii} = $git_svn->tmp_index_do(sub { Git::IndexInfo->new });
+	$self->{pathnameencoding} = Git::config('svn.pathnameencoding');
 	$self;
 }
 
@@ -4133,6 +4148,10 @@ sub open_directory {
 
 sub git_path {
 	my ($self, $path) = @_;
+	if (my $enc = $self->{pathnameencoding}) {
+		require Encode;
+		Encode::from_to($path, 'UTF-8', $enc);
+	}
 	if ($self->{path_strip}) {
 		$path =~ s!$self->{path_strip}!! or
 		  die "Failed to strip path '$path' ($self->{path_strip})\n";
@@ -4521,6 +4540,10 @@ sub split_path {
 
 sub repo_path {
 	my ($self, $path) = @_;
+	if (my $enc = $self->{pathnameencoding}) {
+		require Encode;
+		Encode::from_to($path, $enc, 'UTF-8');
+	}
 	$self->{path_prefix}.(defined $path ? $path : '');
 }
 
