@@ -1,3 +1,4 @@
+#include "builtin.h"
 #include "cache.h"
 #include "tag.h"
 #include "exec_cmd.h"

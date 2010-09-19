@@ -5,6 +5,7 @@
  * Copyright (C) Junio C Hamano, 2005
  */
 #include "cache.h"
+#include "builtin.h"
 #include "blob.h"
 #include "quote.h"
 #include "parse-options.h"
