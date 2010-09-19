@@ -5,7 +5,9 @@
 #define SIDEBAND_REMOTE_ERROR -1
 
 #define DEFAULT_PACKET_MAX 1000
+#ifndef LARGE_PACKET_MAX
 #define LARGE_PACKET_MAX 65520
+#endif
 
 int recv_sideband(const char *me, int in_stream, int out);
 ssize_t send_sideband(int fd, int band, const char *data, ssize_t sz, int packet_max);
