@@ -30,16 +30,35 @@ test_expect_success 'create http-accessible bare repository' '
 '
 
 test_expect_success 'clone http repository' '
-	git clone $HTTPD_URL/dumb/repo.git clone &&
+	git clone $HTTPD_URL/dumb/repo.git clone-tmpl &&
+	cp -R clone-tmpl clone &&
 	test_cmp file clone/file
+'
+
+test_expect_success 'clone http repository with authentication' '
+	mkdir "$HTTPD_DOCUMENT_ROOT_PATH/auth/" &&
+	cp -Rf "$HTTPD_DOCUMENT_ROOT_PATH/repo.git" "$HTTPD_DOCUMENT_ROOT_PATH/auth/repo.git" &&
+	git clone $AUTH_HTTPD_URL/auth/repo.git clone-auth &&
+	test_cmp file clone-auth/file
 '
 
 test_expect_success 'fetch changes via http' '
 	echo content >>file &&
 	git commit -a -m two &&
-	git push public
+	git push public &&
 	(cd clone && git pull) &&
 	test_cmp file clone/file
+'
+
+test_expect_success 'fetch changes via manual http-fetch' '
+	cp -R clone-tmpl clone2 &&
+
+	HEAD=$(git rev-parse --verify HEAD) &&
+	(cd clone2 &&
+	 git http-fetch -a -w heads/master-new $HEAD $(git config remote.origin.url) &&
+	 git checkout master-new &&
+	 test $HEAD = $(git rev-parse --verify HEAD)) &&
+	test_cmp file clone2/file
 '
 
 test_expect_success 'http remote detects correct HEAD' '

@@ -2,6 +2,7 @@
 #include "pack.h"
 #include "sideband.h"
 #include "run-command.h"
+#include "url.h"
 
 int data_received;
 int active_requests;
@@ -279,6 +280,11 @@ static CURL *get_curl_handle(void)
 	}
 
 	curl_easy_setopt(result, CURLOPT_FOLLOWLOCATION, 1);
+#if LIBCURL_VERSION_NUM >= 0x071301
+	curl_easy_setopt(result, CURLOPT_POSTREDIR, CURL_REDIR_POST_ALL);
+#elif LIBCURL_VERSION_NUM >= 0x071101
+	curl_easy_setopt(result, CURLOPT_POST301, 1);
+#endif
 
 	if (getenv("GIT_CURL_VERBOSE"))
 		curl_easy_setopt(result, CURLOPT_VERBOSE, 1);
@@ -297,7 +303,7 @@ static CURL *get_curl_handle(void)
 
 static void http_auth_init(const char *url)
 {
-	char *at, *colon, *cp, *slash;
+	char *at, *colon, *cp, *slash, *decoded;
 	int len;
 
 	cp = strstr(url, "://");
@@ -322,16 +328,25 @@ static void http_auth_init(const char *url)
 		user_name = xmalloc(len + 1);
 		memcpy(user_name, cp, len);
 		user_name[len] = '\0';
+		decoded = url_decode(user_name);
+		free(user_name);
+		user_name = decoded;
 		user_pass = NULL;
 	} else {
 		len = colon - cp;
 		user_name = xmalloc(len + 1);
 		memcpy(user_name, cp, len);
 		user_name[len] = '\0';
+		decoded = url_decode(user_name);
+		free(user_name);
+		user_name = decoded;
 		len = at - (colon + 1);
 		user_pass = xmalloc(len + 1);
 		memcpy(user_pass, colon + 1, len);
 		user_pass[len] = '\0';
+		decoded = url_decode(user_pass);
+		free(user_pass);
+		user_pass = decoded;
 	}
 }
 
@@ -726,13 +741,6 @@ static inline int hex(int v)
 		return '0' + v;
 	else
 		return 'A' + v - 10;
-}
-
-void end_url_with_slash(struct strbuf *buf, const char *url)
-{
-	strbuf_addstr(buf, url);
-	if (buf->len && buf->buf[buf->len - 1] != '/')
-		strbuf_addstr(buf, "/");
 }
 
 static char *quote_ref_url(const char *base, const char *ref)

@@ -1262,10 +1262,14 @@ else
 	BLK_SHA1 = 1
 	OPENSSL_LIBSSL =
 endif
+ifdef NO_OPENSSL
+	LIB_4_CRYPTO =
+else
 ifdef NEEDS_SSL_WITH_CRYPTO
 	LIB_4_CRYPTO = $(OPENSSL_LINK) -lcrypto -lssl
 else
 	LIB_4_CRYPTO = $(OPENSSL_LINK) -lcrypto
+endif
 endif
 ifdef NEEDS_LIBICONV
 	ifdef ICONVDIR
@@ -1879,7 +1883,7 @@ builtin/tar-tree.o archive-tar.o: tar.h
 builtin/pack-objects.o: thread-utils.h
 connect.o transport.o http-backend.o: url.h
 http-fetch.o http-walker.o remote-curl.o transport.o walker.o: walker.h
-http.o http-walker.o http-push.o http-fetch.o remote-curl.o: http.h
+http.o http-walker.o http-push.o http-fetch.o remote-curl.o: http.h url.h
 
 xdiff-interface.o $(XDIFF_OBJS): \
 	xdiff/xinclude.h xdiff/xmacros.h xdiff/xdiff.h xdiff/xtypes.h \

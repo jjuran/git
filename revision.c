@@ -2033,8 +2033,10 @@ static struct commit *get_revision_1(struct rev_info *revs)
 		revs->commits = entry->next;
 		free(entry);
 
-		if (revs->reflog_info)
+		if (revs->reflog_info) {
 			fake_reflog_parent(revs->reflog_info, commit);
+			commit->object.flags &= ~(ADDED | SEEN | SHOWN);
+		}
 
 		/*
 		 * If we haven't done the list limiting, we need to look at
