@@ -5,7 +5,7 @@
 SUBDIRECTORY_OK=Yes
 OPTIONS_KEEPDASHDASH=
 OPTIONS_SPEC="\
-git am [options] [<mbox>|<Maildir>...]
+git am [options] [(<mbox>|<Maildir>)...]
 git am [options] (--resolved | --skip | --abort)
 --
 i,interactive   run interactively
@@ -137,7 +137,7 @@ It does not apply to blobs recorded in its index."
     export GITHEAD_$his_tree
     if test -n "$GIT_QUIET"
     then
-	    export GIT_MERGE_VERBOSITY=0
+	    GIT_MERGE_VERBOSITY=0 && export GIT_MERGE_VERBOSITY
     fi
     git-merge-recursive $orig_tree -- HEAD $his_tree || {
 	    git rerere $allow_rerere_autoupdate

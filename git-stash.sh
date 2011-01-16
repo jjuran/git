@@ -265,28 +265,21 @@ parse_flags_and_rev()
 	i_tree=
 
 	REV=$(git rev-parse --no-flags --symbolic "$@" 2>/dev/null)
-	FLAGS=$(git rev-parse --no-revs -- "$@" 2>/dev/null)
-
-	set -- $FLAGS
 
 	FLAGS=
-	while test $# -ne 0
+	for opt
 	do
-		case "$1" in
+		case "$opt" in
 			-q|--quiet)
 				GIT_QUIET=-t
 			;;
 			--index)
 				INDEX_OPTION=--index
 			;;
-			--)
-				:
-			;;
-			*)
-				FLAGS="${FLAGS}${FLAGS:+ }$1"
+			-*)
+				FLAGS="${FLAGS}${FLAGS:+ }$opt"
 			;;
 		esac
-		shift
 	done
 
 	set -- $REV
@@ -380,7 +373,7 @@ apply_stash () {
 
 	if test -n "$GIT_QUIET"
 	then
-		export GIT_MERGE_VERBOSITY=0
+		GIT_MERGE_VERBOSITY=0 && export GIT_MERGE_VERBOSITY
 	fi
 	if git merge-recursive $b_tree -- $c_tree $w_tree
 	then
@@ -439,9 +432,9 @@ apply_to_branch () {
 	assert_stash_like "$@"
 
 	git checkout -b $branch $REV^ &&
-	apply_stash "$@"
-
-	test -z "$IS_STASH_REF" || drop_stash "$@"
+	apply_stash "$@" && {
+		test -z "$IS_STASH_REF" || drop_stash "$@"
+	}
 }
 
 PARSE_CACHE='--not-parsed'

@@ -12,7 +12,7 @@ SYNOPSIS
 		[--current] [--color[=<when>] | --no-color] [--sparse]
 		[--more=<n> | --list | --independent | --merge-base]
 		[--no-name | --sha1-name] [--topics]
-		[<rev> | <glob>]...
+		[(<rev> | <glob>)...]
 
 'git show-branch' (-g|--reflog)[=<n>[,<base>]] [--list] [<ref>]
 
@@ -32,7 +32,7 @@ no <rev> nor <glob> is given on the command line.
 OPTIONS
 -------
 <rev>::
-	Arbitrary extended SHA1 expression (see linkgit:gitrevisions[1])
+	Arbitrary extended SHA1 expression (see linkgit:gitrevisions[7])
 	that typically names a branch head or a tag.
 
 <glob>::
