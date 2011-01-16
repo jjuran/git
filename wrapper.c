@@ -219,7 +219,7 @@ int xmkstemp(char *template)
 	return fd;
 }
 
-int xmkstemp_mode(char *template, int mode)
+static int xmkstemp_mode(char *template, int mode)
 {
 	int fd;
 

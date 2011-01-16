@@ -655,6 +655,9 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 		return NULL;
 	}
 	die("Invalid refspec '%s'", refspec[i]);
+
+	/* Not reached */
+	return NULL;
 }
 
 int valid_fetch_refspec(const char *fetch_refspec_str)

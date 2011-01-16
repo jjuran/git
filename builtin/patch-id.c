@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "builtin.h"
 #include "exec_cmd.h"
 
 static void flush_current_id(int patchlen, unsigned char *id, git_SHA_CTX *c)
@@ -57,7 +58,7 @@ static int scan_hunk_header(const char *p, int *p_before, int *p_after)
 	return 1;
 }
 
-int get_one_patchid(unsigned char *next_sha1, git_SHA_CTX *ctx)
+static int get_one_patchid(unsigned char *next_sha1, git_SHA_CTX *ctx)
 {
 	static char line[1000];
 	int patchlen = 0, found_next = 0;
