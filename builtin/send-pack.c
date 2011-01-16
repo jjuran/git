@@ -102,7 +102,7 @@ static int pack_objects(int fd, struct ref *refs, struct extra_have_objects *ext
 	}
 
 	if (finish_command(&po))
-		return error("pack-objects died with strange error");
+		return -1;
 	return 0;
 }
 

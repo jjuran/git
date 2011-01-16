@@ -27,8 +27,8 @@ With `--rebase`, it runs 'git rebase' instead of 'git merge'.
 passed to linkgit:git-fetch[1].  <refspec> can name an
 arbitrary remote ref (for example, the name of a tag) or even
 a collection of refs with corresponding remote tracking branches
-(e.g., refs/heads/*:refs/remotes/origin/*), but usually it is
-the name of a branch in the remote repository.
+(e.g., refs/heads/{asterisk}:refs/remotes/origin/{asterisk}),
+but usually it is the name of a branch in the remote repository.
 
 Default values for <repository> and <branch> are read from the
 "remote" and "merge" configuration for the current branch
@@ -92,12 +92,14 @@ include::merge-options.txt[]
 :git-pull: 1
 
 --rebase::
-	Instead of a merge, perform a rebase after fetching.  If
-	there is a remote ref for the upstream branch, and this branch
-	was rebased since last fetched, the rebase uses that information
-	to avoid rebasing non-local changes. To make this the default
-	for branch `<name>`, set configuration `branch.<name>.rebase`
-	to `true`.
+	Rebase the current branch on top of the upstream branch after
+	fetching.  If there is a remote-tracking branch corresponding to
+	the upstream branch and the upstream branch was rebased since last
+	fetched, the rebase uses that information to avoid rebasing
+	non-local changes.
++
+See `branch.<name>.rebase` in linkgit:git-config[1] if you want to make
+`git pull` always use `{litdd}rebase` instead of merging.
 +
 [NOTE]
 This is a potentially _dangerous_ mode of operation.
