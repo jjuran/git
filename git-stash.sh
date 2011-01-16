@@ -264,8 +264,18 @@ parse_flags_and_rev()
 	b_tree=
 	i_tree=
 
+	# Work around rev-parse --flags eating -q
+	for opt
+	do
+		case "$opt" in
+		-q|--quiet)
+			GIT_QUIET=t
+			;;
+		esac
+	done
+
 	REV=$(git rev-parse --no-flags --symbolic "$@" 2>/dev/null)
-	FLAGS=$(git rev-parse --no-revs -- "$@" 2>/dev/null)
+	FLAGS=$(git rev-parse --no-revs --flags "$@" 2>/dev/null)
 
 	set -- $FLAGS
 
@@ -273,9 +283,6 @@ parse_flags_and_rev()
 	while test $# -ne 0
 	do
 		case "$1" in
-			-q|--quiet)
-				GIT_QUIET=-t
-			;;
 			--index)
 				INDEX_OPTION=--index
 			;;
@@ -439,9 +446,9 @@ apply_to_branch () {
 	assert_stash_like "$@"
 
 	git checkout -b $branch $REV^ &&
-	apply_stash "$@"
-
-	test -z "$IS_STASH_REF" || drop_stash "$@"
+	apply_stash "$@" && {
+		test -z "$IS_STASH_REF" || drop_stash "$@"
+	}
 }
 
 PARSE_CACHE='--not-parsed'

@@ -416,8 +416,37 @@ test_expect_success 'stash show - stashes on stack, stash-like argument' '
 	echo bar >> file &&
 	STASH_ID=$(git stash create) &&
 	git reset --hard &&
-	git stash show ${STASH_ID}
+	cat >expected <<-EOF &&
+	 file |    1 +
+	 1 files changed, 1 insertions(+), 0 deletions(-)
+	EOF
+	git stash show ${STASH_ID} >actual &&
+	test_cmp expected actual
 '
+
+test_expect_success 'stash show -p - stashes on stack, stash-like argument' '
+	git stash clear &&
+	test_when_finished "git reset --hard HEAD" &&
+	git reset --hard &&
+	echo foo >> file &&
+	git stash &&
+	test_when_finished "git stash drop" &&
+	echo bar >> file &&
+	STASH_ID=$(git stash create) &&
+	git reset --hard &&
+	cat >expected <<-EOF &&
+	diff --git a/file b/file
+	index 7601807..935fbd3 100644
+	--- a/file
+	+++ b/file
+	@@ -1 +1,2 @@
+	 baz
+	+bar
+	EOF
+	git stash show -p ${STASH_ID} >actual &&
+	test_cmp expected actual
+'
+
 test_expect_success 'stash show - no stashes on stack, stash-like argument' '
 	git stash clear &&
 	test_when_finished "git reset --hard HEAD" &&
@@ -425,7 +454,32 @@ test_expect_success 'stash show - no stashes on stack, stash-like argument' '
 	echo foo >> file &&
 	STASH_ID=$(git stash create) &&
 	git reset --hard &&
-	git stash show ${STASH_ID}
+	cat >expected <<-EOF &&
+	 file |    1 +
+	 1 files changed, 1 insertions(+), 0 deletions(-)
+	EOF
+	git stash show ${STASH_ID} >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'stash show -p - no stashes on stack, stash-like argument' '
+	git stash clear &&
+	test_when_finished "git reset --hard HEAD" &&
+	git reset --hard &&
+	echo foo >> file &&
+	STASH_ID=$(git stash create) &&
+	git reset --hard &&
+	cat >expected <<-EOF &&
+	diff --git a/file b/file
+	index 7601807..71b52c4 100644
+	--- a/file
+	+++ b/file
+	@@ -1 +1,2 @@
+	 baz
+	+foo
+	EOF
+	git stash show -p ${STASH_ID} >actual &&
+	test_cmp expected actual
 '
 
 test_expect_success 'stash drop - fail early if specified stash is not a stash reference' '
@@ -489,6 +543,17 @@ test_expect_success 'invalid ref of the form stash@{n}, n >= N' '
 	test_must_fail git show stash@{1} &&
 	test_must_fail git branch tmp stash@{1} &&
 	git stash drop
+'
+
+test_expect_success 'stash branch should not drop the stash if the branch exists' '
+	git stash clear &&
+	echo foo >file &&
+	git add file &&
+	git commit -m initial &&
+	echo bar >file &&
+	git stash &&
+	test_must_fail git stash branch master stash@{0} &&
+	git rev-parse stash@{0} --
 '
 
 test_done
