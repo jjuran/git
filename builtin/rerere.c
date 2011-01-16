@@ -119,11 +119,19 @@ int cmd_rerere(int argc, const char **argv, const char *prefix)
 	struct string_list merge_rr = STRING_LIST_INIT_DUP;
 	int i, fd, autoupdate = -1, flags = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_SET_INT(0, "rerere-autoupdate", &autoupdate,
 			"register clean resolutions in index", 1),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, rerere_usage, 0);
 

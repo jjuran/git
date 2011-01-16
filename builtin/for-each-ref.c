@@ -947,6 +947,10 @@ int cmd_for_each_ref(int argc, const char **argv, const char *prefix)
 	struct refinfo **refs;
 	struct grab_ref_cbdata cbdata;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option opts[] = {
 		OPT_BIT('s', "shell", &quote_style,
 		        "quote placeholders suitably for shells", QUOTE_SHELL),
@@ -964,6 +968,10 @@ int cmd_for_each_ref(int argc, const char **argv, const char *prefix)
 		            "field name to sort on", &opt_parse_sort),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	parse_options(argc, argv, prefix, opts, for_each_ref_usage, 0);
 	if (maxcount < 0) {

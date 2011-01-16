@@ -143,6 +143,11 @@ int cmd_verify_pack(int argc, const char **argv, const char *prefix)
 	int err = 0;
 	unsigned int flags = 0;
 	int i;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option verify_pack_options[] = {
 		OPT_BIT('v', "verbose", &flags, "verbose",
 			VERIFY_PACK_VERBOSE),
@@ -150,6 +155,10 @@ int cmd_verify_pack(int argc, const char **argv, const char *prefix)
 			VERIFY_PACK_STAT_ONLY),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, verify_pack_options,

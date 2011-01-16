@@ -36,7 +36,16 @@ int launch_editor(const char *path, struct strbuf *buffer, const char *const *en
 		return error("Terminal is dumb, but EDITOR unset");
 
 	if (strcmp(editor, ":")) {
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		const char *args[] = { editor, path, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 		if (run_command_v_opt_cd_env(args, RUN_USING_SHELL, NULL, env))
 			return error("There was a problem with the editor '%s'.",

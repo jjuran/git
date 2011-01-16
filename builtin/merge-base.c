@@ -77,12 +77,20 @@ int cmd_merge_base(int argc, const char **argv, const char *prefix)
 	int octopus = 0;
 	int reduce = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('a', "all", &show_all, "output all common ancestors"),
 		OPT_BOOLEAN(0, "octopus", &octopus, "find ancestors for a single n-way merge"),
 		OPT_BOOLEAN(0, "independent", &reduce, "list revs not reachable from others"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options, merge_base_usage, 0);

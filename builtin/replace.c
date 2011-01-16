@@ -113,6 +113,11 @@ static int replace_object(const char *object_ref, const char *replace_ref,
 
 int cmd_replace(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define delete delete_
+#endif
+
 	int list = 0, delete = 0, force = 0;
 	struct option options[] = {
 		OPT_BOOLEAN('l', NULL, &list, "list replace refs"),
@@ -120,6 +125,10 @@ int cmd_replace(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN('f', NULL, &force, "replace the ref if it exists"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, git_replace_usage, 0);
 

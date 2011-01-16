@@ -972,6 +972,10 @@ static int cc_callback(const struct option *opt, const char *arg, int unset)
 
 int cmd_format_patch(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct commit *commit;
 	struct commit **list = NULL;
 	struct rev_info rev;
@@ -1047,6 +1051,10 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    "add a signature"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	extra_hdr.strdup_strings = 1;
 	extra_to.strdup_strings = 1;
@@ -1368,11 +1376,19 @@ int cmd_cherry(int argc, const char **argv, const char *prefix)
 	const char *limit = NULL;
 	int verbose = 0, abbrev = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT__ABBREV(&abbrev),
 		OPT__VERBOSE(&verbose),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, cherry_usage, 0);
 
