@@ -19,6 +19,8 @@
 #  endif
 #endif
 
+#ifndef NO_PTHREADS
+
 int online_cpus(void)
 {
 #ifdef _SC_NPROCESSORS_ONLN
@@ -60,3 +62,5 @@ int init_recursive_mutex(pthread_mutex_t *m)
 	}
 	return ret;
 }
+
+#endif
