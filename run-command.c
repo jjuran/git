@@ -145,7 +145,7 @@ int start_command(struct child_process *cmd)
 {
 	int need_in, need_out, need_err;
 	int fdin[2], fdout[2], fderr[2];
-	int failed_errno;
+	int failed_errno = failed_errno;
 
 	/*
 	 * In case of errors we must keep the promise to close FDs
@@ -200,6 +200,7 @@ fail_pipe:
 	}
 
 	trace_argv_printf(cmd->argv, "trace: run_command:");
+	fflush(NULL);
 
 #ifndef WIN32
 {
@@ -207,7 +208,6 @@ fail_pipe:
 	if (pipe(notify_pipe))
 		notify_pipe[0] = notify_pipe[1] = -1;
 
-	fflush(NULL);
 	cmd->pid = GIT_FORK();
 	if (!cmd->pid) {
 		/*
