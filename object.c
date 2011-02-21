@@ -41,6 +41,9 @@ int type_from_string(const char *str)
 		if (!strcmp(str, object_type_strings[i]))
 			return i;
 	die("invalid object type \"%s\"", str);
+
+	/* Not reached */
+	return 0;
 }
 
 static unsigned int hash_obj(struct object *obj, unsigned int n)

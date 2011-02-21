@@ -431,7 +431,7 @@ void finish_copy_notes_for_rewrite(struct notes_rewrite_cfg *c)
 	free(c);
 }
 
-int notes_copy_from_stdin(int force, const char *rewrite_cmd)
+static int notes_copy_from_stdin(int force, const char *rewrite_cmd)
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct notes_rewrite_cfg *c = NULL;

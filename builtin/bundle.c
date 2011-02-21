@@ -62,4 +62,7 @@ int cmd_bundle(int argc, const char **argv, const char *prefix)
 			list_bundle_refs(&header, argc, argv);
 	} else
 		usage(builtin_bundle_usage);
+
+	/* Not reached */
+	return 0;
 }

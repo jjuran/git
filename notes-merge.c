@@ -462,6 +462,9 @@ static int merge_one_change(struct notes_merge_options *o,
 		return 0;
 	}
 	die("Unknown strategy (%i).", o->strategy);
+
+	/* Not reached */
+	return 0;
 }
 
 static int merge_changes(struct notes_merge_options *o,

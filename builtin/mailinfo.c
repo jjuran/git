@@ -265,7 +265,7 @@ static void cleanup_space(struct strbuf *sb)
 	for (pos = 0; pos < sb->len; pos++) {
 		if (isspace(sb->buf[pos])) {
 			sb->buf[pos] = ' ';
-			for (cnt = 0; isspace(sb->buf[pos + cnt + 1]); cnt++);
+			for (cnt = 0; isspace(sb->buf[pos + cnt + 1]); cnt++) continue;
 			strbuf_remove(sb, pos + 1, cnt);
 		}
 	}
