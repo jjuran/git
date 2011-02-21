@@ -50,6 +50,12 @@ prove and other harnesses come with a lot of useful options. The
     # Repeat until no more failures
     $ prove -j 15 --state=failed,save ./t[0-9]*.sh
 
+You can give DEFAULT_TEST_TARGET=prove on the make command (or define it
+in config.mak) to cause "make test" to run tests under prove.
+GIT_PROVE_OPTS can be used to pass additional options, e.g.
+
+    $ make DEFAULT_TEST_TARGET=prove GIT_PROVE_OPTS='--timer --jobs 16' test
+
 You can also run each test individually from command line, like this:
 
     $ sh ./t3010-ls-files-killed-modified.sh
@@ -259,14 +265,11 @@ Do:
 	test ...
 
    That way all of the commands in your tests will succeed or fail. If
-   you must ignore the return value of something (e.g., the return
-   after unsetting a variable that was already unset is unportable) it's
-   best to indicate so explicitly with a semicolon:
-
-	unset HLAGH;
-	git merge hla &&
-	git push gh &&
-	test ...
+   you must ignore the return value of something, consider using a
+   helper function (e.g. use sane_unset instead of unset, in order
+   to avoid unportable return value for unsetting a variable that was
+   already unset), or prepending the command with test_might_fail or
+   test_must_fail.
 
  - Check the test coverage for your tests. See the "Test coverage"
    below.
@@ -279,6 +282,12 @@ Do:
 
    Tests that are likely to smoke out future regressions are better
    than tests that just inflate the coverage metrics.
+
+ - When a test checks for an absolute path that a git command generated,
+   construct the expected value using $(pwd) rather than $PWD,
+   $TEST_DIRECTORY, or $TRASH_DIRECTORY. It makes a difference on
+   Windows, where the shell (MSYS bash) mangles absolute path names.
+   For details, see the commit message of 4114156ae9.
 
 Don't:
 
@@ -395,13 +404,6 @@ library for your script to use.
    Like test_expect_success this function can optionally use a three
    argument invocation with a prerequisite as the first argument.
 
- - test_expect_code [<prereq>] <code> <message> <script>
-
-   Analogous to test_expect_success, but pass the test if it exits
-   with a given exit <code>
-
- test_expect_code 1 'Merge with d/f conflicts' 'git merge "merge msg" B master'
-
  - test_debug <script>
 
    This takes a single argument, <script>, and evaluates it only
@@ -482,6 +484,15 @@ library for your script to use.
 	    'Perl API' \
 	    "$PERL_PATH" "$TEST_DIRECTORY"/t9700/test.pl
 
+ - test_expect_code <exit-code> <command>
+
+   Run a command and ensure that it exits with the given exit code.
+   For example:
+
+	test_expect_success 'Merge with d/f conflicts' '
+		test_expect_code 1 git merge "merge msg" B master
+	'
+
  - test_must_fail <git-command>
 
    Run a git command and ensure it fails in a controlled way.  Use
@@ -500,6 +511,10 @@ library for your script to use.
    Check whether the content of the <actual> file matches the
    <expected> file.  This behaves like "cmp" but produces more
    helpful output when the test is run with "-v" option.
+
+ - test_line_count (= | -lt | -ge | ...) <length> <file>
+
+   Check whether a file has the length it is expected to.
 
  - test_path_is_file <file> [<diagnosis>]
    test_path_is_dir <dir> [<diagnosis>]

@@ -206,6 +206,9 @@ do
 	--no-verify)
 		OK_TO_SKIP_PRE_REBASE=yes
 		;;
+	--verify)
+		OK_TO_SKIP_PRE_REBASE=
+		;;
 	--continue)
 		test -d "$dotest" -o -d "$GIT_DIR"/rebase-apply ||
 			die "No rebase in progress?"
@@ -414,19 +417,7 @@ else
 	fi
 fi
 
-# The tree must be really really clean.
-if ! git update-index --ignore-submodules --refresh > /dev/null; then
-	echo >&2 "cannot rebase: you have unstaged changes"
-	git diff-files --name-status -r --ignore-submodules -- >&2
-	exit 1
-fi
-diff=$(git diff-index --cached --name-status -r --ignore-submodules HEAD --)
-case "$diff" in
-?*)	echo >&2 "cannot rebase: your index contains uncommitted changes"
-	echo >&2 "$diff"
-	exit 1
-	;;
-esac
+require_clean_work_tree "rebase" "Please commit or stash them."
 
 if test -z "$rebase_root"
 then
@@ -491,6 +482,7 @@ case "$#" in
 	then
 		head_name="detached HEAD"
 	else
+		echo >&2 "fatal: no such branch: $1"
 		usage
 	fi
 	;;
@@ -522,7 +514,7 @@ then
 	if test -z "$force_rebase"
 	then
 		# Lazily switch to the target branch if needed...
-		test -z "$switch_to" || git checkout "$switch_to"
+		test -z "$switch_to" || git checkout "$switch_to" --
 		say "Current branch $branch_name is up to date."
 		exit 0
 	else

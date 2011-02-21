@@ -222,9 +222,9 @@ int cmd_checkout_index(int argc, const char **argv, const char *prefix)
 	struct option builtin_checkout_index_options[] = {
 		OPT_BOOLEAN('a', "all", &all,
 			"checks out all files in the index"),
-		OPT_BOOLEAN('f', "force", &force,
-			"forces overwrite of existing files"),
-		OPT__QUIET(&quiet),
+		OPT__FORCE(&force, "forces overwrite of existing files"),
+		OPT__QUIET(&quiet,
+			"no warning for existing files and files not in index"),
 		OPT_BOOLEAN('n', "no-create", &not_new,
 			"don't checkout new files"),
 		{ OPTION_CALLBACK, 'u', "index", &newfd, NULL,
@@ -250,6 +250,9 @@ int cmd_checkout_index(int argc, const char **argv, const char *prefix)
 #pragma cplusplus reset
 #endif
 
+	if (argc == 2 && !strcmp(argv[1], "-h"))
+		usage_with_options(builtin_checkout_index_usage,
+				   builtin_checkout_index_options);
 	git_config(git_default_config, NULL);
 	state.base_dir = "";
 	prefix_length = prefix ? strlen(prefix) : 0;

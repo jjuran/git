@@ -92,7 +92,7 @@ int cmd_verify_tag(int argc, const char **argv, const char *prefix)
 #endif
 
 	const struct option verify_tag_options[] = {
-		OPT__VERBOSE(&verbose),
+		OPT__VERBOSE(&verbose, "print tag contents"),
 		OPT_END()
 	};
 

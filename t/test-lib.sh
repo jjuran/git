@@ -70,6 +70,9 @@ unset GIT_NOTES_REF
 unset GIT_NOTES_DISPLAY_REF
 unset GIT_NOTES_REWRITE_REF
 unset GIT_NOTES_REWRITE_MODE
+unset GIT_REFLOG_ACTION
+unset GIT_CHERRY_PICK_HELP
+unset GIT_QUIET
 GIT_MERGE_VERBOSITY=5
 export GIT_MERGE_VERBOSITY
 export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
@@ -305,6 +308,17 @@ remove_cr () {
 	tr '\015' Q | sed -e 's/Q$//'
 }
 
+# In some bourne shell implementations, the "unset" builtin returns
+# nonzero status when a variable to be unset was not set in the first
+# place.
+#
+# Use sane_unset when that should not be considered an error.
+
+sane_unset () {
+	unset "$@"
+	return 0
+}
+
 test_tick () {
 	if test -z "${test_tick+set}"
 	then
@@ -399,6 +413,15 @@ test_have_prereq () {
 	test $total_prereq = $ok_prereq
 }
 
+test_declared_prereq () {
+	case ",$test_prereq," in
+	*,$1,*)
+		return 0
+		;;
+	esac
+	return 1
+}
+
 # You are not expected to call test_ok_ and test_failure_ directly, use
 # the text_expect_* functions instead.
 
@@ -451,17 +474,17 @@ test_skip () {
 			break
 		esac
 	done
-	if test -z "$to_skip" && test -n "$prereq" &&
-	   ! test_have_prereq "$prereq"
+	if test -z "$to_skip" && test -n "$test_prereq" &&
+	   ! test_have_prereq "$test_prereq"
 	then
 		to_skip=t
 	fi
 	case "$to_skip" in
 	t)
 		of_prereq=
-		if test "$missing_prereq" != "$prereq"
+		if test "$missing_prereq" != "$test_prereq"
 		then
-			of_prereq=" of $prereq"
+			of_prereq=" of $test_prereq"
 		fi
 
 		say_color skip >&3 "skipping test: $@"
@@ -475,9 +498,10 @@ test_skip () {
 }
 
 test_expect_failure () {
-	test "$#" = 3 && { prereq=$1; shift; } || prereq=
+	test "$#" = 3 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 2 ||
 	error "bug in the test script: not 2 or 3 parameters to test-expect-failure"
+	export test_prereq
 	if ! test_skip "$@"
 	then
 		say >&3 "checking known breakage: $2"
@@ -493,9 +517,10 @@ test_expect_failure () {
 }
 
 test_expect_success () {
-	test "$#" = 3 && { prereq=$1; shift; } || prereq=
+	test "$#" = 3 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 2 ||
 	error "bug in the test script: not 2 or 3 parameters to test-expect-success"
+	export test_prereq
 	if ! test_skip "$@"
 	then
 		say >&3 "expecting success: $2"
@@ -503,24 +528,6 @@ test_expect_success () {
 		if [ "$?" = 0 -a "$eval_ret" = 0 ]
 		then
 			test_ok_ "$1"
-		else
-			test_failure_ "$@"
-		fi
-	fi
-	echo >&3 ""
-}
-
-test_expect_code () {
-	test "$#" = 4 && { prereq=$1; shift; } || prereq=
-	test "$#" = 3 ||
-	error "bug in the test script: not 3 or 4 parameters to test-expect-code"
-	if ! test_skip "$@"
-	then
-		say >&3 "expecting exit code $1: $3"
-		test_run_ "$3"
-		if [ "$?" = 0 -a "$eval_ret" = "$1" ]
-		then
-			test_ok_ "$2"
 		else
 			test_failure_ "$@"
 		fi
@@ -537,11 +544,12 @@ test_expect_code () {
 # Usage: test_external description command arguments...
 # Example: test_external 'Perl API' perl ../path/to/test.pl
 test_external () {
-	test "$#" = 4 && { prereq=$1; shift; } || prereq=
+	test "$#" = 4 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 3 ||
 	error >&5 "bug in the test script: not 3 or 4 parameters to test_external"
 	descr="$1"
 	shift
+	export test_prereq
 	if ! test_skip "$descr" "$@"
 	then
 		# Announce the script to reduce confusion about the
@@ -642,6 +650,28 @@ test_path_is_missing () {
 	fi
 }
 
+# test_line_count checks that a file has the number of lines it
+# ought to. For example:
+#
+#	test_expect_success 'produce exactly one line of output' '
+#		do something >output &&
+#		test_line_count = 1 output
+#	'
+#
+# is like "test $(wc -l <output) = 1" except that it passes the
+# output through when the number of lines is wrong.
+
+test_line_count () {
+	if test $# != 3
+	then
+		error "bug in the test script: not 3 parameters to test_line_count"
+	elif ! test $(wc -l <"$3") "$1" "$2"
+	then
+		echo "test_line_count: line count for $3 !$1 $2"
+		cat "$3"
+		return 1
+	fi
+}
 
 # This is not among top-level (test_expect_success | test_expect_failure)
 # but is a prefix that can be used in the test script, like:
@@ -693,6 +723,28 @@ test_might_fail () {
 		return 1
 	fi
 	return 0
+}
+
+# Similar to test_must_fail and test_might_fail, but check that a
+# given command exited with a given exit code. Meant to be used as:
+#
+#	test_expect_success 'Merge with d/f conflicts' '
+#		test_expect_code 1 git merge "merge msg" B master
+#	'
+
+test_expect_code () {
+	want_code=$1
+	shift
+	"$@"
+	exit_code=$?
+	if test $exit_code = $want_code
+	then
+		echo >&2 "test_expect_code: command exited with $exit_code: $*"
+		return 0
+	else
+		echo >&2 "test_expect_code: command exited with $exit_code, we wanted $want_code $*"
+		return 1
+	fi
 }
 
 # test_cmp is a helper function to compare actual and expected output.
@@ -1007,11 +1059,20 @@ case $(uname -s) in
 	# no POSIX permissions
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
+	test_set_prereq MINGW
+	test_set_prereq SED_STRIPS_CR
+	;;
+*CYGWIN*)
+	test_set_prereq POSIXPERM
+	test_set_prereq EXECKEEPSPID
+	test_set_prereq NOT_MINGW
+	test_set_prereq SED_STRIPS_CR
 	;;
 *)
 	test_set_prereq POSIXPERM
 	test_set_prereq BSLASHPSPEC
 	test_set_prereq EXECKEEPSPID
+	test_set_prereq NOT_MINGW
 	;;
 esac
 

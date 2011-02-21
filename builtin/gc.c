@@ -184,7 +184,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option builtin_gc_options[] = {
-		OPT__QUIET(&quiet),
+		OPT__QUIET(&quiet, "suppress progress reporting"),
 		{ OPTION_STRING, 0, "prune", &prune_expire, "date",
 			"prune unreferenced objects",
 			PARSE_OPT_OPTARG, NULL, (intptr_t)(char*)prune_expire },
@@ -196,6 +196,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus reset
 #endif
+
+	if (argc == 2 && !strcmp(argv[1], "-h"))
+		usage_with_options(builtin_gc_usage, builtin_gc_options);
 
 	git_config(gc_config, NULL);
 

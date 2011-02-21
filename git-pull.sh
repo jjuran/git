@@ -38,7 +38,7 @@ test -z "$(git ls-files -u)" || die_conflict
 test -f "$GIT_DIR/MERGE_HEAD" && die_merge
 
 strategy_args= diffstat= no_commit= squash= no_ff= ff_only=
-log_arg= verbosity= progress=
+log_arg= verbosity= progress= recurse_submodules=
 merge_args=
 curr_branch=$(git symbolic-ref -q HEAD)
 curr_branch_short="${curr_branch#refs/heads/}"
@@ -104,6 +104,12 @@ do
 		;;
 	--no-r|--no-re|--no-reb|--no-reba|--no-rebas|--no-rebase)
 		rebase=false
+		;;
+	--recurse-submodules)
+		recurse_submodules=--recurse-submodules
+		;;
+	--no-recurse-submodules)
+		recurse_submodules=--no-recurse-submodules
 		;;
 	--d|--dr|--dry|--dry-|--dry-r|--dry-ru|--dry-run)
 		dry_run=--dry-run
@@ -201,10 +207,7 @@ test true = "$rebase" && {
 			die "updating an unborn branch with changes added to the index"
 		fi
 	else
-		git update-index --ignore-submodules --refresh &&
-		git diff-files --ignore-submodules --quiet &&
-		git diff-index --ignore-submodules --cached --quiet HEAD -- ||
-		die "refusing to pull with rebase: your working tree is not up-to-date"
+		require_clean_work_tree "pull with rebase" "Please commit or stash them."
 	fi
 	oldremoteref= &&
 	. git-parse-remote &&
@@ -220,7 +223,7 @@ test true = "$rebase" && {
 	done
 }
 orig_head=$(git rev-parse -q --verify HEAD)
-git fetch $verbosity $progress $dry_run --update-head-ok "$@" || exit 1
+git fetch $verbosity $progress $dry_run $recurse_submodules --update-head-ok "$@" || exit 1
 test -z "$dry_run" || exit 0
 
 curr_head=$(git rev-parse -q --verify HEAD)

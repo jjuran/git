@@ -35,10 +35,12 @@ GITWEB_FAVICON = static/git-favicon.png
 GITWEB_JS = static/gitweb.js
 GITWEB_SITE_HEADER =
 GITWEB_SITE_FOOTER =
+HIGHLIGHT_BIN = highlight
 
 # include user config
 -include ../config.mak.autogen
 -include ../config.mak
+-include config.mak
 
 # determine version
 ../GIT-VERSION-FILE: .FORCE-GIT-VERSION-FILE
@@ -129,7 +131,8 @@ GITWEB_REPLACE = \
 	-e 's|++GITWEB_FAVICON++|$(GITWEB_FAVICON)|g' \
 	-e 's|++GITWEB_JS++|$(GITWEB_JS)|g' \
 	-e 's|++GITWEB_SITE_HEADER++|$(GITWEB_SITE_HEADER)|g' \
-	-e 's|++GITWEB_SITE_FOOTER++|$(GITWEB_SITE_FOOTER)|g'
+	-e 's|++GITWEB_SITE_FOOTER++|$(GITWEB_SITE_FOOTER)|g' \
+	-e 's|++HIGHLIGHT_BIN++|$(HIGHLIGHT_BIN)|g'
 
 GITWEB-BUILD-OPTIONS: FORCE
 	@rm -f $@+
@@ -142,6 +145,15 @@ gitweb.cgi: gitweb.perl GITWEB-BUILD-OPTIONS
 		$(GITWEB_REPLACE) $< >$@+ && \
 	chmod +x $@+ && \
 	mv $@+ $@
+
+### Testing rules
+
+test:
+	$(MAKE) -C ../t gitweb-test
+
+test-installed:
+	GITWEB_TEST_INSTALLED='$(DESTDIR_SQ)$(gitwebdir_SQ)' \
+		$(MAKE) -C ../t gitweb-test
 
 ### Installation rules
 
@@ -156,5 +168,5 @@ install: all
 clean:
 	$(RM) gitweb.cgi static/gitweb.min.js static/gitweb.min.css GITWEB-BUILD-OPTIONS
 
-.PHONY: all clean install .FORCE-GIT-VERSION-FILE FORCE
+.PHONY: all clean install test test-installed .FORCE-GIT-VERSION-FILE FORCE
 

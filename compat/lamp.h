@@ -14,7 +14,7 @@
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
-#define GIT_VERSION "1.7.3.5"
+#define GIT_VERSION "1.7.4"
 
 // Lamp has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)
@@ -36,6 +36,8 @@
 #define SHA1_HEADER "block-sha1/sha1.h"
 
 #define ETC_GITCONFIG "/etc/gitconfig"
+
+#define ETC_GITATTRIBUTES "/etc/gitattributes"
 
 #define GIT_EXEC_PATH "/usr/lib/git-core"
 

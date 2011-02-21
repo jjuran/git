@@ -249,7 +249,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 #endif
 
 	const struct option options[] = {
-		OPT__QUIET(&quiet),
+		OPT__QUIET(&quiet, "be quiet, only report errors"),
 		OPT_SET_INT(0, "mixed", &reset_type,
 						"reset HEAD and index", MIXED),
 		OPT_SET_INT(0, "soft", &reset_type, "reset only HEAD", SOFT),

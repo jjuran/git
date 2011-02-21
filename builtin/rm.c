@@ -20,15 +20,6 @@ static struct {
 	const char **name;
 } list;
 
-static void add_list(const char *name)
-{
-	if (list.nr >= list.alloc) {
-		list.alloc = alloc_nr(list.alloc);
-		list.name = xrealloc(list.name, list.alloc * sizeof(const char *));
-	}
-	list.name[list.nr++] = name;
-}
-
 static int check_local_mod(unsigned char *head, int index_only)
 {
 	/*
@@ -139,10 +130,10 @@ static int show_only = 0, force = 0, index_only = 0, recursive = 0, quiet = 0;
 static int ignore_unmatch = 0;
 
 static struct option builtin_rm_options[] = {
-	OPT__DRY_RUN(&show_only),
-	OPT__QUIET(&quiet),
+	OPT__DRY_RUN(&show_only, "dry run"),
+	OPT__QUIET(&quiet, "do not list removed files"),
 	OPT_BOOLEAN( 0 , "cached",         &index_only, "only remove from the index"),
-	OPT_BOOLEAN('f', "force",          &force,      "override the up-to-date check"),
+	OPT__FORCE(&force, "override the up-to-date check"),
 	OPT_BOOLEAN('r', NULL,             &recursive,  "allow recursive removal"),
 	OPT_BOOLEAN( 0 , "ignore-unmatch", &ignore_unmatch,
 				"exit with a zero status even if nothing matched"),
@@ -182,7 +173,8 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 		struct cache_entry *ce = active_cache[i];
 		if (!match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, seen))
 			continue;
-		add_list(ce->name);
+		ALLOC_GROW(list.name, list.nr + 1, list.alloc);
+		list.name[list.nr++] = ce->name;
 	}
 
 	if (pathspec) {

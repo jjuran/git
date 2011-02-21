@@ -324,8 +324,13 @@ test_expect_success 'log grep setup' '
 
 	echo a >>file &&
 	test_tick &&
-	git commit -a -m "third"
+	git commit -a -m "third" &&
 
+	echo a >>file &&
+	test_tick &&
+	GIT_AUTHOR_NAME="Night Fall" \
+	GIT_AUTHOR_EMAIL="nitfol@frobozz.com" \
+	git commit -a -m "fourth"
 '
 
 test_expect_success 'log grep (1)' '
@@ -369,6 +374,28 @@ test_expect_success 'log --grep --author implicitly uses all-match' '
 	# author matches only initial and third
 	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
 	echo initial >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log with multiple --author uses union' '
+	git log --author="Thor" --author="Aster" --format=%s >actual &&
+	{
+	    echo third && echo second && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log with --grep and multiple --author uses all-match' '
+	git log --author="Thor" --author="Night" --grep=i --format=%s >actual &&
+	{
+	    echo third && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log with --grep and multiple --author uses all-match' '
+	git log --author="Thor" --author="Night" --grep=q --format=%s >actual &&
+	>expect &&
 	test_cmp expect actual
 '
 
@@ -452,7 +479,7 @@ test_expect_success 'outside of git repository' '
 		echo file1:hello &&
 		echo sub/file2:world
 	} >non/expect.full &&
-	echo file2:world >non/expect.sub
+	echo file2:world >non/expect.sub &&
 	(
 		GIT_CEILING_DIRECTORIES="$(pwd)/non/git" &&
 		export GIT_CEILING_DIRECTORIES &&
@@ -478,7 +505,7 @@ test_expect_success 'inside git repository but with --no-index' '
 		echo sub/file2:world
 	} >is/expect.full &&
 	: >is/expect.empty &&
-	echo file2:world >is/expect.sub
+	echo file2:world >is/expect.sub &&
 	(
 		cd is/git &&
 		git init &&

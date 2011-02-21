@@ -17,11 +17,7 @@
 #include "grep.h"
 #include "quote.h"
 #include "dir.h"
-
-#ifndef NO_PTHREADS
-#include <pthread.h>
 #include "thread-utils.h"
-#endif
 
 static char const * const grep_usage[] = {
 	"git grep [options] [-e] <pattern> [<rev>...] [[--] <path>...]",
@@ -923,8 +919,8 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 		{ OPTION_CALLBACK, ')', NULL, &opt, NULL, "",
 		  PARSE_OPT_NOARG | PARSE_OPT_NONEG | PARSE_OPT_NODASH,
 		  close_callback },
-		OPT_BOOLEAN('q', "quiet", &opt.status_only,
-			    "indicate hit with exit status without output"),
+		OPT__QUIET(&opt.status_only,
+			   "indicate hit with exit status without output"),
 		OPT_BOOLEAN(0, "all-match", &opt.all_match,
 			"show only matches from files that match all patterns"),
 		OPT_GROUP(""),

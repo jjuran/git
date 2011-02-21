@@ -329,8 +329,7 @@ static void show_tagger(char *buf, int len, struct rev_info *rev)
 	struct strbuf out = STRBUF_INIT;
 
 	pp_user_info("Tagger", rev->commit_format, &out, buf, rev->date_mode,
-		git_log_output_encoding ?
-		git_log_output_encoding: git_commit_encoding);
+		get_log_output_encoding());
 	printf("%s", out.buf);
 	strbuf_release(&out);
 }
@@ -1064,8 +1063,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	rev.commit_format = CMIT_FMT_EMAIL;
 	rev.verbose_header = 1;
 	rev.diff = 1;
-	rev.combine_merges = 0;
-	rev.ignore_merges = 1;
+	rev.no_merges = 1;
 	DIFF_OPT_SET(&rev.diffopt, RECURSIVE);
 	rev.subject_prefix = fmt_patch_subject_prefix;
 	memset(&s_r_opt, 0, sizeof(s_r_opt));
@@ -1168,6 +1166,8 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 
 	if (!use_stdout)
 		output_directory = set_outdir(prefix, output_directory);
+	else
+		setup_pager();
 
 	if (output_directory) {
 		if (use_stdout)
@@ -1235,10 +1235,6 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			origin = (boundary_count == 1) ? commit : NULL;
 			continue;
 		}
-
-		/* ignore merges */
-		if (commit->parents && commit->parents->next)
-			continue;
 
 		if (ignore_if_in_upstream &&
 				has_commit_patch_id(commit, &ids))
@@ -1382,7 +1378,7 @@ int cmd_cherry(int argc, const char **argv, const char *prefix)
 
 	struct option options[] = {
 		OPT__ABBREV(&abbrev),
-		OPT__VERBOSE(&verbose),
+		OPT__VERBOSE(&verbose, "be verbose"),
 		OPT_END()
 	};
 

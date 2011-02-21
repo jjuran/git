@@ -17,6 +17,7 @@ enum parse_opt_type {
 	OPTION_STRING,
 	OPTION_INTEGER,
 	OPTION_CALLBACK,
+	OPTION_LOWLEVEL_CALLBACK,
 	OPTION_FILENAME
 };
 
@@ -42,6 +43,10 @@ enum parse_opt_option_flags {
 
 struct option;
 typedef int parse_opt_cb(const struct option *, const char *arg, int unset);
+
+struct parse_opt_ctx_t;
+typedef int parse_opt_ll_cb(struct parse_opt_ctx_t *ctx,
+				const struct option *opt, int unset);
 
 /*
  * `type`::
@@ -87,7 +92,8 @@ typedef int parse_opt_cb(const struct option *, const char *arg, int unset);
  *				useful for users of OPTION_NEGBIT.
  *
  * `callback`::
- *   pointer to the callback to use for OPTION_CALLBACK.
+ *   pointer to the callback to use for OPTION_CALLBACK or
+ *   OPTION_LOWLEVEL_CALLBACK.
  *
  * `defval`::
  *   default value to fill (*->value) with for PARSE_OPT_OPTARG.
@@ -161,6 +167,7 @@ extern NORETURN void usage_msg_opt(const char *msg,
 enum {
 	PARSE_OPT_HELP = -1,
 	PARSE_OPT_DONE,
+	PARSE_OPT_NON_OPTION,
 	PARSE_OPT_UNKNOWN
 };
 
@@ -180,7 +187,7 @@ struct parse_opt_ctx_t {
 
 extern void parse_options_start(struct parse_opt_ctx_t *ctx,
 				int argc, const char **argv, const char *prefix,
-				int flags);
+				const struct option *options, int flags);
 
 extern int parse_options_step(struct parse_opt_ctx_t *ctx,
 			      const struct option *options,
@@ -198,14 +205,15 @@ extern int parse_opt_verbosity_cb(const struct option *, const char *, int);
 extern int parse_opt_with_commit(const struct option *, const char *, int);
 extern int parse_opt_tertiary(const struct option *, const char *, int);
 
-#define OPT__VERBOSE(var)  OPT_BOOLEAN('v', "verbose", (var), "be verbose")
-#define OPT__QUIET(var)    OPT_BOOLEAN('q', "quiet",   (var), "be quiet")
+#define OPT__VERBOSE(var, h)  OPT_BOOLEAN('v', "verbose", (var), (h))
+#define OPT__QUIET(var, h)    OPT_BOOLEAN('q', "quiet",   (var), (h))
 #define OPT__VERBOSITY(var) \
 	{ OPTION_CALLBACK, 'v', "verbose", (var), NULL, "be more verbose", \
 	  PARSE_OPT_NOARG, &parse_opt_verbosity_cb, 0 }, \
 	{ OPTION_CALLBACK, 'q', "quiet", (var), NULL, "be more quiet", \
 	  PARSE_OPT_NOARG, &parse_opt_verbosity_cb, 0 }
-#define OPT__DRY_RUN(var)  OPT_BOOLEAN('n', "dry-run", (var), "dry run")
+#define OPT__DRY_RUN(var, h)  OPT_BOOLEAN('n', "dry-run", (var), (h))
+#define OPT__FORCE(var, h)    OPT_BOOLEAN('f', "force",   (var), (h))
 #define OPT__ABBREV(var)  \
 	{ OPTION_CALLBACK, 0, "abbrev", (var), "n", \
 	  "use <n> digits to display SHA-1s", \

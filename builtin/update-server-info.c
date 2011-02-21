@@ -16,8 +16,7 @@ int cmd_update_server_info(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option options[] = {
-		OPT_BOOLEAN('f', "force", &force,
-			"update the info files from scratch"),
+		OPT__FORCE(&force, "update the info files from scratch"),
 		OPT_END()
 	};
 

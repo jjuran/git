@@ -421,11 +421,67 @@ test_expect_success 'add submodules without specifying an explicit path' '
 		git commit -m "repo commit 1"
 	) &&
 	git clone --bare repo/ bare.git &&
-	cd addtest &&
-	git submodule add "$submodurl/repo" &&
-	git config -f .gitmodules submodule.repo.path repo &&
-	git submodule add "$submodurl/bare.git" &&
-	git config -f .gitmodules submodule.bare.path bare
+	(
+		cd addtest &&
+		git submodule add "$submodurl/repo" &&
+		git config -f .gitmodules submodule.repo.path repo &&
+		git submodule add "$submodurl/bare.git" &&
+		git config -f .gitmodules submodule.bare.path bare
+	)
+'
+
+test_expect_success 'add should fail when path is used by a file' '
+	(
+		cd addtest &&
+		touch file &&
+		test_must_fail	git submodule add "$submodurl/repo" file
+	)
+'
+
+test_expect_success 'add should fail when path is used by an existing directory' '
+	(
+		cd addtest &&
+		mkdir empty-dir &&
+		test_must_fail git submodule add "$submodurl/repo" empty-dir
+	)
+'
+
+test_expect_success 'set up for relative path tests' '
+	mkdir reltest &&
+	(
+		cd reltest &&
+		git init &&
+		mkdir sub &&
+		(
+			cd sub &&
+			git init &&
+			test_commit foo
+		) &&
+		git add sub &&
+		git config -f .gitmodules submodule.sub.path sub &&
+		git config -f .gitmodules submodule.sub.url ../subrepo &&
+		cp .git/config pristine-.git-config
+	)
+'
+
+test_expect_success 'relative path works with URL' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		git config remote.origin.url ssh://hostname/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ssh://hostname/subrepo
+	)
+'
+
+test_expect_success 'relative path works with user@host:path' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		git config remote.origin.url user@host:repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = user@host:subrepo
+	)
 '
 
 test_done

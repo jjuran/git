@@ -7,6 +7,23 @@ test_description='test git fast-import utility'
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/diff-lib.sh ;# test-lib chdir's into trash
 
+# Print $1 bytes from stdin to stdout.
+#
+# This could be written as "head -c $1", but IRIX "head" does not
+# support the -c option.
+head_c () {
+	perl -e '
+		my $len = $ARGV[1];
+		while ($len > 0) {
+			my $s;
+			my $nread = sysread(STDIN, $s, $len);
+			die "cannot read: $!" unless defined($nread);
+			print $s;
+			$len -= $nread;
+		}
+	' - "$1"
+}
+
 file2_data='file2
 second line of EOF'
 
@@ -23,11 +40,18 @@ file5_data='an inline file.
 file6_data='#!/bin/sh
 echo "$@"'
 
+>empty
+
 ###
 ### series A
 ###
 
 test_tick
+
+test_expect_success 'empty stream succeeds' '
+	git fast-import </dev/null
+'
+
 cat >input <<INPUT_END
 blob
 mark :2
@@ -321,7 +345,7 @@ test_expect_success \
 	'for p in .git/objects/pack/*.pack;do git verify-pack $p||exit;done'
 test_expect_success \
 	'C: validate reuse existing blob' \
-	'test $newf = `git rev-parse --verify branch:file2/newf`
+	'test $newf = `git rev-parse --verify branch:file2/newf` &&
 	 test $oldf = `git rev-parse --verify branch:file2/oldf`'
 
 cat >expect <<EOF
@@ -875,6 +899,69 @@ test_expect_success \
 	 compare_diff_raw expect actual'
 
 test_expect_success \
+	'N: copy root directory by tree hash' \
+	'cat >expect <<-\EOF &&
+	:100755 000000 f1fb5da718392694d0076d677d6d0e364c79b0bc 0000000000000000000000000000000000000000 D	file3/newf
+	:100644 000000 7123f7f44e39be127c5eb701e5968176ee9d78b1 0000000000000000000000000000000000000000 D	file3/oldf
+	EOF
+	 root=$(git rev-parse refs/heads/branch^0^{tree}) &&
+	 cat >input <<-INPUT_END &&
+	commit refs/heads/N6
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy root directory by tree hash
+	COMMIT
+
+	from refs/heads/branch^0
+	M 040000 $root ""
+	INPUT_END
+	 git fast-import <input &&
+	 git diff-tree -C --find-copies-harder -r N4 N6 >actual &&
+	 compare_diff_raw expect actual'
+
+test_expect_success \
+	'N: delete directory by copying' \
+	'cat >expect <<-\EOF &&
+	OBJID
+	:100644 000000 OBJID OBJID D	foo/bar/qux
+	OBJID
+	:000000 100644 OBJID OBJID A	foo/bar/baz
+	:000000 100644 OBJID OBJID A	foo/bar/qux
+	EOF
+	 empty_tree=$(git mktree </dev/null) &&
+	 cat >input <<-INPUT_END &&
+	commit refs/heads/N-delete
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	collect data to be deleted
+	COMMIT
+
+	deleteall
+	M 100644 inline foo/bar/baz
+	data <<DATA_END
+	hello
+	DATA_END
+	C "foo/bar/baz" "foo/bar/qux"
+	C "foo/bar/baz" "foo/bar/quux/1"
+	C "foo/bar/baz" "foo/bar/quuux"
+	M 040000 $empty_tree foo/bar/quux
+	M 040000 $empty_tree foo/bar/quuux
+
+	commit refs/heads/N-delete
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	delete subdirectory
+	COMMIT
+
+	M 040000 $empty_tree foo/bar/qux
+	INPUT_END
+	 git fast-import <input &&
+	 git rev-list N-delete |
+		git diff-tree -r --stdin --root --always |
+		sed -e "s/$_x40/OBJID/g" >actual &&
+	 test_cmp expect actual'
+
+test_expect_success \
 	'N: modify copied tree' \
 	'cat >expect <<-\EOF &&
 	:100644 100644 fcf778cda181eaa1cbc9e9ce3a2e15ee9f9fe791 fcf778cda181eaa1cbc9e9ce3a2e15ee9f9fe791 C100	newdir/interesting	file3/file5
@@ -906,6 +993,114 @@ test_expect_success \
 	 git fast-import <input &&
 	 git diff-tree -C --find-copies-harder -r N5^^ N5 >actual &&
 	 compare_diff_raw expect actual'
+
+test_expect_success \
+	'N: reject foo/ syntax' \
+	'subdir=$(git rev-parse refs/heads/branch^0:file2) &&
+	 test_must_fail git fast-import <<-INPUT_END
+	commit refs/heads/N5B
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy with invalid syntax
+	COMMIT
+
+	from refs/heads/branch^0
+	M 040000 $subdir file3/
+	INPUT_END'
+
+test_expect_success \
+	'N: copy to root by id and modify' \
+	'echo "hello, world" >expect.foo &&
+	 echo hello >expect.bar &&
+	 git fast-import <<-SETUP_END &&
+	commit refs/heads/N7
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	hello, tree
+	COMMIT
+
+	deleteall
+	M 644 inline foo/bar
+	data <<EOF
+	hello
+	EOF
+	SETUP_END
+
+	 tree=$(git rev-parse --verify N7:) &&
+	 git fast-import <<-INPUT_END &&
+	commit refs/heads/N8
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy to root by id and modify
+	COMMIT
+
+	M 040000 $tree ""
+	M 644 inline foo/foo
+	data <<EOF
+	hello, world
+	EOF
+	INPUT_END
+	 git show N8:foo/foo >actual.foo &&
+	 git show N8:foo/bar >actual.bar &&
+	 test_cmp expect.foo actual.foo &&
+	 test_cmp expect.bar actual.bar'
+
+test_expect_success \
+	'N: extract subtree' \
+	'branch=$(git rev-parse --verify refs/heads/branch^{tree}) &&
+	 cat >input <<-INPUT_END &&
+	commit refs/heads/N9
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	extract subtree branch:newdir
+	COMMIT
+
+	M 040000 $branch ""
+	C "newdir" ""
+	INPUT_END
+	 git fast-import <input &&
+	 git diff --exit-code branch:newdir N9'
+
+test_expect_success \
+	'N: modify subtree, extract it, and modify again' \
+	'echo hello >expect.baz &&
+	 echo hello, world >expect.qux &&
+	 git fast-import <<-SETUP_END &&
+	commit refs/heads/N10
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	hello, tree
+	COMMIT
+
+	deleteall
+	M 644 inline foo/bar/baz
+	data <<EOF
+	hello
+	EOF
+	SETUP_END
+
+	 tree=$(git rev-parse --verify N10:) &&
+	 git fast-import <<-INPUT_END &&
+	commit refs/heads/N11
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy to root by id and modify
+	COMMIT
+
+	M 040000 $tree ""
+	M 100644 inline foo/bar/qux
+	data <<EOF
+	hello, world
+	EOF
+	R "foo" ""
+	C "bar/qux" "bar/quux"
+	INPUT_END
+	 git show N11:bar/baz >actual.baz &&
+	 git show N11:bar/qux >actual.qux &&
+	 git show N11:bar/quux >actual.quux &&
+	 test_cmp expect.baz actual.baz &&
+	 test_cmp expect.qux actual.qux &&
+	 test_cmp expect.qux actual.quux'
 
 ###
 ### series O
@@ -1611,6 +1806,253 @@ test_expect_success 'R: feature no-relative-marks should be honoured' '
     test_cmp marks.new non-relative.out
 '
 
+test_expect_success 'R: feature cat-blob supported' '
+	echo "feature cat-blob" |
+	git fast-import
+'
+
+test_expect_success 'R: cat-blob-fd must be a nonnegative integer' '
+	test_must_fail git fast-import --cat-blob-fd=-1 </dev/null
+'
+
+test_expect_success 'R: print old blob' '
+	blob=$(echo "yes it can" | git hash-object -w --stdin) &&
+	cat >expect <<-EOF &&
+	${blob} blob 11
+	yes it can
+
+	EOF
+	echo "cat-blob $blob" |
+	git fast-import --cat-blob-fd=6 6>actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'R: in-stream cat-blob-fd not respected' '
+	echo hello >greeting &&
+	blob=$(git hash-object -w greeting) &&
+	cat >expect <<-EOF &&
+	${blob} blob 6
+	hello
+
+	EOF
+	git fast-import --cat-blob-fd=3 3>actual.3 >actual.1 <<-EOF &&
+	cat-blob $blob
+	EOF
+	test_cmp expect actual.3 &&
+	test_cmp empty actual.1 &&
+	git fast-import 3>actual.3 >actual.1 <<-EOF &&
+	option cat-blob-fd=3
+	cat-blob $blob
+	EOF
+	test_cmp empty actual.3 &&
+	test_cmp expect actual.1
+'
+
+test_expect_success 'R: print new blob' '
+	blob=$(echo "yep yep yep" | git hash-object --stdin) &&
+	cat >expect <<-EOF &&
+	${blob} blob 12
+	yep yep yep
+
+	EOF
+	git fast-import --cat-blob-fd=6 6>actual <<-\EOF &&
+	blob
+	mark :1
+	data <<BLOB_END
+	yep yep yep
+	BLOB_END
+	cat-blob :1
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success 'R: print new blob by sha1' '
+	blob=$(echo "a new blob named by sha1" | git hash-object --stdin) &&
+	cat >expect <<-EOF &&
+	${blob} blob 25
+	a new blob named by sha1
+
+	EOF
+	git fast-import --cat-blob-fd=6 6>actual <<-EOF &&
+	blob
+	data <<BLOB_END
+	a new blob named by sha1
+	BLOB_END
+	cat-blob $blob
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success 'setup: big file' '
+	(
+		echo "the quick brown fox jumps over the lazy dog" >big &&
+		for i in 1 2 3
+		do
+			cat big big big big >bigger &&
+			cat bigger bigger bigger bigger >big ||
+			exit
+		done
+	)
+'
+
+test_expect_success 'R: print two blobs to stdout' '
+	blob1=$(git hash-object big) &&
+	blob1_len=$(wc -c <big) &&
+	blob2=$(echo hello | git hash-object --stdin) &&
+	{
+		echo ${blob1} blob $blob1_len &&
+		cat big &&
+		cat <<-EOF
+
+		${blob2} blob 6
+		hello
+
+		EOF
+	} >expect &&
+	{
+		cat <<-\END_PART1 &&
+			blob
+			mark :1
+			data <<data_end
+		END_PART1
+		cat big &&
+		cat <<-\EOF
+			data_end
+			blob
+			mark :2
+			data <<data_end
+			hello
+			data_end
+			cat-blob :1
+			cat-blob :2
+		EOF
+	} |
+	git fast-import >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'setup: have pipes?' '
+	rm -f frob &&
+	if mkfifo frob
+	then
+		test_set_prereq PIPE
+	fi
+'
+
+test_expect_success PIPE 'R: copy using cat-file' '
+	expect_id=$(git hash-object big) &&
+	expect_len=$(wc -c <big) &&
+	echo $expect_id blob $expect_len >expect.response &&
+
+	rm -f blobs &&
+	cat >frontend <<-\FRONTEND_END &&
+	#!/bin/sh
+	FRONTEND_END
+
+	mkfifo blobs &&
+	(
+		export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE &&
+		cat <<-\EOF &&
+		feature cat-blob
+		blob
+		mark :1
+		data <<BLOB
+		EOF
+		cat big &&
+		cat <<-\EOF &&
+		BLOB
+		cat-blob :1
+		EOF
+
+		read blob_id type size <&3 &&
+		echo "$blob_id $type $size" >response &&
+		head_c $size >blob <&3 &&
+		read newline <&3 &&
+
+		cat <<-EOF &&
+		commit refs/heads/copied
+		committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+		data <<COMMIT
+		copy big file as file3
+		COMMIT
+		M 644 inline file3
+		data <<BLOB
+		EOF
+		cat blob &&
+		echo BLOB
+	) 3<blobs |
+	git fast-import --cat-blob-fd=3 3>blobs &&
+	git show copied:file3 >actual &&
+	test_cmp expect.response response &&
+	test_cmp big actual
+'
+
+test_expect_success PIPE 'R: print blob mid-commit' '
+	rm -f blobs &&
+	echo "A blob from _before_ the commit." >expect &&
+	mkfifo blobs &&
+	(
+		exec 3<blobs &&
+		cat <<-EOF &&
+		feature cat-blob
+		blob
+		mark :1
+		data <<BLOB
+		A blob from _before_ the commit.
+		BLOB
+		commit refs/heads/temporary
+		committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+		data <<COMMIT
+		Empty commit
+		COMMIT
+		cat-blob :1
+		EOF
+
+		read blob_id type size <&3 &&
+		head_c $size >actual <&3 &&
+		read newline <&3 &&
+
+		echo
+	) |
+	git fast-import --cat-blob-fd=3 3>blobs &&
+	test_cmp expect actual
+'
+
+test_expect_success PIPE 'R: print staged blob within commit' '
+	rm -f blobs &&
+	echo "A blob from _within_ the commit." >expect &&
+	mkfifo blobs &&
+	(
+		exec 3<blobs &&
+		cat <<-EOF &&
+		feature cat-blob
+		commit refs/heads/within
+		committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+		data <<COMMIT
+		Empty commit
+		COMMIT
+		M 644 inline within
+		data <<BLOB
+		A blob from _within_ the commit.
+		BLOB
+		EOF
+
+		to_get=$(
+			echo "A blob from _within_ the commit." |
+			git hash-object --stdin
+		) &&
+		echo "cat-blob $to_get" &&
+
+		read blob_id type size <&3 &&
+		head_c $size >actual <&3 &&
+		read newline <&3 &&
+
+		echo deleteall
+	) |
+	git fast-import --cat-blob-fd=3 3>blobs &&
+	test_cmp expect actual
+'
+
 cat >input << EOF
 option git quiet
 blob
@@ -1618,8 +2060,6 @@ data 3
 hi
 
 EOF
-
-touch empty
 
 test_expect_success 'R: quiet option results in no stats being output' '
     cat input | git fast-import 2> output &&
@@ -1636,6 +2076,14 @@ test_expect_success 'R: die on unknown option' '
 
 test_expect_success 'R: unknown commandline options are rejected' '\
     test_must_fail git fast-import --non-existing-option < /dev/null
+'
+
+test_expect_success 'R: die on invalid option argument' '
+	echo "option git active-branches=-5" |
+	test_must_fail git fast-import &&
+	echo "option git depth=" |
+	test_must_fail git fast-import &&
+	test_must_fail git fast-import --depth="5 elephants" </dev/null
 '
 
 cat >input <<EOF

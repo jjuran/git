@@ -7,6 +7,8 @@
 #include "refs.h"
 #include "remote.h"
 
+static int get_sha1_oneline(const char *, unsigned char *, struct commit_list *);
+
 static int find_short_object_filename(int len, const char *name, unsigned char *sha1)
 {
 	struct alternate_object_database *alt;
@@ -206,7 +208,9 @@ const char *find_unique_abbrev(const unsigned char *sha1, int len)
 		if (exists
 		    ? !status
 		    : status == SHORT_NAME_NOT_FOUND) {
-			hex[len] = 0;
+			int cut_at = len + unique_abbrev_extra_length;
+			cut_at = (cut_at < 40) ? cut_at : 40;
+			hex[cut_at] = 0;
 			return hex;
 		}
 		len++;
@@ -560,6 +564,8 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		expected_type = OBJ_BLOB;
 	else if (sp[0] == '}')
 		expected_type = OBJ_NONE;
+	else if (sp[0] == '/')
+		expected_type = OBJ_COMMIT;
 	else
 		return -1;
 
@@ -574,19 +580,37 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		if (!o || (!o->parsed && !parse_object(o->sha1)))
 			return -1;
 		hashcpy(sha1, o->sha1);
+		return 0;
 	}
-	else {
-		/*
-		 * At this point, the syntax look correct, so
-		 * if we do not get the needed object, we should
-		 * barf.
-		 */
-		o = peel_to_type(name, len, o, expected_type);
-		if (o) {
-			hashcpy(sha1, o->sha1);
-			return 0;
-		}
+
+	/*
+	 * At this point, the syntax look correct, so
+	 * if we do not get the needed object, we should
+	 * barf.
+	 */
+	o = peel_to_type(name, len, o, expected_type);
+	if (!o)
 		return -1;
+
+	hashcpy(sha1, o->sha1);
+	if (sp[0] == '/') {
+		/* "$commit^{/foo}" */
+		char *prefix;
+		int ret;
+		struct commit_list *list = NULL;
+
+		/*
+		 * $commit^{/}. Some regex implementation may reject.
+		 * We don't need regex anyway. '' pattern always matches.
+		 */
+		if (sp[1] == '}')
+			return 0;
+
+		prefix = xstrndup(sp + 1, name + len - 1 - (sp + 1));
+		commit_list_insert((struct commit *)o, &list);
+		ret = get_sha1_oneline(prefix, sha1, list);
+		free(prefix);
+		return ret;
 	}
 	return 0;
 }
@@ -683,16 +707,15 @@ static int handle_one_ref(const char *path,
 	}
 	if (object->type != OBJ_COMMIT)
 		return 0;
-	insert_by_date((struct commit *)object, list);
-	object->flags |= ONELINE_SEEN;
+	commit_list_insert_by_date((struct commit *)object, list);
 	return 0;
 }
 
-static int get_sha1_oneline(const char *prefix, unsigned char *sha1)
+static int get_sha1_oneline(const char *prefix, unsigned char *sha1,
+			    struct commit_list *list)
 {
-	struct commit_list *list = NULL, *backup = NULL, *l;
-	int retval = -1;
-	char *temp_commit_buffer = NULL;
+	struct commit_list *backup = NULL, *l;
+	int found = 0;
 	regex_t regex;
 
 	if (prefix[0] == '!') {
@@ -704,41 +727,45 @@ static int get_sha1_oneline(const char *prefix, unsigned char *sha1)
 	if (regcomp(&regex, prefix, REG_EXTENDED))
 		die("Invalid search pattern: %s", prefix);
 
-	for_each_ref(handle_one_ref, &list);
-	for (l = list; l; l = l->next)
+	for (l = list; l; l = l->next) {
+		l->item->object.flags |= ONELINE_SEEN;
 		commit_list_insert(l->item, &backup);
+	}
 	while (list) {
-		char *p;
+		char *p, *to_free = NULL;
 		struct commit *commit;
 		enum object_type type;
 		unsigned long size;
+		int matches;
 
 		commit = pop_most_recent_commit(&list, ONELINE_SEEN);
 		if (!parse_object(commit->object.sha1))
 			continue;
-		free(temp_commit_buffer);
 		if (commit->buffer)
 			p = commit->buffer;
 		else {
 			p = read_sha1_file(commit->object.sha1, &type, &size);
 			if (!p)
 				continue;
-			temp_commit_buffer = p;
+			to_free = p;
 		}
-		if (!(p = strstr(p, "\n\n")))
-			continue;
-		if (!regexec(&regex, p + 2, 0, NULL, 0)) {
+
+		p = strstr(p, "\n\n");
+		matches = p && !regexec(&regex, p + 2, 0, NULL, 0);
+		free(to_free);
+
+		if (matches) {
 			hashcpy(sha1, commit->object.sha1);
-			retval = 0;
+			found = 1;
 			break;
 		}
 	}
 	regfree(&regex);
-	free(temp_commit_buffer);
 	free_commit_list(list);
 	for (l = backup; l; l = l->next)
 		clear_commit_marks(l->item, ONELINE_SEEN);
-	return retval;
+	free_commit_list(backup);
+	return found ? 0 : -1;
 }
 
 struct grab_nth_branch_switch_cbdata {
@@ -934,6 +961,24 @@ int interpret_branch_name(const char *name, struct strbuf *buf)
 	return len;
 }
 
+int strbuf_branchname(struct strbuf *sb, const char *name)
+{
+	int len = strlen(name);
+	if (interpret_branch_name(name, sb) == len)
+		return 0;
+	strbuf_add(sb, name, len);
+	return len;
+}
+
+int strbuf_check_branch_ref(struct strbuf *sb, const char *name)
+{
+	strbuf_branchname(sb, name);
+	if (name[0] == '-')
+		return CHECK_REF_FORMAT_ERROR;
+	strbuf_splice(sb, 0, 0, "refs/heads/", 11);
+	return check_ref_format(sb->buf);
+}
+
 /*
  * This is like "get_sha1_basic()", except it allows "sha1 expressions",
  * notably "xyz^" for "parent of xyz"
@@ -1046,6 +1091,23 @@ int get_sha1_with_mode_1(const char *name, unsigned char *sha1, unsigned *mode, 
 	return ret;
 }
 
+static char *resolve_relative_path(const char *rel)
+{
+	if (prefixcmp(rel, "./") && prefixcmp(rel, "../"))
+		return NULL;
+
+	if (!startup_info)
+		die("BUG: startup_info struct is not initialized.");
+
+	if (!is_inside_work_tree())
+		die("relative path syntax can't be used outside working tree.");
+
+	/* die() inside prefix_path() if resolved path is outside worktree */
+	return prefix_path(startup_info->prefix,
+			   startup_info->prefix ? strlen(startup_info->prefix) : 0,
+			   rel);
+}
+
 int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 			    struct object_context *oc,
 			    int gently, const char *prefix)
@@ -1060,17 +1122,21 @@ int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 	if (!ret)
 		return ret;
 	/* sha1:path --> object name of path in ent sha1
-	 * :path -> object name of path in index
+	 * :path -> object name of absolute path in index
+	 * :./path -> object name of path relative to cwd in index
 	 * :[0-3]:path -> object name of path in index at stage
 	 * :/foo -> recent commit matching foo
 	 */
 	if (name[0] == ':') {
 		int stage = 0;
 		struct cache_entry *ce;
+		char *new_path = NULL;
 		int pos;
-		if (namelen > 2 && name[1] == '/')
-			/* don't need mode for commit */
-			return get_sha1_oneline(name + 2, sha1);
+		if (namelen > 2 && name[1] == '/') {
+			struct commit_list *list = NULL;
+			for_each_ref(handle_one_ref, &list);
+			return get_sha1_oneline(name + 2, sha1, list);
+		}
 		if (namelen < 3 ||
 		    name[2] != ':' ||
 		    name[1] < '0' || '3' < name[1])
@@ -1079,7 +1145,13 @@ int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 			stage = name[1] - '0';
 			cp = name + 3;
 		}
-		namelen = namelen - (cp - name);
+		new_path = resolve_relative_path(cp);
+		if (!new_path) {
+			namelen = namelen - (cp - name);
+		} else {
+			cp = new_path;
+			namelen = strlen(cp);
+		}
 
 		strncpy(oc->path, cp,
 			sizeof(oc->path));
@@ -1098,12 +1170,14 @@ int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 			if (ce_stage(ce) == stage) {
 				hashcpy(sha1, ce->sha1);
 				oc->mode = ce->ce_mode;
+				free(new_path);
 				return 0;
 			}
 			pos++;
 		}
 		if (!gently)
 			diagnose_invalid_index_path(stage, prefix, cp);
+		free(new_path);
 		return -1;
 	}
 	for (cp = name, bracket_depth = 0; *cp; cp++) {
@@ -1124,6 +1198,11 @@ int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 		}
 		if (!get_sha1_1(name, cp-name, tree_sha1)) {
 			const char *filename = cp+1;
+			char *new_filename = NULL;
+
+			new_filename = resolve_relative_path(filename);
+			if (new_filename)
+				filename = new_filename;
 			ret = get_tree_entry(tree_sha1, filename, sha1, &oc->mode);
 			if (!gently) {
 				diagnose_invalid_sha1_path(prefix, filename,
@@ -1135,6 +1214,7 @@ int get_sha1_with_context_1(const char *name, unsigned char *sha1,
 				sizeof(oc->path));
 			oc->path[sizeof(oc->path)-1] = '\0';
 
+			free(new_filename);
 			return ret;
 		} else {
 			if (!gently)

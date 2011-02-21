@@ -19,14 +19,22 @@ static struct startup_info git_startup_info;
 static int use_pager = -1;
 struct pager_config {
 	const char *cmd;
-	int val;
+	int want;
+	char *value;
 };
 
 static int pager_command_config(const char *var, const char *value, void *data)
 {
 	struct pager_config *c = data;
-	if (!prefixcmp(var, "pager.") && !strcmp(var + 6, c->cmd))
-		c->val = git_config_bool(var, value);
+	if (!prefixcmp(var, "pager.") && !strcmp(var + 6, c->cmd)) {
+		int b = git_config_maybe_bool(var, value);
+		if (b >= 0)
+			c->want = b;
+		else {
+			c->want = 1;
+			c->value = xstrdup(value);
+		}
+	}
 	return 0;
 }
 
@@ -35,9 +43,12 @@ int check_pager_config(const char *cmd)
 {
 	struct pager_config c;
 	c.cmd = cmd;
-	c.val = -1;
+	c.want = -1;
+	c.value = NULL;
 	git_config(pager_command_config, &c);
-	return c.val;
+	if (c.value)
+		pager_program = c.value;
+	return c.want;
 }
 
 static void commit_pager_choice(void) {
@@ -264,6 +275,10 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 			use_pager = check_pager_config(p->cmd);
 		if (use_pager == -1 && p->option & USE_PAGER)
 			use_pager = 1;
+
+		if ((p->option & (RUN_SETUP | RUN_SETUP_GENTLY)) &&
+		    startup_info->have_repository) /* get_git_dir() may set up repo, avoid that */
+			trace_repo_setup(prefix);
 	}
 	commit_pager_choice();
 
@@ -374,6 +389,8 @@ static void handle_internal_command(int argc, const char **argv)
 		{ "receive-pack", cmd_receive_pack },
 		{ "reflog", cmd_reflog, RUN_SETUP },
 		{ "remote", cmd_remote, RUN_SETUP },
+		{ "remote-ext", cmd_remote_ext },
+		{ "remote-fd", cmd_remote_fd },
 		{ "replace", cmd_replace, RUN_SETUP },
 		{ "repo-config", cmd_config, RUN_SETUP_GENTLY },
 		{ "rerere", cmd_rerere, RUN_SETUP },

@@ -3152,20 +3152,23 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		return stat_opt(options, av);
 
 	/* renames options */
-	else if (!prefixcmp(arg, "-B")) {
+	else if (!prefixcmp(arg, "-B") || !prefixcmp(arg, "--break-rewrites=") ||
+		 !strcmp(arg, "--break-rewrites")) {
 		if ((options->break_opt = diff_scoreopt_parse(arg)) == -1)
-			return -1;
+			return error("invalid argument to -B: %s", arg+2);
 	}
-	else if (!prefixcmp(arg, "-M")) {
+	else if (!prefixcmp(arg, "-M") || !prefixcmp(arg, "--find-renames=") ||
+		 !strcmp(arg, "--find-renames")) {
 		if ((options->rename_score = diff_scoreopt_parse(arg)) == -1)
-			return -1;
+			return error("invalid argument to -M: %s", arg+2);
 		options->detect_rename = DIFF_DETECT_RENAME;
 	}
-	else if (!prefixcmp(arg, "-C")) {
+	else if (!prefixcmp(arg, "-C") || !prefixcmp(arg, "--find-copies=") ||
+		 !strcmp(arg, "--find-copies")) {
 		if (options->detect_rename == DIFF_DETECT_COPY)
 			DIFF_OPT_SET(options, FIND_COPIES_HARDER);
 		if ((options->rename_score = diff_scoreopt_parse(arg)) == -1)
-			return -1;
+			return error("invalid argument to -C: %s", arg+2);
 		options->detect_rename = DIFF_DETECT_COPY;
 	}
 	else if (!strcmp(arg, "--no-renames"))
@@ -3283,12 +3286,17 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	}
 	else if ((argcount = short_opt('S', av, &optarg))) {
 		options->pickaxe = optarg;
+		options->pickaxe_opts |= DIFF_PICKAXE_KIND_S;
+		return argcount;
+	} else if ((argcount = short_opt('G', av, &optarg))) {
+		options->pickaxe = optarg;
+		options->pickaxe_opts |= DIFF_PICKAXE_KIND_G;
 		return argcount;
 	}
 	else if (!strcmp(arg, "--pickaxe-all"))
-		options->pickaxe_opts = DIFF_PICKAXE_ALL;
+		options->pickaxe_opts |= DIFF_PICKAXE_ALL;
 	else if (!strcmp(arg, "--pickaxe-regex"))
-		options->pickaxe_opts = DIFF_PICKAXE_REGEX;
+		options->pickaxe_opts |= DIFF_PICKAXE_REGEX;
 	else if ((argcount = short_opt('O', av, &optarg))) {
 		options->orderfile = optarg;
 		return argcount;
@@ -3330,7 +3338,7 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	return 1;
 }
 
-static int parse_num(const char **cp_p)
+int parse_rename_score(const char **cp_p)
 {
 	unsigned long num, scale;
 	int ch, dot;
@@ -3373,10 +3381,26 @@ static int diff_scoreopt_parse(const char *opt)
 	if (*opt++ != '-')
 		return -1;
 	cmd = *opt++;
+	if (cmd == '-') {
+		/* convert the long-form arguments into short-form versions */
+		if (!prefixcmp(opt, "break-rewrites")) {
+			opt += strlen("break-rewrites");
+			if (*opt == 0 || *opt++ == '=')
+				cmd = 'B';
+		} else if (!prefixcmp(opt, "find-copies")) {
+			opt += strlen("find-copies");
+			if (*opt == 0 || *opt++ == '=')
+				cmd = 'C';
+		} else if (!prefixcmp(opt, "find-renames")) {
+			opt += strlen("find-renames");
+			if (*opt == 0 || *opt++ == '=')
+				cmd = 'M';
+		}
+	}
 	if (cmd != 'M' && cmd != 'C' && cmd != 'B')
 		return -1; /* that is not a -M, -C nor -B option */
 
-	opt1 = parse_num(&opt);
+	opt1 = parse_rename_score(&opt);
 	if (cmd != 'B')
 		opt2 = 0;
 	else {
@@ -3386,7 +3410,7 @@ static int diff_scoreopt_parse(const char *opt)
 			return -1; /* we expect -B80/99 or -B80 */
 		else {
 			opt++;
-			opt2 = parse_num(&opt);
+			opt2 = parse_rename_score(&opt);
 		}
 	}
 	if (*opt != 0)
@@ -4188,7 +4212,7 @@ void diffcore_std(struct diff_options *options)
 			diffcore_merge_broken();
 	}
 	if (options->pickaxe)
-		diffcore_pickaxe(options->pickaxe, options->pickaxe_opts);
+		diffcore_pickaxe(options);
 	if (options->orderfile)
 		diffcore_order(options->orderfile);
 	if (!options->found_follow)

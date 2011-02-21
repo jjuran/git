@@ -539,6 +539,9 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 #pragma cplusplus reset
 #endif
 
+	if (argc == 2 && !strcmp(argv[1], "-h"))
+		usage_with_options(ls_files_usage, builtin_ls_files_options);
+
 	memset(&dir, 0, sizeof(dir));
 	prefix = cmd_prefix;
 	if (prefix)

@@ -21,6 +21,7 @@ int prefer_symlink_refs;
 int is_bare_repository_cfg = -1; /* unspecified */
 int log_all_ref_updates = -1; /* unspecified */
 int warn_ambiguous_refs = 1;
+int unique_abbrev_extra_length;
 int repository_format_version;
 const char *git_commit_encoding;
 const char *git_log_output_encoding;
@@ -138,30 +139,20 @@ static int git_work_tree_initialized;
  */
 void set_git_work_tree(const char *new_work_tree)
 {
-	if (is_bare_repository_cfg >= 0)
-		die("cannot set work tree after initialization");
+	if (git_work_tree_initialized) {
+		new_work_tree = make_absolute_path(new_work_tree);
+		if (strcmp(new_work_tree, work_tree))
+			die("internal error: work tree has already been set\n"
+			    "Current worktree: %s\nNew worktree: %s",
+			    work_tree, new_work_tree);
+		return;
+	}
 	git_work_tree_initialized = 1;
-	free(work_tree);
 	work_tree = xstrdup(make_absolute_path(new_work_tree));
-	is_bare_repository_cfg = 0;
 }
 
 const char *get_git_work_tree(void)
 {
-	if (!git_work_tree_initialized) {
-		work_tree = getenv(GIT_WORK_TREE_ENVIRONMENT);
-		/* core.bare = true overrides implicit and config work tree */
-		if (!work_tree && is_bare_repository_cfg < 1) {
-			work_tree = git_work_tree_cfg;
-			/* make_absolute_path also normalizes the path */
-			if (work_tree && !is_absolute_path(work_tree))
-				work_tree = xstrdup(make_absolute_path(git_path("%s", work_tree)));
-		} else if (work_tree)
-			work_tree = xstrdup(make_absolute_path(work_tree));
-		git_work_tree_initialized = 1;
-		if (work_tree)
-			is_bare_repository_cfg = 0;
-	}
 	return work_tree;
 }
 
@@ -170,6 +161,43 @@ char *get_object_directory(void)
 	if (!git_object_dir)
 		setup_git_env();
 	return git_object_dir;
+}
+
+int odb_mkstemp(char *template, size_t limit, const char *pattern)
+{
+	int fd;
+	/*
+	 * we let the umask do its job, don't try to be more
+	 * restrictive except to remove write permission.
+	 */
+	int mode = 0444;
+	snprintf(template, limit, "%s/%s",
+		 get_object_directory(), pattern);
+	fd = git_mkstemp_mode(template, mode);
+	if (0 <= fd)
+		return fd;
+
+	/* slow path */
+	/* some mkstemp implementations erase template on failure */
+	snprintf(template, limit, "%s/%s",
+		 get_object_directory(), pattern);
+	safe_create_leading_directories(template);
+	return xmkstemp_mode(template, mode);
+}
+
+int odb_pack_keep(char *name, size_t namesz, unsigned char *sha1)
+{
+	int fd;
+
+	snprintf(name, namesz, "%s/pack/pack-%s.keep",
+		 get_object_directory(), sha1_to_hex(sha1));
+	fd = open(name, O_RDWR|O_CREAT|O_EXCL, 0600);
+	if (0 <= fd)
+		return fd;
+
+	/* slow path */
+	safe_create_leading_directories(name);
+	return open(name, O_RDWR|O_CREAT|O_EXCL, 0600);
 }
 
 char *get_index_file(void)
@@ -192,4 +220,15 @@ int set_git_dir(const char *path)
 		return error("Could not set GIT_DIR to '%s'", path);
 	setup_git_env();
 	return 0;
+}
+
+const char *get_log_output_encoding(void)
+{
+	return git_log_output_encoding ? git_log_output_encoding
+		: get_commit_output_encoding();
+}
+
+const char *get_commit_output_encoding(void)
+{
+	return git_commit_encoding ? git_commit_encoding : "UTF-8";
 }

@@ -70,6 +70,11 @@ all::
 #
 # Define NO_STRTOK_R if you don't have strtok_r in the C library.
 #
+# Define NO_FNMATCH if you don't have fnmatch in the C library.
+#
+# Define NO_FNMATCH_CASEFOLD if your fnmatch function doesn't have the
+# FNM_CASEFOLD GNU extension.
+#
 # Define NO_LIBGEN_H if you don't have libgen.h.
 #
 # Define NEEDS_LIBGEN if your libgen needs -lgen when linking
@@ -162,13 +167,13 @@ all::
 # Define NO_ST_BLOCKS_IN_STRUCT_STAT if your platform does not have st_blocks
 # field that counts the on-disk footprint in 512-byte blocks.
 #
-# Define ASCIIDOC8 if you want to format documentation with AsciiDoc 8
+# Define ASCIIDOC7 if you want to format documentation with AsciiDoc 7
 #
 # Define DOCBOOK_XSL_172 if you want to format man pages with DocBook XSL v1.72
 # (not v1.73 or v1.71).
 #
-# Define ASCIIDOC_NO_ROFF if your DocBook XSL escapes raw roff directives
-# (versions 1.72 and later and 1.68.1 and earlier).
+# Define ASCIIDOC_ROFF if your DocBook XSL does not escape raw roff directives
+# (versions 1.68.1 through v1.72).
 #
 # Define GNU_ROFF if your target system uses GNU groff.  This forces
 # apostrophes to be ASCII so that cut&pasting examples to the shell
@@ -270,6 +275,7 @@ STRIP ?= strip
 #   infodir
 #   htmldir
 #   ETC_GITCONFIG (but not sysconfdir)
+#   ETC_GITATTRIBUTES
 # can be specified as a relative path some/where/else;
 # this is interpreted as relative to $(prefix) and "git" at
 # runtime figures out where they are based on the path to the executable.
@@ -288,9 +294,11 @@ htmldir = share/doc/git-doc
 ifeq ($(prefix),/usr)
 sysconfdir = /etc
 ETC_GITCONFIG = $(sysconfdir)/gitconfig
+ETC_GITATTRIBUTES = $(sysconfdir)/gitattributes
 else
 sysconfdir = $(prefix)/etc
 ETC_GITCONFIG = etc/gitconfig
+ETC_GITATTRIBUTES = etc/gitattributes
 endif
 lib = lib
 # DESTDIR=
@@ -398,6 +406,7 @@ EXTRA_PROGRAMS =
 # ... and all the rest that could be moved out of bindir to gitexecdir
 PROGRAMS += $(EXTRA_PROGRAMS)
 
+PROGRAM_OBJS += daemon.o
 PROGRAM_OBJS += fast-import.o
 PROGRAM_OBJS += imap-send.o
 PROGRAM_OBJS += shell.o
@@ -422,6 +431,7 @@ TEST_PROGRAMS_NEED_X += test-run-command
 TEST_PROGRAMS_NEED_X += test-sha1
 TEST_PROGRAMS_NEED_X += test-sigchain
 TEST_PROGRAMS_NEED_X += test-string-pool
+TEST_PROGRAMS_NEED_X += test-subprocess
 TEST_PROGRAMS_NEED_X += test-svn-fe
 TEST_PROGRAMS_NEED_X += test-treap
 TEST_PROGRAMS_NEED_X += test-index-version
@@ -493,6 +503,9 @@ LIB_H += compat/bswap.h
 LIB_H += compat/cygwin.h
 LIB_H += compat/mingw.h
 LIB_H += compat/win32/pthread.h
+LIB_H += compat/win32/syslog.h
+LIB_H += compat/win32/sys/poll.h
+LIB_H += compat/win32/dirent.h
 LIB_H += csum-file.h
 LIB_H += decorate.h
 LIB_H += delta.h
@@ -514,6 +527,7 @@ LIB_H += mailmap.h
 LIB_H += merge-recursive.h
 LIB_H += notes.h
 LIB_H += notes-cache.h
+LIB_H += notes-merge.h
 LIB_H += object.h
 LIB_H += pack.h
 LIB_H += pack-refs.h
@@ -604,6 +618,7 @@ LIB_OBJS += merge-recursive.o
 LIB_OBJS += name-hash.o
 LIB_OBJS += notes.o
 LIB_OBJS += notes-cache.o
+LIB_OBJS += notes-merge.o
 LIB_OBJS += object.o
 LIB_OBJS += pack-check.o
 LIB_OBJS += pack-refs.o
@@ -659,6 +674,7 @@ LIB_OBJS += write_or_die.o
 LIB_OBJS += ws.o
 LIB_OBJS += wt-status.o
 LIB_OBJS += xdiff-interface.o
+LIB_OBJS += zlib.o
 
 BUILTIN_OBJS += builtin/add.o
 BUILTIN_OBJS += builtin/annotate.o
@@ -725,6 +741,8 @@ BUILTIN_OBJS += builtin/read-tree.o
 BUILTIN_OBJS += builtin/receive-pack.o
 BUILTIN_OBJS += builtin/reflog.o
 BUILTIN_OBJS += builtin/remote.o
+BUILTIN_OBJS += builtin/remote-ext.o
+BUILTIN_OBJS += builtin/remote-fd.o
 BUILTIN_OBJS += builtin/replace.o
 BUILTIN_OBJS += builtin/rerere.o
 BUILTIN_OBJS += builtin/reset.o
@@ -843,6 +861,7 @@ ifeq ($(uname_S),SunOS)
 	NO_MKDTEMP = YesPlease
 	NO_MKSTEMPS = YesPlease
 	NO_REGEX = YesPlease
+	NO_FNMATCH_CASEFOLD = YesPlease
 	ifeq ($(uname_R),5.6)
 		SOCKLEN_T = int
 		NO_HSTRERROR = YesPlease
@@ -985,6 +1004,7 @@ ifeq ($(uname_S),IRIX)
 	# issue, comment out the NO_MMAP statement.
 	NO_MMAP = YesPlease
 	NO_REGEX = YesPlease
+	NO_FNMATCH_CASEFOLD = YesPlease
 	SNPRINTF_RETURNS_BOGUS = YesPlease
 	SHELL_PATH = /usr/gnu/bin/bash
 	NEEDS_LIBGEN = YesPlease
@@ -1004,6 +1024,7 @@ ifeq ($(uname_S),IRIX64)
 	# issue, comment out the NO_MMAP statement.
 	NO_MMAP = YesPlease
 	NO_REGEX = YesPlease
+	NO_FNMATCH_CASEFOLD = YesPlease
 	SNPRINTF_RETURNS_BOGUS = YesPlease
 	SHELL_PATH=/usr/gnu/bin/bash
 	NEEDS_LIBGEN = YesPlease
@@ -1049,6 +1070,7 @@ ifeq ($(uname_S),Windows)
 	NO_STRCASESTR = YesPlease
 	NO_STRLCPY = YesPlease
 	NO_STRTOK_R = YesPlease
+	NO_FNMATCH = YesPlease
 	NO_MEMMEM = YesPlease
 	# NEEDS_LIBICONV = YesPlease
 	NO_ICONV = YesPlease
@@ -1061,7 +1083,6 @@ ifeq ($(uname_S),Windows)
 	NO_SVN_TESTS = YesPlease
 	NO_PERL_MAKEMAKER = YesPlease
 	RUNTIME_PREFIX = YesPlease
-	NO_POSIX_ONLY_PROGRAMS = YesPlease
 	NO_ST_BLOCKS_IN_STRUCT_STAT = YesPlease
 	NO_NSEC = YesPlease
 	USE_WIN32_MMAP = YesPlease
@@ -1072,16 +1093,19 @@ ifeq ($(uname_S),Windows)
 	NO_CURL = YesPlease
 	NO_PYTHON = YesPlease
 	BLK_SHA1 = YesPlease
+	NO_POSIX_GOODIES = UnfortunatelyYes
 	NATIVE_CRLF = YesPlease
 
 	CC = compat/vcbuild/scripts/clink.pl
 	AR = compat/vcbuild/scripts/lib.pl
 	CFLAGS =
 	BASIC_CFLAGS = -nologo -I. -I../zlib -Icompat/vcbuild -Icompat/vcbuild/include -DWIN32 -D_CONSOLE -DHAVE_STRING_H -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE
-	COMPAT_OBJS = compat/msvc.o compat/fnmatch/fnmatch.o compat/winansi.o compat/win32/pthread.o
-	COMPAT_CFLAGS = -D__USE_MINGW_ACCESS -DNOGDI -DHAVE_STRING_H -DHAVE_ALLOCA_H -Icompat -Icompat/fnmatch -Icompat/regex -Icompat/fnmatch -Icompat/win32 -DSTRIP_EXTENSION=\".exe\"
+	COMPAT_OBJS = compat/msvc.o compat/winansi.o \
+		compat/win32/pthread.o compat/win32/syslog.o \
+		compat/win32/sys/poll.o compat/win32/dirent.o
+	COMPAT_CFLAGS = -D__USE_MINGW_ACCESS -DNOGDI -DHAVE_STRING_H -DHAVE_ALLOCA_H -Icompat -Icompat/regex -Icompat/win32 -DSTRIP_EXTENSION=\".exe\"
 	BASIC_LDFLAGS = -IGNORE:4217 -IGNORE:4049 -NOLOGO -SUBSYSTEM:CONSOLE -NODEFAULTLIB:MSVCRT.lib
-	EXTLIBS = advapi32.lib shell32.lib wininet.lib ws2_32.lib
+	EXTLIBS = user32.lib advapi32.lib shell32.lib wininet.lib ws2_32.lib
 	PTHREAD_LIBS =
 	lib =
 ifndef DEBUG
@@ -1092,6 +1116,25 @@ else
 	BASIC_CFLAGS += -Zi -MTd
 endif
 	X = .exe
+endif
+ifeq ($(uname_S),Interix)
+	NO_SYS_POLL_H = YesPlease
+	NO_INTTYPES_H = YesPlease
+	NO_INITGROUPS = YesPlease
+	NO_IPV6 = YesPlease
+	NO_MEMMEM = YesPlease
+	NO_MKDTEMP = YesPlease
+	NO_STRTOUMAX = YesPlease
+	NO_NSEC = YesPlease
+	NO_MKSTEMPS = YesPlease
+	ifeq ($(uname_R),3.5)
+		NO_INET_NTOP = YesPlease
+		NO_INET_PTON = YesPlease
+	endif
+	ifeq ($(uname_R),5.2)
+		NO_INET_NTOP = YesPlease
+		NO_INET_PTON = YesPlease
+	endif
 endif
 ifneq (,$(findstring MINGW,$(uname_S)))
 	pathsep = ;
@@ -1104,6 +1147,7 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	NO_STRCASESTR = YesPlease
 	NO_STRLCPY = YesPlease
 	NO_STRTOK_R = YesPlease
+	NO_FNMATCH = YesPlease
 	NO_MEMMEM = YesPlease
 	NEEDS_LIBICONV = YesPlease
 	OLD_ICONV = YesPlease
@@ -1114,7 +1158,6 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	NO_SVN_TESTS = YesPlease
 	NO_PERL_MAKEMAKER = YesPlease
 	RUNTIME_PREFIX = YesPlease
-	NO_POSIX_ONLY_PROGRAMS = YesPlease
 	NO_ST_BLOCKS_IN_STRUCT_STAT = YesPlease
 	NO_NSEC = YesPlease
 	USE_WIN32_MMAP = YesPlease
@@ -1125,10 +1168,14 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	NO_PYTHON = YesPlease
 	BLK_SHA1 = YesPlease
 	ETAGS_TARGET = ETAGS
-	COMPAT_CFLAGS += -D__USE_MINGW_ACCESS -DNOGDI -Icompat -Icompat/fnmatch -Icompat/win32
+	NO_INET_PTON = YesPlease
+	NO_INET_NTOP = YesPlease
+	NO_POSIX_GOODIES = UnfortunatelyYes
+	COMPAT_CFLAGS += -D__USE_MINGW_ACCESS -DNOGDI -Icompat -Icompat/win32
 	COMPAT_CFLAGS += -DSTRIP_EXTENSION=\".exe\"
-	COMPAT_OBJS += compat/mingw.o compat/fnmatch/fnmatch.o compat/winansi.o \
-		compat/win32/pthread.o
+	COMPAT_OBJS += compat/mingw.o compat/winansi.o \
+		compat/win32/pthread.o compat/win32/syslog.o \
+		compat/win32/sys/poll.o compat/win32/dirent.o
 	EXTLIBS += -lws2_32
 	PTHREAD_LIBS =
 	X = .exe
@@ -1243,9 +1290,6 @@ ifdef ZLIB_PATH
 endif
 EXTLIBS += -lz
 
-ifndef NO_POSIX_ONLY_PROGRAMS
-	PROGRAM_OBJS += daemon.o
-endif
 ifndef NO_OPENSSL
 	OPENSSL_LIBSSL = -lssl
 	ifdef OPENSSLDIR
@@ -1343,6 +1387,17 @@ ifdef NO_STRTOK_R
 	COMPAT_CFLAGS += -DNO_STRTOK_R
 	COMPAT_OBJS += compat/strtok_r.o
 endif
+ifdef NO_FNMATCH
+	COMPAT_CFLAGS += -Icompat/fnmatch
+	COMPAT_CFLAGS += -DNO_FNMATCH
+	COMPAT_OBJS += compat/fnmatch/fnmatch.o
+else
+ifdef NO_FNMATCH_CASEFOLD
+	COMPAT_CFLAGS += -Icompat/fnmatch
+	COMPAT_CFLAGS += -DNO_FNMATCH_CASEFOLD
+	COMPAT_OBJS += compat/fnmatch/fnmatch.o
+endif
+endif
 ifdef NO_SETENV
 	COMPAT_CFLAGS += -DNO_SETENV
 	COMPAT_OBJS += compat/setenv.o
@@ -1360,6 +1415,15 @@ ifdef NO_UNSETENV
 endif
 ifdef NO_SYS_SELECT_H
 	BASIC_CFLAGS += -DNO_SYS_SELECT_H
+endif
+ifdef NO_SYS_POLL_H
+	BASIC_CFLAGS += -DNO_SYS_POLL_H
+endif
+ifdef NO_INTTYPES_H
+	BASIC_CFLAGS += -DNO_INTTYPES_H
+endif
+ifdef NO_INITGROUPS
+	BASIC_CFLAGS += -DNO_INITGROUPS
 endif
 ifdef NO_MMAP
 	COMPAT_CFLAGS += -DNO_MMAP
@@ -1398,9 +1462,11 @@ endif
 endif
 ifdef NO_INET_NTOP
 	LIB_OBJS += compat/inet_ntop.o
+	BASIC_CFLAGS += -DNO_INET_NTOP
 endif
 ifdef NO_INET_PTON
 	LIB_OBJS += compat/inet_pton.o
+	BASIC_CFLAGS += -DNO_INET_PTON
 endif
 
 ifdef NO_ICONV
@@ -1413,6 +1479,10 @@ endif
 
 ifdef NO_DEFLATE_BOUND
 	BASIC_CFLAGS += -DNO_DEFLATE_BOUND
+endif
+
+ifdef NO_POSIX_GOODIES
+	BASIC_CFLAGS += -DNO_POSIX_GOODIES
 endif
 
 ifdef BLK_SHA1
@@ -1519,14 +1589,15 @@ ifndef V
 endif
 endif
 
-ifdef ASCIIDOC8
-	export ASCIIDOC8
+ifdef ASCIIDOC7
+	export ASCIIDOC7
 endif
 
 # Shell quote (do not use $(call) to accommodate ancient setups);
 
 SHA1_HEADER_SQ = $(subst ','\'',$(SHA1_HEADER))
 ETC_GITCONFIG_SQ = $(subst ','\'',$(ETC_GITCONFIG))
+ETC_GITATTRIBUTES_SQ = $(subst ','\'',$(ETC_GITATTRIBUTES))
 
 DESTDIR_SQ = $(subst ','\'',$(DESTDIR))
 bindir_SQ = $(subst ','\'',$(bindir))
@@ -1610,6 +1681,8 @@ git.s git.o: EXTRA_CPPFLAGS = -DGIT_VERSION='"$(GIT_VERSION)"' \
 git$X: git.o $(BUILTIN_OBJS) $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ git.o \
 		$(BUILTIN_OBJS) $(ALL_LDFLAGS) $(LIBS)
+
+help.o: common-cmds.h
 
 builtin/help.o: common-cmds.h
 builtin/help.s builtin/help.o: EXTRA_CPPFLAGS = \
@@ -1766,6 +1839,8 @@ XDIFF_OBJS = xdiff/xdiffi.o xdiff/xprepare.o xdiff/xutils.o xdiff/xemit.o \
 	xdiff/xmerge.o xdiff/xpatience.o
 VCSSVN_OBJS = vcs-svn/string_pool.o vcs-svn/line_buffer.o \
 	vcs-svn/repo_tree.o vcs-svn/fast_export.o vcs-svn/svndump.o
+VCSSVN_TEST_OBJS = test-obj-pool.o test-string-pool.o \
+	test-line-buffer.o test-treap.o
 OBJECTS := $(GIT_OBJS) $(XDIFF_OBJS) $(VCSSVN_OBJS)
 
 dep_files := $(foreach f,$(OBJECTS),$(dir $f).depend/$(notdir $f).d)
@@ -1874,13 +1949,12 @@ builtin/branch.o builtin/checkout.o builtin/clone.o builtin/reset.o branch.o tra
 builtin/bundle.o bundle.o transport.o: bundle.h
 builtin/bisect--helper.o builtin/rev-list.o bisect.o: bisect.h
 builtin/clone.o builtin/fetch-pack.o transport.o: fetch-pack.h
-builtin/grep.o: thread-utils.h
+builtin/grep.o builtin/pack-objects.o transport-helper.o: thread-utils.h
 builtin/send-pack.o transport.o: send-pack.h
 builtin/log.o builtin/shortlog.o: shortlog.h
 builtin/prune.o builtin/reflog.o reachable.o: reachable.h
 builtin/commit.o builtin/revert.o wt-status.o: wt-status.h
 builtin/tar-tree.o archive-tar.o: tar.h
-builtin/pack-objects.o: thread-utils.h
 connect.o transport.o http-backend.o: url.h
 http-fetch.o http-walker.o remote-curl.o transport.o walker.o: walker.h
 http.o http-walker.o http-push.o http-fetch.o remote-curl.o: http.h url.h
@@ -1889,10 +1963,12 @@ xdiff-interface.o $(XDIFF_OBJS): \
 	xdiff/xinclude.h xdiff/xmacros.h xdiff/xdiff.h xdiff/xtypes.h \
 	xdiff/xutils.h xdiff/xprepare.h xdiff/xdiffi.h xdiff/xemit.h
 
-$(VCSSVN_OBJS): \
+$(VCSSVN_OBJS) $(VCSSVN_TEST_OBJS): $(LIB_H) \
 	vcs-svn/obj_pool.h vcs-svn/trp.h vcs-svn/string_pool.h \
 	vcs-svn/line_buffer.h vcs-svn/repo_tree.h vcs-svn/fast_export.h \
 	vcs-svn/svndump.h
+
+test-svn-fe.o: vcs-svn/svndump.h
 endif
 
 exec_cmd.s exec_cmd.o: EXTRA_CPPFLAGS = \
@@ -1904,6 +1980,8 @@ builtin/init-db.s builtin/init-db.o: EXTRA_CPPFLAGS = \
 	-DDEFAULT_GIT_TEMPLATE_DIR='"$(template_dir_SQ)"'
 
 config.s config.o: EXTRA_CPPFLAGS = -DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
+
+attr.s attr.o: EXTRA_CPPFLAGS = -DETC_GITATTRIBUTES='"$(ETC_GITATTRIBUTES_SQ)"'
 
 http.s http.o: EXTRA_CPPFLAGS = -DGIT_HTTP_USER_AGENT='"git/$(GIT_VERSION)"'
 

@@ -84,7 +84,7 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option opts[] = {
-		OPT__VERBOSE(&verbose),
+		OPT__VERBOSE(&verbose, "be verbose"),
 		OPT_END(),
 	};
 

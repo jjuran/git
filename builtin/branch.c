@@ -313,12 +313,7 @@ static int append_ref(const char *refname, const unsigned char *sha1, int flags,
 					   (struct object *)commit, refname);
 	}
 
-	/* Resize buffer */
-	if (ref_list->index >= ref_list->alloc) {
-		ref_list->alloc = alloc_nr(ref_list->alloc);
-		ref_list->list = xrealloc(ref_list->list,
-				ref_list->alloc * sizeof(struct ref_item));
-	}
+	ALLOC_GROW(ref_list->list, ref_list->index + 1, ref_list->alloc);
 
 	/* Record the new item */
 	newitem = &(ref_list->list[ref_list->index++]);
@@ -626,7 +621,8 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	struct option options[] = {
 		OPT_GROUP("Generic options"),
-		OPT__VERBOSE(&verbose),
+		OPT__VERBOSE(&verbose,
+			"show hash and subject, give twice for upstream branch"),
 		OPT_SET_INT('t', "track",  &track, "set up tracking mode (see git-pull(1))",
 			BRANCH_TRACK_EXPLICIT),
 		OPT_SET_INT( 0, "set-upstream",  &track, "change upstream info",
@@ -656,7 +652,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		OPT_BIT('m', NULL, &rename, "move/rename a branch and its reflog", 1),
 		OPT_BIT('M', NULL, &rename, "move/rename a branch, even if target exists", 2),
 		OPT_BOOLEAN('l', NULL, &reflog, "create the branch's reflog"),
-		OPT_BOOLEAN('f', "force", &force_create, "force creation (when already exists)"),
+		OPT__FORCE(&force_create, "force creation (when already exists)"),
 		{
 			OPTION_CALLBACK, 0, "no-merged", &merge_filter_ref,
 			"commit", "print only not merged branches",
@@ -675,6 +671,9 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus reset
 #endif
+
+	if (argc == 2 && !strcmp(argv[1], "-h"))
+		usage_with_options(builtin_branch_usage, options);
 
 	git_config(git_branch_config, NULL);
 

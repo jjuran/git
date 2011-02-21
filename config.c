@@ -432,13 +432,11 @@ static int git_config_maybe_bool_text(const char *name, const char *value)
 
 int git_config_maybe_bool(const char *name, const char *value)
 {
-	int v = git_config_maybe_bool_text(name, value);
+	long v = git_config_maybe_bool_text(name, value);
 	if (0 <= v)
 		return v;
-	if (!strcmp(value, "0"))
-		return 0;
-	if (!strcmp(value, "1"))
-		return 1;
+	if (git_parse_long(value, &v))
+		return !!v;
 	return -1;
 }
 
@@ -501,6 +499,13 @@ static int git_default_core_config(const char *var, const char *value)
 
 	if (!strcmp(var, "core.ignorecase")) {
 		ignore_case = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.abbrevguard")) {
+		unique_abbrev_extra_length = git_config_int(var, value);
+		if (unique_abbrev_extra_length < 0)
+			unique_abbrev_extra_length = 0;
 		return 0;
 	}
 
@@ -850,10 +855,9 @@ int git_config_from_parameters(config_fn_t fn, void *data)
 	return 0;
 }
 
-int git_config(config_fn_t fn, void *data)
+int git_config_early(config_fn_t fn, void *data, const char *repo_config)
 {
 	int ret = 0, found = 0;
-	char *repo_config = NULL;
 	const char *home = NULL;
 
 	/* Setting $GIT_CONFIG makes git read _only_ the given config file. */
@@ -875,19 +879,27 @@ int git_config(config_fn_t fn, void *data)
 		free(user_config);
 	}
 
-	repo_config = git_pathdup("config");
-	if (!access(repo_config, R_OK)) {
+	if (repo_config && !access(repo_config, R_OK)) {
 		ret += git_config_from_file(fn, repo_config, data);
 		found += 1;
 	}
-	free(repo_config);
 
 	ret += git_config_from_parameters(fn, data);
 	if (config_parameters)
 		found += 1;
 
-	if (found == 0)
-		return -1;
+	return ret == 0 ? found : ret;
+}
+
+int git_config(config_fn_t fn, void *data)
+{
+	char *repo_config = NULL;
+	int ret;
+
+	repo_config = git_pathdup("config");
+	ret = git_config_early(fn, data, repo_config);
+	if (repo_config)
+		free(repo_config);
 	return ret;
 }
 

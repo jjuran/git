@@ -112,6 +112,8 @@
 /git-remote-https
 /git-remote-ftp
 /git-remote-ftps
+/git-remote-fd
+/git-remote-ext
 /git-remote-testgit
 /git-repack
 /git-replace
@@ -175,6 +177,7 @@
 /test-sha1
 /test-sigchain
 /test-string-pool
+/test-subprocess
 /test-svn-fe
 /test-treap
 /common-cmds.h

@@ -201,10 +201,28 @@ test_expect_success $PREREQ 'Prompting works' '
 		grep "^To: to@example.com\$" msgtxt1
 '
 
+test_expect_success $PREREQ 'tocmd works' '
+	clean_fake_sendmail &&
+	cp $patches tocmd.patch &&
+	echo tocmd--tocmd@example.com >>tocmd.patch &&
+	{
+	  echo "#!$SHELL_PATH"
+	  echo sed -n -e s/^tocmd--//p \"\$1\"
+	} > tocmd-sed &&
+	chmod +x tocmd-sed &&
+	git send-email \
+		--from="Example <nobody@example.com>" \
+		--to-cmd=./tocmd-sed \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		tocmd.patch \
+		&&
+	grep "^To: tocmd@example.com" msgtxt1
+'
+
 test_expect_success $PREREQ 'cccmd works' '
 	clean_fake_sendmail &&
 	cp $patches cccmd.patch &&
-	echo cccmd--cccmd@example.com >>cccmd.patch &&
+	echo "cccmd--  cccmd@example.com" >>cccmd.patch &&
 	{
 	  echo "#!$SHELL_PATH"
 	  echo sed -n -e s/^cccmd--//p \"\$1\"
@@ -247,7 +265,7 @@ test_expect_success $PREREQ 'Author From: in message body' '
 		--to=nobody@example.com \
 		--smtp-server="$(pwd)/fake.sendmail" \
 		$patches &&
-	sed "1,/^\$/d" < msgtxt1 > msgbody1
+	sed "1,/^\$/d" < msgtxt1 > msgbody1 &&
 	grep "From: A <author@example.com>" msgbody1
 '
 
@@ -258,7 +276,7 @@ test_expect_success $PREREQ 'Author From: not in message body' '
 		--to=nobody@example.com \
 		--smtp-server="$(pwd)/fake.sendmail" \
 		$patches &&
-	sed "1,/^\$/d" < msgtxt1 > msgbody1
+	sed "1,/^\$/d" < msgtxt1 > msgbody1 &&
 	! grep "From: A <author@example.com>" msgbody1
 '
 
@@ -280,7 +298,7 @@ test_expect_success $PREREQ 'Invalid In-Reply-To' '
 		--in-reply-to=" " \
 		--smtp-server="$(pwd)/fake.sendmail" \
 		$patches \
-		2>errors
+		2>errors &&
 	! grep "^In-Reply-To: < *>" msgtxt1
 '
 
@@ -293,6 +311,49 @@ test_expect_success $PREREQ 'Valid In-Reply-To when prompting' '
 		--smtp-server="$(pwd)/fake.sendmail" \
 		$patches 2>errors &&
 	! grep "^In-Reply-To: < *>" msgtxt1
+'
+
+test_expect_success $PREREQ 'In-Reply-To without --chain-reply-to' '
+	clean_fake_sendmail &&
+	echo "<unique-message-id@example.com>" >expect &&
+	git send-email \
+		--from="Example <nobody@example.com>" \
+		--to=nobody@example.com \
+		--nochain-reply-to \
+		--in-reply-to="$(cat expect)" \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		$patches $patches $patches \
+		2>errors &&
+	# The first message is a reply to --in-reply-to
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt1 >actual &&
+	test_cmp expect actual &&
+	# Second and subsequent messages are replies to the first one
+	sed -n -e "s/^Message-Id: *\(.*\)/\1/p" msgtxt1 >expect &&
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt2 >actual &&
+	test_cmp expect actual &&
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt3 >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success $PREREQ 'In-Reply-To with --chain-reply-to' '
+	clean_fake_sendmail &&
+	echo "<unique-message-id@example.com>" >expect &&
+	git send-email \
+		--from="Example <nobody@example.com>" \
+		--to=nobody@example.com \
+		--chain-reply-to \
+		--in-reply-to="$(cat expect)" \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		$patches $patches $patches \
+		2>errors &&
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt1 >actual &&
+	test_cmp expect actual &&
+	sed -n -e "s/^Message-Id: *\(.*\)/\1/p" msgtxt1 >expect &&
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt2 >actual &&
+	test_cmp expect actual &&
+	sed -n -e "s/^Message-Id: *\(.*\)/\1/p" msgtxt2 >expect &&
+	sed -n -e "s/^In-Reply-To: *\(.*\)/\1/p" msgtxt3 >actual &&
+	test_cmp expect actual
 '
 
 test_expect_success $PREREQ 'setup fake editor' '
@@ -556,7 +617,7 @@ EOF
 "
 
 test_expect_success $PREREQ '--suppress-cc=sob' '
-	git config --unset sendemail.cccmd
+	test_might_fail git config --unset sendemail.cccmd &&
 	test_suppression sob
 '
 
@@ -945,6 +1006,45 @@ test_expect_success $PREREQ '--no-bcc overrides sendemail.bcc' '
 		$patches $patches >stdout &&
 	grep "RCPT TO:<bodies@example.com>" stdout &&
 	! grep "RCPT TO:<other@ex.com>" stdout
+'
+
+test_expect_success $PREREQ 'patches To headers are used by default' '
+	patch=`git format-patch -1 --to="bodies@example.com"` &&
+	test_when_finished "rm $patch" &&
+	git send-email \
+		--dry-run \
+		--from="Example <nobody@example.com>" \
+		--smtp-server relay.example.com \
+		$patch >stdout &&
+	grep "RCPT TO:<bodies@example.com>" stdout
+'
+
+test_expect_success $PREREQ 'patches To headers are appended to' '
+	patch=`git format-patch -1 --to="bodies@example.com"` &&
+	test_when_finished "rm $patch" &&
+	git send-email \
+		--dry-run \
+		--from="Example <nobody@example.com>" \
+		--to=nobody@example.com \
+		--smtp-server relay.example.com \
+		$patch >stdout &&
+	grep "RCPT TO:<bodies@example.com>" stdout &&
+	grep "RCPT TO:<nobody@example.com>" stdout
+'
+
+test_expect_success $PREREQ 'To headers from files reset each patch' '
+	patch1=`git format-patch -1 --to="bodies@example.com"` &&
+	patch2=`git format-patch -1 --to="other@example.com" HEAD~` &&
+	test_when_finished "rm $patch1 && rm $patch2" &&
+	git send-email \
+		--dry-run \
+		--from="Example <nobody@example.com>" \
+		--to="nobody@example.com" \
+		--smtp-server relay.example.com \
+		$patch1 $patch2 >stdout &&
+	test $(grep -c "RCPT TO:<bodies@example.com>" stdout) = 1 &&
+	test $(grep -c "RCPT TO:<nobody@example.com>" stdout) = 2 &&
+	test $(grep -c "RCPT TO:<other@example.com>" stdout) = 1
 '
 
 test_expect_success $PREREQ 'setup expect' '

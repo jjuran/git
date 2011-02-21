@@ -313,13 +313,13 @@ static int verbose = 0, show_only = 0, ignored_too = 0, refresh_only = 0;
 static int ignore_add_errors, addremove, intent_to_add, ignore_missing = 0;
 
 static struct option builtin_add_options[] = {
-	OPT__DRY_RUN(&show_only),
-	OPT__VERBOSE(&verbose),
+	OPT__DRY_RUN(&show_only, "dry run"),
+	OPT__VERBOSE(&verbose, "be verbose"),
 	OPT_GROUP(""),
 	OPT_BOOLEAN('i', "interactive", &add_interactive, "interactive picking"),
 	OPT_BOOLEAN('p', "patch", &patch_interactive, "interactive patching"),
 	OPT_BOOLEAN('e', "edit", &edit_interactive, "edit current diff and apply"),
-	OPT_BOOLEAN('f', "force", &ignored_too, "allow adding otherwise ignored files"),
+	OPT__FORCE(&ignored_too, "allow adding otherwise ignored files"),
 	OPT_BOOLEAN('u', "update", &take_worktree_changes, "update tracked files"),
 	OPT_BOOLEAN('N', "intent-to-add", &intent_to_add, "record only the fact that the path will be added later"),
 	OPT_BOOLEAN('A', "all", &addremove, "add all, noticing removal of tracked files"),
@@ -447,7 +447,8 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 			if (!seen[i] && pathspec[i][0]
 			    && !file_exists(pathspec[i])) {
 				if (ignore_missing) {
-					if (excluded(&dir, pathspec[i], DT_UNKNOWN))
+					int dtype = DT_UNKNOWN;
+					if (excluded(&dir, pathspec[i], &dtype))
 						dir_add_ignored(&dir, pathspec[i], strlen(pathspec[i]));
 				} else
 					die("pathspec '%s' did not match any files",

@@ -104,9 +104,14 @@
 #include <assert.h>
 #include <regex.h>
 #include <utime.h>
+#include <syslog.h>
+#ifndef NO_SYS_POLL_H
+#include <sys/poll.h>
+#else
+#include <poll.h>
+#endif
 #ifndef __MINGW32__
 #include <sys/wait.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -118,7 +123,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <pwd.h>
+#ifndef NO_INTTYPES_H
 #include <inttypes.h>
+#else
+#include <stdint.h>
+#endif
 #if defined(__CYGWIN__)
 #undef _XOPEN_SOURCE
 #include <grp.h>
@@ -389,6 +398,14 @@ static inline void *gitmempcpy(void *dest, const void *src, size_t n)
 }
 #endif
 
+#ifdef NO_INET_PTON
+int inet_pton(int af, const char *src, void *dst);
+#endif
+
+#ifdef NO_INET_NTOP
+const char *inet_ntop(int af, const void *src, char *dst, size_t size);
+#endif
+
 extern void release_pack_memory(size_t, int);
 
 typedef void (*try_to_free_t)(size_t);
@@ -407,6 +424,7 @@ extern ssize_t xwrite(int fd, const void *buf, size_t len);
 extern int xdup(int fd);
 extern FILE *xfdopen(int fd, const char *mode);
 extern int xmkstemp(char *template);
+extern int xmkstemp_mode(char *template, int mode);
 extern int odb_mkstemp(char *template, size_t limit, const char *pattern);
 extern int odb_pack_keep(char *name, size_t namesz, unsigned char *sha1);
 

@@ -282,7 +282,15 @@ GIT_PARSE_WITH(iconv))
 GIT_PARSE_WITH_SET_MAKE_VAR(gitconfig, ETC_GITCONFIG,
 			Use VALUE instead of /etc/gitconfig as the
 			global git configuration file.
-			If VALUE is not fully qualified it will be interpretted
+			If VALUE is not fully qualified it will be interpreted
+			as a path relative to the computed prefix at runtime.)
+
+#
+# Allow user to set ETC_GITATTRIBUTES variable
+GIT_PARSE_WITH_SET_MAKE_VAR(gitattributes, ETC_GITATTRIBUTES,
+			Use VALUE instead of /etc/gitattributes as the
+			global git attributes file.
+			If VALUE is not fully qualified it will be interpreted
 			as a path relative to the computed prefix at runtime.)
 
 #
@@ -390,21 +398,21 @@ if test -n "$ASCIIDOC"; then
 	AC_MSG_CHECKING([for asciidoc version])
 	asciidoc_version=`$ASCIIDOC --version 2>/dev/null`
 	case "${asciidoc_version}" in
-	asciidoc' '8*)
-		ASCIIDOC8=YesPlease
+	asciidoc' '7*)
+		ASCIIDOC7=YesPlease
 		AC_MSG_RESULT([${asciidoc_version} > 7])
 		;;
-	asciidoc' '7*)
-		ASCIIDOC8=
+	asciidoc' '8*)
+		ASCIIDOC7=
 		AC_MSG_RESULT([${asciidoc_version}])
 		;;
 	*)
-		ASCIIDOC8=
+		ASCIIDOC7=
 		AC_MSG_RESULT([${asciidoc_version} (unknown)])
 		;;
 	esac
 fi
-AC_SUBST(ASCIIDOC8)
+AC_SUBST(ASCIIDOC7)
 
 
 ## Checks for libraries.
@@ -609,6 +617,18 @@ AC_CHECK_HEADER([sys/select.h],
 [NO_SYS_SELECT_H=UnfortunatelyYes])
 AC_SUBST(NO_SYS_SELECT_H)
 #
+# Define NO_SYS_POLL_H if you don't have sys/poll.h
+AC_CHECK_HEADER([sys/poll.h],
+[NO_SYS_POLL_H=],
+[NO_SYS_POLL_H=UnfortunatelyYes])
+AC_SUBST(NO_SYS_POLL_H)
+#
+# Define NO_INTTYPES_H if you don't have inttypes.h
+AC_CHECK_HEADER([inttypes.h],
+[NO_INTTYPES_H=],
+[NO_INTTYPES_H=UnfortunatelyYes])
+AC_SUBST(NO_INTTYPES_H)
+#
 # Define OLD_ICONV if your library has an old iconv(), where the second
 # (input buffer pointer) parameter is declared with type (const char **).
 AC_DEFUN([OLDICONVTEST_SRC], [[
@@ -810,6 +830,34 @@ GIT_CHECK_FUNC(strtok_r,
 [NO_STRTOK_R=YesPlease])
 AC_SUBST(NO_STRTOK_R)
 #
+# Define NO_FNMATCH if you don't have fnmatch
+GIT_CHECK_FUNC(fnmatch,
+[NO_FNMATCH=],
+[NO_FNMATCH=YesPlease])
+AC_SUBST(NO_FNMATCH)
+#
+# Define NO_FNMATCH_CASEFOLD if your fnmatch function doesn't have the
+# FNM_CASEFOLD GNU extension.
+AC_CACHE_CHECK([whether the fnmatch function supports the FNMATCH_CASEFOLD GNU extension],
+ [ac_cv_c_excellent_fnmatch], [
+AC_EGREP_CPP(yippeeyeswehaveit,
+	AC_LANG_PROGRAM([
+#include <fnmatch.h>
+],
+[#ifdef FNM_CASEFOLD
+yippeeyeswehaveit
+#endif
+]),
+	[ac_cv_c_excellent_fnmatch=yes],
+	[ac_cv_c_excellent_fnmatch=no])
+])
+if test $ac_cv_c_excellent_fnmatch = yes; then
+	NO_FNMATCH_CASEFOLD=
+else
+	NO_FNMATCH_CASEFOLD=YesPlease
+fi
+AC_SUBST(NO_FNMATCH_CASEFOLD)
+#
 # Define NO_MEMMEM if you don't have memmem.
 GIT_CHECK_FUNC(memmem,
 [NO_MEMMEM=],
@@ -859,6 +907,12 @@ GIT_CHECK_FUNC(mkstemps,
 [NO_MKSTEMPS=],
 [NO_MKSTEMPS=YesPlease])
 AC_SUBST(NO_MKSTEMPS)
+#
+# Define NO_INITGROUPS if you don't have initgroups in the C library.
+GIT_CHECK_FUNC(initgroups,
+[NO_INITGROUPS=],
+[NO_INITGROUPS=YesPlease])
+AC_SUBST(NO_INITGROUPS)
 #
 #
 # Define NO_MMAP if you want to avoid mmap.

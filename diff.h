@@ -238,6 +238,9 @@ extern int diff_setup_done(struct diff_options *);
 #define DIFF_PICKAXE_ALL	1
 #define DIFF_PICKAXE_REGEX	2
 
+#define DIFF_PICKAXE_KIND_S	4 /* traditional plumbing counter */
+#define DIFF_PICKAXE_KIND_G	8 /* grep in the patch */
+
 extern void diffcore_std(struct diff_options *);
 extern void diffcore_fix_diff_index(struct diff_options *);
 
@@ -311,5 +314,7 @@ extern size_t fill_textconv(struct userdiff_driver *driver,
 			    char **outbuf);
 
 extern struct userdiff_driver *get_textconv(struct diff_filespec *one);
+
+extern int parse_rename_score(const char **cp_p);
 
 #endif /* DIFF_H */

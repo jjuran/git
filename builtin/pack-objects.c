@@ -16,11 +16,7 @@
 #include "list-objects.h"
 #include "progress.h"
 #include "refs.h"
-
-#ifndef NO_PTHREADS
-#include <pthread.h>
 #include "thread-utils.h"
-#endif
 
 static const char pack_usage[] =
   "git pack-objects [ -q | --progress | --all-progress ]\n"
@@ -1543,7 +1539,7 @@ static void try_to_free_from_threads(size_t size)
 	read_unlock();
 }
 
-try_to_free_t old_try_to_free_routine;
+static try_to_free_t old_try_to_free_routine;
 
 /*
  * The main thread waits on the condition that (at least) one of the workers

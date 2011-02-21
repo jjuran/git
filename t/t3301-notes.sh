@@ -52,7 +52,7 @@ test_expect_success 'refusing to edit notes in refs/remotes/' '
 
 # 1 indicates caught gracefully by die, 128 means git-show barked
 test_expect_success 'handle empty notes gracefully' '
-	git notes show ; test 1 = $?
+	test_expect_code 1 git notes show
 '
 
 test_expect_success 'show non-existent notes entry with %N' '
@@ -627,16 +627,16 @@ test_expect_success '--show-notes=ref accumulates' '
 
 test_expect_success 'Allow notes on non-commits (trees, blobs, tags)' '
 	git config core.notesRef refs/notes/other &&
-	echo "Note on a tree" > expect
+	echo "Note on a tree" > expect &&
 	git notes add -m "Note on a tree" HEAD: &&
 	git notes show HEAD: > actual &&
 	test_cmp expect actual &&
-	echo "Note on a blob" > expect
+	echo "Note on a blob" > expect &&
 	filename=$(git ls-tree --name-only HEAD | head -n1) &&
 	git notes add -m "Note on a blob" HEAD:$filename &&
 	git notes show HEAD:$filename > actual &&
 	test_cmp expect actual &&
-	echo "Note on a tag" > expect
+	echo "Note on a tag" > expect &&
 	git tag -a -m "This is an annotated tag" foobar HEAD^ &&
 	git notes add -m "Note on a tag" foobar &&
 	git notes show foobar > actual &&
@@ -962,6 +962,7 @@ Date:   Thu Apr 7 15:27:13 2005 -0700
 
 Notes (other):
     a fresh note
+$whitespace
     another fresh note
 EOF
 
@@ -983,8 +984,11 @@ Date:   Thu Apr 7 15:27:13 2005 -0700
 
 Notes (other):
     a fresh note
+$whitespace
     another fresh note
+$whitespace
     append 1
+$whitespace
     append 2
 EOF
 
@@ -1059,6 +1063,25 @@ test_expect_success 'GIT_NOTES_REWRITE_REF overrides config' '
 test_expect_success 'git notes copy diagnoses too many or too few parameters' '
 	test_must_fail git notes copy &&
 	test_must_fail git notes copy one two three
+'
+
+test_expect_success 'git notes get-ref (no overrides)' '
+	git config --unset core.notesRef &&
+	sane_unset GIT_NOTES_REF &&
+	test "$(git notes get-ref)" = "refs/notes/commits"
+'
+
+test_expect_success 'git notes get-ref (core.notesRef)' '
+	git config core.notesRef refs/notes/foo &&
+	test "$(git notes get-ref)" = "refs/notes/foo"
+'
+
+test_expect_success 'git notes get-ref (GIT_NOTES_REF)' '
+	test "$(GIT_NOTES_REF=refs/notes/bar git notes get-ref)" = "refs/notes/bar"
+'
+
+test_expect_success 'git notes get-ref (--ref)' '
+	test "$(GIT_NOTES_REF=refs/notes/bar git notes --ref=baz get-ref)" = "refs/notes/baz"
 '
 
 test_done

@@ -76,6 +76,8 @@ builtin/read-tree.c
 builtin/receive-pack.c
 builtin/reflog.c
 builtin/remote.c
+builtin/remote-ext.c
+builtin/remote-fd.c
 builtin/replace.c
 builtin/rerere.c
 builtin/reset.c
@@ -163,6 +165,7 @@ merge-recursive.c
 name-hash.c
 notes.c
 notes-cache.c
+notes-merge.c
 object.c
 pack-check.c
 pack-refs.c
@@ -241,3 +244,4 @@ xdiff/xpatience.c
 xdiff/xprepare.c
 xdiff/xutils.c
 xdiff-interface.c
+zlib.c

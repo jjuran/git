@@ -78,6 +78,7 @@ extern int add_excludes_from_file_to_list(const char *fname, const char *base, i
 extern void add_excludes_from_file(struct dir_struct *, const char *fname);
 extern void add_exclude(const char *string, const char *base,
 			int baselen, struct exclude_list *which);
+extern void free_excludes(struct exclude_list *el);
 extern int file_exists(const char *);
 
 extern char *get_relative_cwd(char *buffer, int size, const char *dir);
@@ -100,5 +101,9 @@ extern int remove_dir_recursively(struct strbuf *path, int flag);
 
 /* tries to remove the path with empty directories along it, ignores ENOENT */
 extern int remove_path(const char *path);
+
+extern int strcmp_icase(const char *a, const char *b);
+extern int strncmp_icase(const char *a, const char *b, size_t count);
+extern int fnmatch_icase(const char *pattern, const char *string, int flags);
 
 #endif

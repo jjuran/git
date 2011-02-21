@@ -4,14 +4,9 @@ test_description='test automatic tag following'
 
 . ./test-lib.sh
 
-case $(uname -s) in
-*MINGW*)
+if ! test_have_prereq NOT_MINGW; then
 	say "GIT_DEBUG_SEND_PACK not supported - skipping tests"
-	;;
-*)
-	test_set_prereq NOT_MINGW
-	;;
-esac
+fi
 
 # End state of the repository:
 #
@@ -54,7 +49,7 @@ EOF
 '
 
 test_expect_success NOT_MINGW 'fetch A (new commit : 1 connection)' '
-	rm -f $U
+	rm -f $U &&
 	(
 		cd cloned &&
 		GIT_DEBUG_SEND_PACK=3 git fetch 3>../$U &&
@@ -87,7 +82,7 @@ EOF
 '
 
 test_expect_success NOT_MINGW 'fetch C, T (new branch, tag : 1 connection)' '
-	rm -f $U
+	rm -f $U &&
 	(
 		cd cloned &&
 		GIT_DEBUG_SEND_PACK=3 git fetch 3>../$U &&
@@ -126,7 +121,7 @@ EOF
 '
 
 test_expect_success NOT_MINGW 'fetch B, S (commit and tag : 1 connection)' '
-	rm -f $U
+	rm -f $U &&
 	(
 		cd cloned &&
 		GIT_DEBUG_SEND_PACK=3 git fetch 3>../$U &&

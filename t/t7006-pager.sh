@@ -4,44 +4,15 @@ test_description='Test automatic use of a pager.'
 
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-pager.sh
+. "$TEST_DIRECTORY"/lib-terminal.sh
 
 cleanup_fail() {
 	echo >&2 cleanup failed
 	(exit 1)
 }
 
-test_expect_success 'set up terminal for tests' '
-	rm -f stdout_is_tty ||
-	cleanup_fail &&
-
-	if test -t 1
-	then
-		>stdout_is_tty
-	elif
-		test_have_prereq PERL &&
-		"$PERL_PATH" "$TEST_DIRECTORY"/t7006/test-terminal.perl \
-			sh -c "test -t 1"
-	then
-		>test_terminal_works
-	fi
-'
-
-if test -e stdout_is_tty
-then
-	test_terminal() { "$@"; }
-	test_set_prereq TTY
-elif test -e test_terminal_works
-then
-	test_terminal() {
-		"$PERL_PATH" "$TEST_DIRECTORY"/t7006/test-terminal.perl "$@"
-	}
-	test_set_prereq TTY
-else
-	say "# no usable terminal, so skipping some tests"
-fi
-
 test_expect_success 'setup' '
-	unset GIT_PAGER GIT_PAGER_IN_USE;
+	sane_unset GIT_PAGER GIT_PAGER_IN_USE &&
 	test_might_fail git config --unset core.pager &&
 
 	PAGER="cat >paginated.out" &&
@@ -213,11 +184,6 @@ test_expect_success 'color when writing to a file intended for a pager' '
 	colorful colorful.log
 '
 
-if test_have_prereq SIMPLEPAGER && test_have_prereq TTY
-then
-	test_set_prereq SIMPLEPAGERTTY
-fi
-
 # Use this helper to make it easy for the caller of your
 # terminal-using function to specify whether it should fail.
 # If you write
@@ -253,8 +219,8 @@ parse_args() {
 test_default_pager() {
 	parse_args "$@"
 
-	$test_expectation SIMPLEPAGERTTY "$cmd - default pager is used by default" "
-		unset PAGER GIT_PAGER;
+	$test_expectation SIMPLEPAGER,TTY "$cmd - default pager is used by default" "
+		sane_unset PAGER GIT_PAGER &&
 		test_might_fail git config --unset core.pager &&
 		rm -f default_pager_used ||
 		cleanup_fail &&
@@ -277,7 +243,7 @@ test_PAGER_overrides() {
 	parse_args "$@"
 
 	$test_expectation TTY "$cmd - PAGER overrides default pager" "
-		unset GIT_PAGER;
+		sane_unset GIT_PAGER &&
 		test_might_fail git config --unset core.pager &&
 		rm -f PAGER_used ||
 		cleanup_fail &&
@@ -305,7 +271,7 @@ test_core_pager() {
 	parse_args "$@"
 
 	$test_expectation TTY "$cmd - repository-local core.pager setting $used_if_wanted" "
-		unset GIT_PAGER;
+		sane_unset GIT_PAGER &&
 		rm -f core.pager_used ||
 		cleanup_fail &&
 
@@ -333,7 +299,7 @@ test_pager_subdir_helper() {
 	parse_args "$@"
 
 	$test_expectation TTY "$cmd - core.pager $used_if_wanted from subdirectory" "
-		unset GIT_PAGER;
+		sane_unset GIT_PAGER &&
 		rm -f core.pager_used &&
 		rm -fr sub ||
 		cleanup_fail &&
@@ -434,5 +400,34 @@ test_core_pager_subdir    expect_success 'git -p shortlog'
 
 test_core_pager_subdir    expect_success test_must_fail \
 					 'git -p apply </dev/null'
+
+test_expect_success TTY 'command-specific pager' '
+	unset PAGER GIT_PAGER;
+	echo "foo:initial" >expect &&
+	>actual &&
+	git config --unset core.pager &&
+	git config pager.log "sed s/^/foo:/ >actual" &&
+	test_terminal git log --format=%s -1 &&
+	test_cmp expect actual
+'
+
+test_expect_success TTY 'command-specific pager overrides core.pager' '
+	unset PAGER GIT_PAGER;
+	echo "foo:initial" >expect &&
+	>actual &&
+	git config core.pager "exit 1"
+	git config pager.log "sed s/^/foo:/ >actual" &&
+	test_terminal git log --format=%s -1 &&
+	test_cmp expect actual
+'
+
+test_expect_success TTY 'command-specific pager overridden by environment' '
+	GIT_PAGER="sed s/^/foo:/ >actual" && export GIT_PAGER &&
+	>actual &&
+	echo "foo:initial" >expect &&
+	git config pager.log "exit 1" &&
+	test_terminal git log --format=%s -1 &&
+	test_cmp expect actual
+'
 
 test_done
