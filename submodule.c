@@ -403,11 +403,19 @@ static int find_first_merges(struct object_array *result, const char *path,
 	struct commit *commit;
 	int contains_another;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	char merged_revision[42];
 	const char *rev_args[] = { "rev-list", "--merges", "--ancestry-path",
 				   "--all", merged_revision, NULL };
 	struct rev_info revs;
 	struct setup_revision_opt rev_opts;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&merges, 0, sizeof(merges));
 	memset(result, 0, sizeof(struct object_array));

@@ -360,6 +360,11 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 	const char *object_ref, *tag;
 	struct ref_lock *lock;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define delete delete_
+#endif
+
 	int annotate = 0, sign = 0, force = 0, lines = -1,
 		list = 0, delete = 0, verify = 0;
 	const char *msgfile = NULL, *keyid = NULL;
@@ -393,6 +398,10 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 		},
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_tag_config, NULL);
 

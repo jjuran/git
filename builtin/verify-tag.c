@@ -86,10 +86,19 @@ static int verify_tag(const char *name, int verbose)
 int cmd_verify_tag(int argc, const char **argv, const char *prefix)
 {
 	int i = 1, verbose = 0, had_error = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option verify_tag_options[] = {
 		OPT__VERBOSE(&verbose, "print tag contents"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 

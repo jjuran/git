@@ -59,6 +59,11 @@ static void parse_args(int argc, const char **argv)
 {
 	const char * const * usage_str = revert_or_cherry_pick_usage();
 	int noop;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOLEAN('n', "no-commit", &no_commit, "don't automatically commit"),
 		OPT_BOOLEAN('e', "edit", &edit, "edit the commit message"),
@@ -71,6 +76,10 @@ static void parse_args(int argc, const char **argv)
 		OPT_END(),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (action == CHERRY_PICK) {
 		struct option cp_extra[] = {

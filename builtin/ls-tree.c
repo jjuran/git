@@ -118,6 +118,10 @@ static int show_tree(const unsigned char *sha1, const char *base, int baselen,
 
 int cmd_ls_tree(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	unsigned char sha1[20];
 	struct tree *tree;
 	int full_tree = 0;
@@ -144,6 +148,10 @@ int cmd_ls_tree(int argc, const char **argv, const char *prefix)
 		OPT__ABBREV(&abbrev),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	ls_tree_prefix = prefix;

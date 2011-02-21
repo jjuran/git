@@ -677,6 +677,11 @@ static const char *unique_tracking_name(const char *name)
 
 int cmd_checkout(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define new new_
+#endif
+
 	struct checkout_opts opts;
 	unsigned char rev[20];
 	const char *arg;
@@ -710,6 +715,10 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		OPT_END(),
 	};
 	int has_dash_dash;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&opts, 0, sizeof(opts));
 	memset(&new, 0, sizeof(new));
