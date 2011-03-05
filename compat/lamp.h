@@ -5,12 +5,6 @@
 	Lamp (Lamp ain't Mac POSIX) support, by Joshua Juran
 */
 
-// Avoid TYPE_BOOL conflict by including <mslconfig> now and then undefining it.
-#ifdef __MWERKS__
-#include <mslconfig>
-#undef TYPE_BOOL
-#endif
-
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
