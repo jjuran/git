@@ -714,6 +714,7 @@ static int open_packed_git_1(struct packed_git *p)
 		return error("packfile %s index unavailable", p->pack_name);
 
 	if (!pack_max_fds) {
+	#ifndef __RELIX__
 		struct rlimit lim;
 		unsigned int max_fds;
 
@@ -726,6 +727,7 @@ static int open_packed_git_1(struct packed_git *p)
 		if (25 < max_fds)
 			pack_max_fds = max_fds - 25;
 		else
+	#endif
 			pack_max_fds = 1;
 	}
 
