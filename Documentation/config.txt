@@ -320,7 +320,7 @@ core.worktree::
 	Set the path to the root of the working tree.
 	This can be overridden by the GIT_WORK_TREE environment
 	variable and the '--work-tree' command line option.
-	The value can an absolute path or relative to the path to
+	The value can be an absolute path or relative to the path to
 	the .git directory, which is either specified by --git-dir
 	or GIT_DIR, or automatically discovered.
 	If --git-dir or GIT_DIR is specified but none of
@@ -557,6 +557,12 @@ the 'GIT_NOTES_REF' environment variable.  See linkgit:git-notes[1].
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See section "Sparse checkout" in
 	linkgit:git-read-tree[1] for more information.
+
+core.abbrev::
+	Set the length object names are abbreviated to.  If unspecified,
+	many commands abbreviate to 7 hexdigits, which may not be enough
+	for abbreviated object names to stay unique for sufficiently long
+	time.
 
 add.ignore-errors::
 add.ignoreErrors::

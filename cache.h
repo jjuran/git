@@ -527,6 +527,7 @@ extern NORETURN void unable_to_lock_index_die(const char *path, int err);
 extern int hold_lock_file_for_update(struct lock_file *, const char *path, int);
 extern int hold_lock_file_for_append(struct lock_file *, const char *path, int);
 extern int commit_lock_file(struct lock_file *);
+extern void update_index_if_able(struct index_state *, struct lock_file *);
 
 extern int hold_locked_index(struct lock_file *, int);
 extern int commit_locked_index(struct lock_file *);
@@ -540,6 +541,7 @@ extern int trust_executable_bit;
 extern int trust_ctime;
 extern int quote_path_fully;
 extern int has_symlinks;
+extern int minimum_abbrev, default_abbrev;
 extern int ignore_case;
 extern int assume_unchanged;
 extern int prefer_symlink_refs;
@@ -759,8 +761,8 @@ static inline unsigned int hexval(unsigned char c)
 }
 
 /* Convert to/from hex/sha1 representation */
-#define MINIMUM_ABBREV 4
-#define DEFAULT_ABBREV 7
+#define MINIMUM_ABBREV minimum_abbrev
+#define DEFAULT_ABBREV default_abbrev
 
 struct object_context {
 	unsigned char tree[20];
@@ -999,6 +1001,7 @@ extern int git_config_maybe_bool(const char *, const char *);
 extern int git_config_string(const char **, const char *, const char *);
 extern int git_config_pathname(const char **, const char *, const char *);
 extern int git_config_set(const char *, const char *);
+extern int git_config_parse_key(const char *, char **, int *);
 extern int git_config_set_multivar(const char *, const char *, const char *, int);
 extern int git_config_rename_section(const char *, const char *);
 extern const char *git_etc_gitconfig(void);
