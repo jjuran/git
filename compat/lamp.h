@@ -5,16 +5,10 @@
 	Lamp (Lamp ain't Mac POSIX) support, by Joshua Juran
 */
 
-// Avoid TYPE_BOOL conflict by including <mslconfig> now and then undefining it.
-#ifdef __MWERKS__
-#include <mslconfig>
-#undef TYPE_BOOL
-#endif
-
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
-#define GIT_VERSION "1.7.4.1"
+#define GIT_VERSION "1.7.4.2"
 
 // Lamp has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)
