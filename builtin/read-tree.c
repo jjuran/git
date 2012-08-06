@@ -109,8 +109,8 @@ int cmd_read_tree(int argc, const char **argv, const char *unused_prefix)
 #endif
 
 	const struct option read_tree_options[] = {
-		{ OPTION_CALLBACK, 0, "index-output", NULL, "FILE",
-		  "write resulting index to <FILE>",
+		{ OPTION_CALLBACK, 0, "index-output", NULL, "file",
+		  "write resulting index to <file>",
 		  PARSE_OPT_NONEG, index_output_cb },
 		OPT_SET_INT(0, "empty", &read_empty,
 			    "only empty the index", 1),

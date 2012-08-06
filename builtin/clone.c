@@ -69,8 +69,8 @@ static struct option builtin_clone_options[] = {
 		    "initialize submodules in the clone"),
 	OPT_BOOLEAN(0, "recurse-submodules", &option_recursive,
 		    "initialize submodules in the clone"),
-	OPT_STRING(0, "template", &option_template, "path",
-		   "path the template repository"),
+	OPT_STRING(0, "template", &option_template, "template-directory",
+		   "directory from which templates will be used"),
 	OPT_STRING(0, "reference", &option_reference, "repo",
 		   "reference repository"),
 	OPT_STRING('o', "origin", &option_origin, "branch",
@@ -414,7 +414,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	if (path)
 		repo = xstrdup(make_nonrelative_path(repo_name));
 	else if (!strchr(repo_name, ':'))
-		repo = xstrdup(make_absolute_path(repo_name));
+		die("repository '%s' does not exist", repo_name);
 	else
 		repo = repo_name;
 	is_local = path && !is_bundle;

@@ -545,7 +545,6 @@ extern int assume_unchanged;
 extern int prefer_symlink_refs;
 extern int log_all_ref_updates;
 extern int warn_ambiguous_refs;
-extern int unique_abbrev_extra_length;
 extern int shared_repository;
 extern const char *apply_default_whitespace;
 extern const char *apply_default_ignorewhitespace;
@@ -571,7 +570,7 @@ extern enum safe_crlf safe_crlf;
 enum auto_crlf {
 	AUTO_CRLF_FALSE = 0,
 	AUTO_CRLF_TRUE = 1,
-	AUTO_CRLF_INPUT = -1,
+	AUTO_CRLF_INPUT = -1
 };
 
 extern enum auto_crlf auto_crlf;
@@ -608,7 +607,7 @@ enum rebase_setup_type {
 enum push_default_type {
 	PUSH_DEFAULT_NOTHING = 0,
 	PUSH_DEFAULT_MATCHING,
-	PUSH_DEFAULT_TRACKING,
+	PUSH_DEFAULT_UPSTREAM,
 	PUSH_DEFAULT_CURRENT
 };
 
@@ -676,9 +675,11 @@ static inline void hashclr(unsigned char *hash)
 
 #define EMPTY_TREE_SHA1_HEX \
 	"4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-#define EMPTY_TREE_SHA1_BIN \
+#define EMPTY_TREE_SHA1_BIN_LITERAL \
 	 "\x4b\x82\x5d\xc6\x42\xcb\x6e\xb9\xa0\x60" \
 	 "\xe5\x4b\xf8\xd6\x92\x88\xfb\xee\x49\x04"
+#define EMPTY_TREE_SHA1_BIN \
+	 ((const unsigned char *) EMPTY_TREE_SHA1_BIN_LITERAL)
 
 int git_mkstemp(char *path, size_t n, const char *template);
 
@@ -897,7 +898,8 @@ extern struct packed_git {
 	time_t mtime;
 	int pack_fd;
 	unsigned pack_local:1,
-		 pack_keep:1;
+		 pack_keep:1,
+		 do_not_close:1;
 	unsigned char sha1[20];
 	/* something like ".git/objects/pack/xxxxx.pack" */
 	char pack_name[FLEX_ARRAY]; /* more */

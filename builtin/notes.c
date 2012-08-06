@@ -550,16 +550,16 @@ static int add(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option options[] = {
-		{ OPTION_CALLBACK, 'm', "message", &msg, "MSG",
+		{ OPTION_CALLBACK, 'm', "message", &msg, "msg",
 			"note contents as a string", PARSE_OPT_NONEG,
 			parse_msg_arg},
-		{ OPTION_CALLBACK, 'F', "file", &msg, "FILE",
+		{ OPTION_CALLBACK, 'F', "file", &msg, "file",
 			"note contents in a file", PARSE_OPT_NONEG,
 			parse_file_arg},
-		{ OPTION_CALLBACK, 'c', "reedit-message", &msg, "OBJECT",
+		{ OPTION_CALLBACK, 'c', "reedit-message", &msg, "object",
 			"reuse and edit specified note object", PARSE_OPT_NONEG,
 			parse_reedit_arg},
-		{ OPTION_CALLBACK, 'C', "reuse-message", &msg, "OBJECT",
+		{ OPTION_CALLBACK, 'C', "reuse-message", &msg, "object",
 			"reuse specified note object", PARSE_OPT_NONEG,
 			parse_reuse_arg},
 		OPT__FORCE(&force, "replace existing notes"),
@@ -713,16 +713,16 @@ static int append_edit(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option options[] = {
-		{ OPTION_CALLBACK, 'm', "message", &msg, "MSG",
+		{ OPTION_CALLBACK, 'm', "message", &msg, "msg",
 			"note contents as a string", PARSE_OPT_NONEG,
 			parse_msg_arg},
-		{ OPTION_CALLBACK, 'F', "file", &msg, "FILE",
+		{ OPTION_CALLBACK, 'F', "file", &msg, "file",
 			"note contents in a file", PARSE_OPT_NONEG,
 			parse_file_arg},
-		{ OPTION_CALLBACK, 'c', "reedit-message", &msg, "OBJECT",
+		{ OPTION_CALLBACK, 'c', "reedit-message", &msg, "object",
 			"reuse and edit specified note object", PARSE_OPT_NONEG,
 			parse_reedit_arg},
-		{ OPTION_CALLBACK, 'C', "reuse-message", &msg, "OBJECT",
+		{ OPTION_CALLBACK, 'C', "reuse-message", &msg, "object",
 			"reuse specified note object", PARSE_OPT_NONEG,
 			parse_reuse_arg},
 		OPT_END()

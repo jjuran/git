@@ -10,7 +10,12 @@ Tests for selected commit options.'
 . ./test-lib.sh
 
 commit_msg_is () {
-	test "`git log --pretty=format:%s%b -1`" = "$1"
+	expect=commit_msg_is.expect
+	actual=commit_msg_is.actual
+
+	printf "%s" "$(git log --pretty=format:%s%b -1)" >$expect &&
+	printf "%s" "$1" >$actual &&
+	test_cmp $expect $actual
 }
 
 # A sanity check to see if commit is working at all.
@@ -23,13 +28,21 @@ test_expect_success 'a basic commit in an empty tree should succeed' '
 test_expect_success 'nonexistent template file should return error' '
 	echo changes >> foo &&
 	git add foo &&
-	test_must_fail git commit --template "$PWD"/notexist
+	(
+		GIT_EDITOR="echo hello >\"\$1\"" &&
+		export GIT_EDITOR &&
+		test_must_fail git commit --template "$PWD"/notexist
+	)
 '
 
 test_expect_success 'nonexistent template file in config should return error' '
 	git config commit.template "$PWD"/notexist &&
-	test_must_fail git commit &&
-	git config --unset commit.template
+	test_when_finished "git config --unset commit.template" &&
+	(
+		GIT_EDITOR="echo hello >\"\$1\"" &&
+		export GIT_EDITOR &&
+		test_must_fail git commit
+	)
 '
 
 # From now on we'll use a template file that exists.

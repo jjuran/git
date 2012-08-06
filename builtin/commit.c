@@ -118,14 +118,14 @@ static struct option builtin_commit_options[] = {
 	OPT__VERBOSE(&verbose, "show diff in commit message template"),
 
 	OPT_GROUP("Commit message options"),
-	OPT_FILENAME('F', "file", &logfile, "read log from file"),
-	OPT_STRING(0, "author", &force_author, "AUTHOR", "override author for commit"),
-	OPT_STRING(0, "date", &force_date, "DATE", "override date for commit"),
-	OPT_CALLBACK('m', "message", &message, "MESSAGE", "specify commit message", opt_parse_m),
-	OPT_STRING('c', "reedit-message", &edit_message, "COMMIT", "reuse and edit message from specified commit"),
-	OPT_STRING('C', "reuse-message", &use_message, "COMMIT", "reuse message from specified commit"),
-	OPT_STRING(0, "fixup", &fixup_message, "COMMIT", "use autosquash formatted message to fixup specified commit"),
-	OPT_STRING(0, "squash", &squash_message, "COMMIT", "use autosquash formatted message to squash specified commit"),
+	OPT_FILENAME('F', "file", &logfile, "read message from file"),
+	OPT_STRING(0, "author", &force_author, "author", "override author for commit"),
+	OPT_STRING(0, "date", &force_date, "date", "override date for commit"),
+	OPT_CALLBACK('m', "message", &message, "message", "commit message", opt_parse_m),
+	OPT_STRING('c', "reedit-message", &edit_message, "commit", "reuse and edit message from specified commit"),
+	OPT_STRING('C', "reuse-message", &use_message, "commit", "reuse message from specified commit"),
+	OPT_STRING(0, "fixup", &fixup_message, "commit", "use autosquash formatted message to fixup specified commit"),
+	OPT_STRING(0, "squash", &squash_message, "commit", "use autosquash formatted message to squash specified commit"),
 	OPT_BOOLEAN(0, "reset-author", &renew_authorship, "the commit is authored by me now (used with -C-c/--amend)"),
 	OPT_BOOLEAN('s', "signoff", &signoff, "add Signed-off-by:"),
 	OPT_FILENAME('t', "template", &template_file, "use specified template file"),
@@ -145,12 +145,12 @@ static struct option builtin_commit_options[] = {
 		    STATUS_FORMAT_SHORT),
 	OPT_BOOLEAN(0, "branch", &status_show_branch, "show branch information"),
 	OPT_SET_INT(0, "porcelain", &status_format,
-		    "show porcelain output format", STATUS_FORMAT_PORCELAIN),
+		    "machine-readable output", STATUS_FORMAT_PORCELAIN),
 	OPT_BOOLEAN('z', "null", &null_termination,
 		    "terminate entries with NUL"),
 	OPT_BOOLEAN(0, "amend", &amend, "amend previous commit"),
 	OPT_BOOLEAN(0, "no-post-rewrite", &no_post_rewrite, "bypass post-rewrite hook"),
-	{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, "mode", "show untracked files, optional modes: all, normal, no (Default: all)", PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
+	{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, "mode", "show untracked files, optional modes: all, normal, no. (Default: all)", PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
 	/* end commit contents options */
 
 	{ OPTION_BOOLEAN, 0, "allow-empty", &allow_empty, NULL,
@@ -634,7 +634,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		if (strbuf_read_file(&sb, git_path("SQUASH_MSG"), 0) < 0)
 			die_errno("could not read SQUASH_MSG");
 		hook_arg1 = "squash";
-	} else if (template_file && !stat(template_file, &statbuf)) {
+	} else if (template_file) {
 		if (strbuf_read_file(&sb, template_file, 0) < 0)
 			die_errno("could not read '%s'", template_file);
 		hook_arg1 = "template";
@@ -1095,7 +1095,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN('b', "branch", &status_show_branch,
 			    "show branch information"),
 		OPT_SET_INT(0, "porcelain", &status_format,
-			    "show porcelain output format",
+			    "machine-readable output",
 			    STATUS_FORMAT_PORCELAIN),
 		OPT_BOOLEAN('z', "null", &null_termination,
 			    "terminate entries with NUL"),
