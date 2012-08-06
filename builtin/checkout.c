@@ -683,7 +683,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct checkout_opts opts;
-	unsigned char rev[20];
+	unsigned char rev[20], branch_rev[20];
 	const char *arg;
 	struct branch_info new;
 	struct tree *source_tree = NULL;
@@ -841,18 +841,21 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		argc--;
 
 		new.name = arg;
-		if ((new.commit = lookup_commit_reference_gently(rev, 1))) {
-			setup_branch_path(&new);
+		setup_branch_path(&new);
 
-			if ((check_ref_format(new.path) == CHECK_REF_FORMAT_OK) &&
-			    resolve_ref(new.path, rev, 1, NULL))
-				;
-			else
-				new.path = NULL;
+		if (check_ref_format(new.path) == CHECK_REF_FORMAT_OK &&
+		    resolve_ref(new.path, branch_rev, 1, NULL))
+			hashcpy(rev, branch_rev);
+		else
+			new.path = NULL; /* not an existing branch */
+
+		if (!(new.commit = lookup_commit_reference_gently(rev, 1))) {
+			/* not a commit */
+			source_tree = parse_tree_indirect(rev);
+		} else {
 			parse_commit(new.commit);
 			source_tree = new.commit->tree;
-		} else
-			source_tree = parse_tree_indirect(rev);
+		}
 
 		if (!source_tree)                   /* case (1): want a tree */
 			die("reference is not a tree: %s", arg);
