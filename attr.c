@@ -286,6 +286,7 @@ static void free_attr_elem(struct attr_stack *e)
 		}
 		free(a);
 	}
+	free(e->attrs);
 	free(e);
 }
 
@@ -488,48 +489,49 @@ static int git_attr_config(const char *var, const char *value, void *dummy)
 
 static void bootstrap_attr_stack(void)
 {
-	if (!attr_stack) {
-		struct attr_stack *elem;
+	struct attr_stack *elem;
 
-		elem = read_attr_from_array(builtin_attr);
-		elem->origin = NULL;
-		elem->prev = attr_stack;
-		attr_stack = elem;
+	if (attr_stack)
+		return;
 
-		if (git_attr_system()) {
-			elem = read_attr_from_file(git_etc_gitattributes(), 1);
-			if (elem) {
-				elem->origin = NULL;
-				elem->prev = attr_stack;
-				attr_stack = elem;
-			}
-		}
+	elem = read_attr_from_array(builtin_attr);
+	elem->origin = NULL;
+	elem->prev = attr_stack;
+	attr_stack = elem;
 
-		git_config(git_attr_config, NULL);
-		if (attributes_file) {
-			elem = read_attr_from_file(attributes_file, 1);
-			if (elem) {
-				elem->origin = NULL;
-				elem->prev = attr_stack;
-				attr_stack = elem;
-			}
-		}
-
-		if (!is_bare_repository() || direction == GIT_ATTR_INDEX) {
-			elem = read_attr(GITATTRIBUTES_FILE, 1);
-			elem->origin = strdup("");
+	if (git_attr_system()) {
+		elem = read_attr_from_file(git_etc_gitattributes(), 1);
+		if (elem) {
+			elem->origin = NULL;
 			elem->prev = attr_stack;
 			attr_stack = elem;
-			debug_push(elem);
 		}
+	}
 
-		elem = read_attr_from_file(git_path(INFOATTRIBUTES_FILE), 1);
-		if (!elem)
-			elem = xcalloc(1, sizeof(*elem));
-		elem->origin = NULL;
+	git_config(git_attr_config, NULL);
+	if (attributes_file) {
+		elem = read_attr_from_file(attributes_file, 1);
+		if (elem) {
+			elem->origin = NULL;
+			elem->prev = attr_stack;
+			attr_stack = elem;
+		}
+	}
+
+	if (!is_bare_repository() || direction == GIT_ATTR_INDEX) {
+		elem = read_attr(GITATTRIBUTES_FILE, 1);
+		elem->origin = strdup("");
 		elem->prev = attr_stack;
 		attr_stack = elem;
+		debug_push(elem);
 	}
+
+	elem = read_attr_from_file(git_path(INFOATTRIBUTES_FILE), 1);
+	if (!elem)
+		elem = xcalloc(1, sizeof(*elem));
+	elem->origin = NULL;
+	elem->prev = attr_stack;
+	attr_stack = elem;
 }
 
 static void prepare_attr_stack(const char *path, int dirlen)
@@ -566,14 +568,17 @@ static void prepare_attr_stack(const char *path, int dirlen)
 
 	/*
 	 * Pop the ones from directories that are not the prefix of
-	 * the path we are checking.
+	 * the path we are checking. Break out of the loop when we see
+	 * the root one (whose origin is an empty string "") or the builtin
+	 * one (whose origin is NULL) without popping it.
 	 */
-	while (attr_stack && attr_stack->origin) {
+	while (attr_stack->origin) {
 		int namelen = strlen(attr_stack->origin);
 
 		elem = attr_stack;
 		if (namelen <= dirlen &&
-		    !strncmp(elem->origin, path, namelen))
+		    !strncmp(elem->origin, path, namelen) &&
+		    (!namelen || path[namelen] == '/'))
 			break;
 
 		debug_pop(elem);
@@ -585,6 +590,13 @@ static void prepare_attr_stack(const char *path, int dirlen)
 	 * Read from parent directories and push them down
 	 */
 	if (!is_bare_repository() || direction == GIT_ATTR_INDEX) {
+		/*
+		 * bootstrap_attr_stack() should have added, and the
+		 * above loop should have stopped before popping, the
+		 * root element whose attr_stack->origin is set to an
+		 * empty string.
+		 */
+		assert(attr_stack->origin);
 		while (1) {
 			char *cp;
 
