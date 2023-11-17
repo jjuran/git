@@ -5,6 +5,7 @@ alloc.c
 archive-tar.c
 archive-zip.c
 archive.c
+argv-array.c
 attr.c
 base85.c
 bisect.c
@@ -114,6 +115,7 @@ compat/fnmatch/fnmatch.c
 compat/inet_pton.c
 compat/memmem.c
 compat/mmap.c
+compat/obstack.c
 compat/strcasestr.c
 config.c
 connect.c
@@ -153,6 +155,7 @@ http-backend.c
 #http.c
 ident.c
 imap-send.c
+kwset.c
 levenshtein.c
 list-objects.c
 ll-merge.c
@@ -173,6 +176,7 @@ pack-revindex.c
 pack-write.c
 pager.c
 parse-options.c
+parse-options-cb.c
 patch-delta.c
 patch-ids.c
 path.c
@@ -203,6 +207,7 @@ show-index.c
 sideband.c
 sigchain.c
 strbuf.c
+streaming.c
 string-list.c
 submodule.c
 symlinks.c
@@ -240,6 +245,7 @@ ws.c
 wt-status.c
 xdiff/xdiffi.c
 xdiff/xemit.c
+xdiff/xhistogram.c
 xdiff/xmerge.c
 xdiff/xpatience.c
 xdiff/xprepare.c
