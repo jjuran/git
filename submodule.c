@@ -507,9 +507,17 @@ static void add_sha1_to_argv(const unsigned char sha1[20], void *data)
 
 static void calculate_changed_submodule_paths(void)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct rev_info rev;
 	struct commit *commit;
 	struct argv_array argv = ARGV_ARRAY_INIT;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	/* No need to check if there are no submodules configured */
 	if (!config_name_for_path.nr)

@@ -108,10 +108,19 @@ static struct child_process *get_helper(struct transport *transport)
 	int duped;
 	int code;
 	char git_dir_buf[sizeof(GIT_DIR_ENVIRONMENT) + PATH_MAX + 1];
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const char *helper_env[] = {
 		git_dir_buf,
 		NULL
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 
 	if (data->helper)

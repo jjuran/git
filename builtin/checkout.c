@@ -678,8 +678,16 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
  */
 static void orphaned_commit_warning(struct commit *commit)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct argv_array args = ARGV_ARRAY_INIT;
 	struct rev_info revs;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argv_array_push(&args, "(internal)");
 	argv_array_push(&args, sha1_to_hex(commit->object.sha1));

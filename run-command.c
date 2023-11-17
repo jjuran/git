@@ -620,12 +620,20 @@ int finish_async(struct async *async)
 
 int run_hook(const char *index_file, const char *name, ...)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct child_process hook;
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	const char *p, *env[2];
 	char index[PATH_MAX];
 	va_list args;
 	int ret;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (access(git_path("hooks/%s", name), X_OK) < 0)
 		return 0;
