@@ -159,7 +159,8 @@ int validate_new_branchname(const char *name, struct strbuf *ref,
 
 void create_branch(const char *head,
 		   const char *name, const char *start_name,
-		   int force, int reflog, enum branch_track track)
+		   int force, int reflog, int clobber_head,
+		   enum branch_track track)
 {
 	struct ref_lock *lock = NULL;
 	struct commit *commit;
@@ -174,7 +175,8 @@ void create_branch(const char *head,
 		explicit_tracking = 1;
 
 	if (validate_new_branchname(name, &ref, force,
-				    track == BRANCH_TRACK_OVERRIDE)) {
+				    track == BRANCH_TRACK_OVERRIDE ||
+				    clobber_head)) {
 		if (!force)
 			dont_change_ref = 1;
 		else
@@ -240,6 +242,7 @@ void create_branch(const char *head,
 void remove_branch_state(void)
 {
 	unlink(git_path("CHERRY_PICK_HEAD"));
+	unlink(git_path("REVERT_HEAD"));
 	unlink(git_path("MERGE_HEAD"));
 	unlink(git_path("MERGE_RR"));
 	unlink(git_path("MERGE_MSG"));

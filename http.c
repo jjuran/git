@@ -4,7 +4,6 @@
 #include "run-command.h"
 #include "url.h"
 
-int data_received;
 int active_requests;
 int http_is_verbose;
 size_t http_post_buffer = 16 * LARGE_PACKET_MAX;
@@ -42,7 +41,8 @@ static long curl_low_speed_time = -1;
 static int curl_ftp_no_epsv;
 static const char *curl_http_proxy;
 static const char *curl_cookie_file;
-static char *user_name, *user_pass;
+static char *user_name, *user_pass, *description;
+static int http_proactive_auth;
 static const char *user_agent;
 
 #if LIBCURL_VERSION_NUM >= 0x071700
@@ -99,13 +99,11 @@ size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
 	struct strbuf *buffer = buffer_;
 
 	strbuf_add(buffer, ptr, size);
-	data_received++;
 	return size;
 }
 
 size_t fwrite_null(char *ptr, size_t eltsize, size_t nmemb, void *strbuf)
 {
-	data_received++;
 	return eltsize * nmemb;
 }
 
@@ -138,6 +136,27 @@ static void process_curl_messages(void)
 	}
 }
 #endif
+
+static char *git_getpass_with_description(const char *what, const char *desc)
+{
+	struct strbuf prompt = STRBUF_INIT;
+	char *r;
+
+	if (desc)
+		strbuf_addf(&prompt, "%s for '%s': ", what, desc);
+	else
+		strbuf_addf(&prompt, "%s: ", what);
+	/*
+	 * NEEDSWORK: for usernames, we should do something less magical that
+	 * actually echoes the characters. However, we need to read from
+	 * /dev/tty and not stdio, which is not portable (but getpass will do
+	 * it for us). http.c uses the same workaround.
+	 */
+	r = git_getpass(prompt.buf);
+
+	strbuf_release(&prompt);
+	return xstrdup(r);
+}
 
 static int http_options(const char *var, const char *value, void *cb)
 {
@@ -214,7 +233,7 @@ static void init_curl_http_auth(CURL *result)
 	if (user_name) {
 		struct strbuf up = STRBUF_INIT;
 		if (!user_pass)
-			user_pass = xstrdup(git_getpass("Password: "));
+			user_pass = xstrdup(git_getpass_with_description("Password", description));
 		strbuf_addf(&up, "%s:%s", user_name, user_pass);
 		curl_easy_setopt(result, CURLOPT_USERPWD,
 				 strbuf_detach(&up, NULL));
@@ -229,7 +248,7 @@ static int has_cert_password(void)
 		return 0;
 	/* Only prompt the user once. */
 	ssl_cert_password_required = -1;
-	ssl_cert_password = git_getpass("Certificate Password: ");
+	ssl_cert_password = git_getpass_with_description("Certificate Password", description);
 	if (ssl_cert_password != NULL) {
 		ssl_cert_password = xstrdup(ssl_cert_password);
 		return 1;
@@ -258,7 +277,8 @@ static CURL *get_curl_handle(void)
 	curl_easy_setopt(result, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
 #endif
 
-	init_curl_http_auth(result);
+	if (http_proactive_auth)
+		init_curl_http_auth(result);
 
 	if (ssl_cert != NULL)
 		curl_easy_setopt(result, CURLOPT_SSLCERT, ssl_cert);
@@ -307,8 +327,7 @@ static CURL *get_curl_handle(void)
 
 static void http_auth_init(const char *url)
 {
-	char *at, *colon, *cp, *slash, *decoded;
-	int len;
+	const char *at, *colon, *cp, *slash, *host;
 
 	cp = strstr(url, "://");
 	if (!cp)
@@ -324,34 +343,22 @@ static void http_auth_init(const char *url)
 	at = strchr(cp, '@');
 	colon = strchr(cp, ':');
 	slash = strchrnul(cp, '/');
-	if (!at || slash <= at)
-		return; /* No credentials */
-	if (!colon || at <= colon) {
-		/* Only username */
-		len = at - cp;
-		user_name = xmalloc(len + 1);
-		memcpy(user_name, cp, len);
-		user_name[len] = '\0';
-		decoded = url_decode(user_name);
-		free(user_name);
-		user_name = decoded;
-		user_pass = NULL;
-	} else {
-		len = colon - cp;
-		user_name = xmalloc(len + 1);
-		memcpy(user_name, cp, len);
-		user_name[len] = '\0';
-		decoded = url_decode(user_name);
-		free(user_name);
-		user_name = decoded;
-		len = at - (colon + 1);
-		user_pass = xmalloc(len + 1);
-		memcpy(user_pass, colon + 1, len);
-		user_pass[len] = '\0';
-		decoded = url_decode(user_pass);
-		free(user_pass);
-		user_pass = decoded;
+	if (!at || slash <= at) {
+		/* No credentials, but we may have to ask for some later */
+		host = cp;
 	}
+	else if (!colon || at <= colon) {
+		/* Only username */
+		user_name = url_decode_mem(cp, at - cp);
+		user_pass = NULL;
+		host = at + 1;
+	} else {
+		user_name = url_decode_mem(cp, colon - cp);
+		user_pass = url_decode_mem(colon + 1, at - (colon + 1));
+		host = at + 1;
+	}
+
+	description = url_decode_mem(host, slash - host);
 }
 
 static void set_from_env(const char **var, const char *envname)
@@ -361,7 +368,7 @@ static void set_from_env(const char **var, const char *envname)
 		*var = val;
 }
 
-void http_init(struct remote *remote)
+void http_init(struct remote *remote, const char *url, int proactive_auth)
 {
 	char *low_speed_limit;
 	char *low_speed_time;
@@ -371,6 +378,8 @@ void http_init(struct remote *remote)
 	git_config(http_options, NULL);
 
 	curl_global_init(CURL_GLOBAL_ALL);
+
+	http_proactive_auth = proactive_auth;
 
 	if (remote && remote->http_proxy)
 		curl_http_proxy = xstrdup(remote->http_proxy);
@@ -425,11 +434,11 @@ void http_init(struct remote *remote)
 	if (getenv("GIT_CURL_FTP_NO_EPSV"))
 		curl_ftp_no_epsv = 1;
 
-	if (remote && remote->url && remote->url[0]) {
-		http_auth_init(remote->url[0]);
+	if (url) {
+		http_auth_init(url);
 		if (!ssl_cert_password_required &&
 		    getenv("GIT_SSL_CERT_PASSWORD_PROTECTED") &&
-		    !prefixcmp(remote->url[0], "https://"))
+		    !prefixcmp(url, "https://"))
 			ssl_cert_password_required = 1;
 	}
 
@@ -530,7 +539,6 @@ struct active_request_slot *get_active_slot(void)
 
 	active_requests++;
 	slot->in_use = 1;
-	slot->local = NULL;
 	slot->results = NULL;
 	slot->finished = NULL;
 	slot->callback_data = NULL;
@@ -634,8 +642,6 @@ void step_active_slots(void)
 void run_active_slot(struct active_request_slot *slot)
 {
 #ifdef USE_CURL_MULTI
-	long last_pos = 0;
-	long current_pos;
 	fd_set readfds;
 	fd_set writefds;
 	fd_set excfds;
@@ -645,25 +651,33 @@ void run_active_slot(struct active_request_slot *slot)
 
 	slot->finished = &finished;
 	while (!finished) {
-		data_received = 0;
 		step_active_slots();
 
-		if (!data_received && slot->local != NULL) {
-			current_pos = ftell(slot->local);
-			if (current_pos > last_pos)
-				data_received++;
-			last_pos = current_pos;
-		}
+		if (slot->in_use) {
+#if LIBCURL_VERSION_NUM >= 0x070f04
+			long curl_timeout;
+			curl_multi_timeout(curlm, &curl_timeout);
+			if (curl_timeout == 0) {
+				continue;
+			} else if (curl_timeout == -1) {
+				select_timeout.tv_sec  = 0;
+				select_timeout.tv_usec = 50000;
+			} else {
+				select_timeout.tv_sec  =  curl_timeout / 1000;
+				select_timeout.tv_usec = (curl_timeout % 1000) * 1000;
+			}
+#else
+			select_timeout.tv_sec  = 0;
+			select_timeout.tv_usec = 50000;
+#endif
 
-		if (slot->in_use && !data_received) {
-			max_fd = 0;
+			max_fd = -1;
 			FD_ZERO(&readfds);
 			FD_ZERO(&writefds);
 			FD_ZERO(&excfds);
-			select_timeout.tv_sec = 0;
-			select_timeout.tv_usec = 50000;
-			select(max_fd, &readfds, &writefds,
-			       &excfds, &select_timeout);
+			curl_multi_fdset(curlm, &readfds, &writefds, &excfds, &max_fd);
+
+			select(max_fd+1, &readfds, &writefds, &excfds, &select_timeout);
 		}
 	}
 #else
@@ -741,14 +755,6 @@ static inline int needs_quote(int ch)
 	return 1;
 }
 
-static inline int hex(int v)
-{
-	if (v < 10)
-		return '0' + v;
-	else
-		return 'A' + v - 10;
-}
-
 static char *quote_ref_url(const char *base, const char *ref)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -816,7 +822,6 @@ static int http_request(const char *url, void *result, int target, int options)
 				headers = curl_slist_append(headers, buf.buf);
 				strbuf_reset(&buf);
 			}
-			slot->local = result;
 		} else
 			curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION,
 					 fwrite_buffer);
@@ -838,7 +843,7 @@ static int http_request(const char *url, void *result, int target, int options)
 		else if (missing_target(&results))
 			ret = HTTP_MISSING_TARGET;
 		else if (results.http_code == 401) {
-			if (user_name) {
+			if (user_name && user_pass) {
 				ret = HTTP_NOAUTH;
 			} else {
 				/*
@@ -847,7 +852,8 @@ static int http_request(const char *url, void *result, int target, int options)
 				 * but that is non-portable.  Using git_getpass() can at least be stubbed
 				 * on other platforms with a different implementation if/when necessary.
 				 */
-				user_name = xstrdup(git_getpass("Username: "));
+				if (!user_name)
+					user_name = xstrdup(git_getpass_with_description("Username", description));
 				init_curl_http_auth(slot->curl);
 				ret = HTTP_REAUTH;
 			}
@@ -863,20 +869,24 @@ static int http_request(const char *url, void *result, int target, int options)
 		ret = HTTP_START_FAILED;
 	}
 
-	slot->local = NULL;
 	curl_slist_free_all(headers);
 	strbuf_release(&buf);
 
 	return ret;
 }
 
+static int http_request_reauth(const char *url, void *result, int target,
+			       int options)
+{
+	int ret = http_request(url, result, target, options);
+	if (ret != HTTP_REAUTH)
+		return ret;
+	return http_request(url, result, target, options);
+}
+
 int http_get_strbuf(const char *url, struct strbuf *result, int options)
 {
-	int http_ret = http_request(url, result, HTTP_REQUEST_STRBUF, options);
-	if (http_ret == HTTP_REAUTH) {
-		http_ret = http_request(url, result, HTTP_REQUEST_STRBUF, options);
-	}
-	return http_ret;
+	return http_request_reauth(url, result, HTTP_REQUEST_STRBUF, options);
 }
 
 /*
@@ -899,7 +909,7 @@ static int http_get_file(const char *url, const char *filename, int options)
 		goto cleanup;
 	}
 
-	ret = http_request(url, result, HTTP_REQUEST_FILE, options);
+	ret = http_request_reauth(url, result, HTTP_REQUEST_FILE, options);
 	fclose(result);
 
 	if ((ret == HTTP_OK) && move_temp_to_file(tmpfile.buf, filename))
@@ -1053,7 +1063,6 @@ void release_http_pack_request(struct http_pack_request *preq)
 	if (preq->packfile != NULL) {
 		fclose(preq->packfile);
 		preq->packfile = NULL;
-		preq->slot->local = NULL;
 	}
 	if (preq->range_header != NULL) {
 		curl_slist_free_all(preq->range_header);
@@ -1075,7 +1084,6 @@ int finish_http_pack_request(struct http_pack_request *preq)
 
 	fclose(preq->packfile);
 	preq->packfile = NULL;
-	preq->slot->local = NULL;
 
 	lst = preq->lst;
 	while (*lst != p)
@@ -1144,7 +1152,6 @@ struct http_pack_request *new_http_pack_request(
 	}
 
 	preq->slot = get_active_slot();
-	preq->slot->local = preq->packfile;
 	curl_easy_setopt(preq->slot->curl, CURLOPT_FILE, preq->packfile);
 	curl_easy_setopt(preq->slot->curl, CURLOPT_WRITEFUNCTION, fwrite);
 	curl_easy_setopt(preq->slot->curl, CURLOPT_URL, preq->url);
@@ -1201,7 +1208,6 @@ static size_t fwrite_sha1_file(char *ptr, size_t eltsize, size_t nmemb,
 		git_SHA1_Update(&freq->c, expn,
 				sizeof(expn) - freq->stream.avail_out);
 	} while (freq->stream.avail_in && freq->zret == Z_OK);
-	data_received++;
 	return size;
 }
 

@@ -260,8 +260,21 @@ static char *resolve_symref(const char *src, const char *prefix)
 
 struct append_ref_cb {
 	struct ref_list *ref_list;
+	const char **pattern;
 	int ret;
 };
+
+static int match_patterns(const char **pattern, const char *refname)
+{
+	if (!*pattern)
+		return 1; /* no pattern always matches */
+	while (*pattern) {
+		if (!fnmatch(*pattern, refname, 0))
+			return 1;
+		pattern++;
+	}
+	return 0;
+}
 
 static int append_ref(const char *refname, const unsigned char *sha1, int flags, void *cb_data)
 {
@@ -295,6 +308,9 @@ static int append_ref(const char *refname, const unsigned char *sha1, int flags,
 
 	/* Don't add types the caller doesn't want */
 	if ((kind & ref_list->kinds) == 0)
+		return 0;
+
+	if (!match_patterns(cb->pattern, refname))
 		return 0;
 
 	commit = NULL;
@@ -492,7 +508,7 @@ static void show_detached(struct ref_list *ref_list)
 	}
 }
 
-static int print_ref_list(int kinds, int detached, int verbose, int abbrev, struct commit_list *with_commit)
+static int print_ref_list(int kinds, int detached, int verbose, int abbrev, struct commit_list *with_commit, const char **pattern)
 {
 	int i;
 	struct append_ref_cb cb;
@@ -506,6 +522,7 @@ static int print_ref_list(int kinds, int detached, int verbose, int abbrev, stru
 	if (merge_filter != NO_FILTER)
 		init_revisions(&ref_list.revs, NULL);
 	cb.ref_list = &ref_list;
+	cb.pattern = pattern;
 	cb.ret = 0;
 	for_each_rawref(append_ref, &cb);
 	if (merge_filter != NO_FILTER) {
@@ -523,7 +540,7 @@ static int print_ref_list(int kinds, int detached, int verbose, int abbrev, stru
 	qsort(ref_list.list, ref_list.index, sizeof(struct ref_item), ref_cmp);
 
 	detached = (detached && (kinds & REF_LOCAL_BRANCH));
-	if (detached)
+	if (detached && match_patterns(pattern, "HEAD"))
 		show_detached(&ref_list);
 
 	for (i = 0; i < ref_list.index; i++) {
@@ -551,6 +568,7 @@ static void rename_branch(const char *oldname, const char *newname, int force)
 	unsigned char sha1[20];
 	struct strbuf oldsection = STRBUF_INIT, newsection = STRBUF_INIT;
 	int recovery = 0;
+	int clobber_head_ok;
 
 	if (!oldname)
 		die(_("cannot rename the current branch while not on any."));
@@ -566,7 +584,13 @@ static void rename_branch(const char *oldname, const char *newname, int force)
 			die(_("Invalid branch name: '%s'"), oldname);
 	}
 
-	validate_new_branchname(newname, &newref, force, 0);
+	/*
+	 * A command like "git branch -M currentbranch currentbranch" cannot
+	 * cause the worktree to become inconsistent with HEAD, so allow it.
+	 */
+	clobber_head_ok = !strcmp(oldname, newname);
+
+	validate_new_branchname(newname, &newref, force, clobber_head_ok);
 
 	strbuf_addf(&logmsg, "Branch: renamed %s to %s",
 		 oldref.buf, newref.buf);
@@ -613,7 +637,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 #define delete delete_
 #endif
 
-	int delete = 0, rename = 0, force_create = 0;
+	int delete = 0, rename = 0, force_create = 0, list = 0;
 	int verbose = 0, abbrev = -1, detached = 0;
 	int reflog = 0;
 	enum branch_track track;
@@ -629,7 +653,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		OPT_SET_INT( 0, "set-upstream",  &track, "change upstream info",
 			BRANCH_TRACK_OVERRIDE),
 		OPT__COLOR(&branch_use_color, "use colored output"),
-		OPT_SET_INT('r', NULL,     &kinds, "act on remote-tracking branches",
+		OPT_SET_INT('r', "remotes",     &kinds, "act on remote-tracking branches",
 			REF_REMOTE_BRANCH),
 		{
 			OPTION_CALLBACK, 0, "contains", &with_commit, "commit",
@@ -646,13 +670,14 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		OPT__ABBREV(&abbrev),
 
 		OPT_GROUP("Specific git-branch actions:"),
-		OPT_SET_INT('a', NULL, &kinds, "list both remote-tracking and local branches",
+		OPT_SET_INT('a', "all", &kinds, "list both remote-tracking and local branches",
 			REF_REMOTE_BRANCH | REF_LOCAL_BRANCH),
-		OPT_BIT('d', NULL, &delete, "delete fully merged branch", 1),
+		OPT_BIT('d', "delete", &delete, "delete fully merged branch", 1),
 		OPT_BIT('D', NULL, &delete, "delete branch (even if not merged)", 2),
-		OPT_BIT('m', NULL, &rename, "move/rename a branch and its reflog", 1),
+		OPT_BIT('m', "move", &rename, "move/rename a branch and its reflog", 1),
 		OPT_BIT('M', NULL, &rename, "move/rename a branch, even if target exists", 2),
-		OPT_BOOLEAN('l', NULL, &reflog, "create the branch's reflog"),
+		OPT_BOOLEAN(0, "list", &list, "list branch names"),
+		OPT_BOOLEAN('l', "create-reflog", &reflog, "create the branch's reflog"),
 		OPT__FORCE(&force_create, "force creation (when already exists)"),
 		{
 			OPTION_CALLBACK, 0, "no-merged", &merge_filter_ref,
@@ -695,7 +720,11 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	argc = parse_options(argc, argv, prefix, options, builtin_branch_usage,
 			     0);
-	if (!!delete + !!rename + !!force_create > 1)
+
+	if (!delete && !rename && argc == 0)
+		list = 1;
+
+	if (!!delete + !!rename + !!force_create + !!list > 1)
 		usage_with_options(builtin_branch_usage, options);
 
 	if (abbrev == -1)
@@ -703,17 +732,21 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	if (delete)
 		return delete_branches(argc, argv, delete > 1, kinds);
-	else if (argc == 0)
-		return print_ref_list(kinds, detached, verbose, abbrev, with_commit);
-	else if (rename && (argc == 1))
-		rename_branch(head, argv[0], rename > 1);
-	else if (rename && (argc == 2))
-		rename_branch(argv[0], argv[1], rename > 1);
-	else if (argc <= 2) {
+	else if (list)
+		return print_ref_list(kinds, detached, verbose, abbrev,
+				      with_commit, argv);
+	else if (rename) {
+		if (argc == 1)
+			rename_branch(head, argv[0], rename > 1);
+		else if (argc == 2)
+			rename_branch(argv[0], argv[1], rename > 1);
+		else
+			usage_with_options(builtin_branch_usage, options);
+	} else if (argc > 0 && argc <= 2) {
 		if (kinds != REF_LOCAL_BRANCH)
 			die(_("-a and -r options to 'git branch' do not make sense with a branch name"));
 		create_branch(head, argv[0], (argc == 2) ? argv[1] : head,
-			      force_create, reflog, track);
+			      force_create, reflog, 0, track);
 	} else
 		usage_with_options(builtin_branch_usage, options);
 

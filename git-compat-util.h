@@ -222,7 +222,7 @@ extern char *gitbasename(char *);
 #define find_last_dir_sep(path) strrchr(path, '/')
 #endif
 
-#if __HP_cc >= 61000
+#if defined(__HP_cc) && (__HP_cc >= 61000)
 #define NORETURN __attribute__((noreturn))
 #define NORETURN_PTR
 #elif defined(__GNUC__) && !defined(NO_NORETURN)
@@ -354,6 +354,8 @@ extern size_t gitstrlcpy(char *, const char *, size_t);
 #ifdef NO_STRTOUMAX
 #define strtoumax gitstrtoumax
 extern uintmax_t gitstrtoumax(const char *, char **, int);
+#define strtoimax gitstrtoimax
+extern intmax_t gitstrtoimax(const char *, char **, int);
 #endif
 
 #ifdef NO_STRTOK_R

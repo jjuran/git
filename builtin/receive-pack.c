@@ -11,6 +11,7 @@
 #include "transport.h"
 #include "string-list.h"
 #include "sha1-array.h"
+#include "connected.h"
 
 static const char receive_pack_usage[] = "git receive-pack <git-dir>";
 
@@ -25,7 +26,8 @@ static int deny_deletes;
 static int deny_non_fast_forwards;
 static enum deny_action deny_current_branch = DENY_UNCONFIGURED;
 static enum deny_action deny_delete_current = DENY_UNCONFIGURED;
-static int receive_fsck_objects;
+static int receive_fsck_objects = -1;
+static int transfer_fsck_objects = -1;
 static int receive_unpack_limit = -1;
 static int transfer_unpack_limit = -1;
 static int unpack_limit = 100;
@@ -76,6 +78,11 @@ static int receive_pack_config(const char *var, const char *value, void *cb)
 
 	if (strcmp(var, "receive.fsckobjects") == 0) {
 		receive_fsck_objects = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (strcmp(var, "transfer.fsckobjects") == 0) {
+		transfer_fsck_objects = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -147,7 +154,8 @@ static void write_head_info(void)
 struct command {
 	struct command *next;
 	const char *error_string;
-	unsigned int skip_update;
+	unsigned int skip_update:1,
+		     did_not_exist:1;
 	unsigned char old_sha1[20];
 	unsigned char new_sha1[20];
 	char ref_name[FLEX_ARRAY]; /* more */
@@ -257,6 +265,7 @@ static int run_and_feed_hook(const char *hook_name, feed_fn feed, void *feed_sta
 
 struct receive_hook_feed_state {
 	struct command *cmd;
+	int skip_broken;
 	struct strbuf buf;
 };
 
@@ -265,7 +274,8 @@ static int feed_receive_hook(void *state_, const char **bufp, size_t *sizep)
 	struct receive_hook_feed_state *state = state_;
 	struct command *cmd = state->cmd;
 
-	while (cmd && cmd->error_string)
+	while (cmd &&
+	       state->skip_broken && (cmd->error_string || cmd->did_not_exist))
 		cmd = cmd->next;
 	if (!cmd)
 		return -1; /* EOF */
@@ -281,13 +291,15 @@ static int feed_receive_hook(void *state_, const char **bufp, size_t *sizep)
 	return 0;
 }
 
-static int run_receive_hook(struct command *commands, const char *hook_name)
+static int run_receive_hook(struct command *commands, const char *hook_name,
+			    int skip_broken)
 {
 	struct receive_hook_feed_state state;
 	int status;
 
 	strbuf_init(&state.buf, 0);
 	state.cmd = commands;
+	state.skip_broken = skip_broken;
 	if (feed_receive_hook(&state, NULL, NULL))
 		return 0;
 	state.cmd = commands;
@@ -389,7 +401,7 @@ static const char *update(struct command *cmd)
 	struct ref_lock *lock;
 
 	/* only refs/... are allowed */
-	if (prefixcmp(name, "refs/") || check_ref_format(name + 5)) {
+	if (prefixcmp(name, "refs/") || check_refname_format(name + 5, 0)) {
 		rp_error("refusing to create funny ref '%s' remotely", name);
 		return "funny refname";
 	}
@@ -478,8 +490,13 @@ static const char *update(struct command *cmd)
 
 	if (is_null_sha1(new_sha1)) {
 		if (!parse_object(old_sha1)) {
-			rp_warning("Allowing deletion of corrupt ref.");
 			old_sha1 = NULL;
+			if (ref_exists(name)) {
+				rp_warning("Allowing deletion of corrupt ref.");
+			} else {
+				rp_warning("Deleting a non-existent ref.");
+				cmd->did_not_exist = 1;
+			}
 		}
 		if (delete_ref(namespaced_name, old_sha1, 0)) {
 			rp_error("failed to delete %s", name);
@@ -510,7 +527,7 @@ static void run_update_post_hook(struct command *commands)
 	struct child_process proc;
 
 	for (argc = 0, cmd = commands; cmd; cmd = cmd->next) {
-		if (cmd->error_string)
+		if (cmd->error_string || cmd->did_not_exist)
 			continue;
 		argc++;
 	}
@@ -521,7 +538,7 @@ static void run_update_post_hook(struct command *commands)
 
 	for (argc = 1, cmd = commands; cmd; cmd = cmd->next) {
 		char *p;
-		if (cmd->error_string)
+		if (cmd->error_string || cmd->did_not_exist)
 			continue;
 		p = xmalloc(strlen(cmd->ref_name) + 1);
 		strcpy(p, cmd->ref_name);
@@ -612,6 +629,48 @@ static void check_aliased_updates(struct command *commands)
 	string_list_clear(&ref_list, 0);
 }
 
+static int command_singleton_iterator(void *cb_data, unsigned char sha1[20])
+{
+	struct command **cmd_list = cb_data;
+	struct command *cmd = *cmd_list;
+
+	if (!cmd || is_null_sha1(cmd->new_sha1))
+		return -1; /* end of list */
+	*cmd_list = NULL; /* this returns only one */
+	hashcpy(sha1, cmd->new_sha1);
+	return 0;
+}
+
+static void set_connectivity_errors(struct command *commands)
+{
+	struct command *cmd;
+
+	for (cmd = commands; cmd; cmd = cmd->next) {
+		struct command *singleton = cmd;
+		if (!check_everything_connected(command_singleton_iterator,
+						0, &singleton))
+			continue;
+		cmd->error_string = "missing necessary objects";
+	}
+}
+
+static int iterate_receive_command_list(void *cb_data, unsigned char sha1[20])
+{
+	struct command **cmd_list = cb_data;
+	struct command *cmd = *cmd_list;
+
+	while (cmd) {
+		if (!is_null_sha1(cmd->new_sha1)) {
+			hashcpy(sha1, cmd->new_sha1);
+			*cmd_list = cmd->next;
+			return 0;
+		}
+		cmd = cmd->next;
+	}
+	*cmd_list = NULL;
+	return -1; /* end of list */
+}
+
 static void execute_commands(struct command *commands, const char *unpacker_error)
 {
 	struct command *cmd;
@@ -623,7 +682,12 @@ static void execute_commands(struct command *commands, const char *unpacker_erro
 		return;
 	}
 
-	if (run_receive_hook(commands, pre_receive_hook)) {
+	cmd = commands;
+	if (check_everything_connected(iterate_receive_command_list,
+				       0, &cmd))
+		set_connectivity_errors(commands);
+
+	if (run_receive_hook(commands, pre_receive_hook, 0)) {
 		for (cmd = commands; cmd; cmd = cmd->next)
 			cmd->error_string = "pre-receive hook declined";
 		return;
@@ -707,6 +771,11 @@ static const char *unpack(void)
 	struct pack_header hdr;
 	const char *hdr_err;
 	char hdr_arg[38];
+	int fsck_objects = (receive_fsck_objects >= 0
+			    ? receive_fsck_objects
+			    : transfer_fsck_objects >= 0
+			    ? transfer_fsck_objects
+			    : 0);
 
 	hdr_err = parse_pack_header(&hdr);
 	if (hdr_err)
@@ -719,7 +788,7 @@ static const char *unpack(void)
 		int code, i = 0;
 		const char *unpacker[4];
 		unpacker[i++] = "unpack-objects";
-		if (receive_fsck_objects)
+		if (fsck_objects)
 			unpacker[i++] = "--strict";
 		unpacker[i++] = hdr_arg;
 		unpacker[i++] = NULL;
@@ -739,7 +808,7 @@ static const char *unpack(void)
 
 		keeper[i++] = "index-pack";
 		keeper[i++] = "--stdin";
-		if (receive_fsck_objects)
+		if (fsck_objects)
 			keeper[i++] = "--strict";
 		keeper[i++] = "--fix-thin";
 		keeper[i++] = hdr_arg;
@@ -886,7 +955,7 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 			unlink_or_warn(pack_lockfile);
 		if (report_status)
 			report(commands, unpack_status);
-		run_receive_hook(commands, post_receive_hook);
+		run_receive_hook(commands, post_receive_hook, 1);
 		run_update_post_hook(commands);
 		if (auto_gc) {
 			const char *argv_gc_auto[] = {

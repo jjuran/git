@@ -407,8 +407,8 @@ static int get_push_ref_states(const struct ref *remote_refs,
 	local_refs = get_local_heads();
 	push_map = copy_ref_list(remote_refs);
 
-	match_refs(local_refs, &push_map, remote->push_refspec_nr,
-		   remote->push_refspec, MATCH_REFS_NONE);
+	match_push_refs(local_refs, &push_map, remote->push_refspec_nr,
+			remote->push_refspec, MATCH_REFS_NONE);
 
 	states->push.strdup_strings = 1;
 	for (ref = push_map; ref; ref = ref->next) {
@@ -1457,7 +1457,7 @@ static int set_branches(int argc, const char **argv)
 			     builtin_remote_setbranches_usage, 0);
 	if (argc == 0) {
 		error("no remote specified");
-		usage_with_options(builtin_remote_seturl_usage, options);
+		usage_with_options(builtin_remote_setbranches_usage, options);
 	}
 	argv[argc] = NULL;
 
@@ -1495,7 +1495,7 @@ static int set_url(int argc, const char **argv)
 #pragma cplusplus reset
 #endif
 
-	argc = parse_options(argc, argv, NULL, options, builtin_remote_update_usage,
+	argc = parse_options(argc, argv, NULL, options, builtin_remote_seturl_usage,
 			     PARSE_OPT_KEEP_ARGV0);
 
 	if (add_mode && delete_mode)

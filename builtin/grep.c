@@ -74,13 +74,32 @@ static int all_work_added;
 /* This lock protects all the variables above. */
 static pthread_mutex_t grep_mutex;
 
+static inline void grep_lock(void)
+{
+	if (use_threads)
+		pthread_mutex_lock(&grep_mutex);
+}
+
+static inline void grep_unlock(void)
+{
+	if (use_threads)
+		pthread_mutex_unlock(&grep_mutex);
+}
+
 /* Used to serialize calls to read_sha1_file. */
 static pthread_mutex_t read_sha1_mutex;
 
-#define grep_lock() pthread_mutex_lock(&grep_mutex)
-#define grep_unlock() pthread_mutex_unlock(&grep_mutex)
-#define read_sha1_lock() pthread_mutex_lock(&read_sha1_mutex)
-#define read_sha1_unlock() pthread_mutex_unlock(&read_sha1_mutex)
+static inline void read_sha1_lock(void)
+{
+	if (use_threads)
+		pthread_mutex_lock(&read_sha1_mutex);
+}
+
+static inline void read_sha1_unlock(void)
+{
+	if (use_threads)
+		pthread_mutex_unlock(&read_sha1_mutex);
+}
 
 /* Signalled when a new work_item is added to todo. */
 static pthread_cond_t cond_add;
@@ -354,13 +373,9 @@ static void *lock_and_read_sha1_file(const unsigned char *sha1, enum object_type
 {
 	void *data;
 
-	if (use_threads) {
-		read_sha1_lock();
-		data = read_sha1_file(sha1, type, size);
-		read_sha1_unlock();
-	} else {
-		data = read_sha1_file(sha1, type, size);
-	}
+	read_sha1_lock();
+	data = read_sha1_file(sha1, type, size);
+	read_sha1_unlock();
 	return data;
 }
 
@@ -542,18 +557,19 @@ static int grep_cache(struct grep_opt *opt, const struct pathspec *pathspec, int
 static int grep_tree(struct grep_opt *opt, const struct pathspec *pathspec,
 		     struct tree_desc *tree, struct strbuf *base, int tn_len)
 {
-	int hit = 0, match = 0;
+	int hit = 0;
+	enum interesting match = entry_not_interesting;
 	struct name_entry entry;
 	int old_baselen = base->len;
 
 	while (tree_entry(tree, &entry)) {
-		int te_len = tree_entry_len(entry.path, entry.sha1);
+		int te_len = tree_entry_len(&entry);
 
-		if (match != 2) {
+		if (match != all_entries_interesting) {
 			match = tree_entry_interesting(&entry, base, tn_len, pathspec);
-			if (match < 0)
+			if (match == all_entries_not_interesting)
 				break;
-			if (match == 0)
+			if (match == entry_not_interesting)
 				continue;
 		}
 
@@ -643,13 +659,15 @@ static int grep_objects(struct grep_opt *opt, const struct pathspec *pathspec,
 	return hit;
 }
 
-static int grep_directory(struct grep_opt *opt, const struct pathspec *pathspec)
+static int grep_directory(struct grep_opt *opt, const struct pathspec *pathspec,
+			  int exc_std)
 {
 	struct dir_struct dir;
 	int i, hit = 0;
 
 	memset(&dir, 0, sizeof(dir));
-	setup_standard_excludes(&dir);
+	if (exc_std)
+		setup_standard_excludes(&dir);
 
 	fill_directory(&dir, pathspec->raw);
 	for (i = 0; i < dir.nr; i++) {
@@ -756,7 +774,7 @@ static int help_callback(const struct option *opt, const char *arg, int unset)
 int cmd_grep(int argc, const char **argv, const char *prefix)
 {
 	int hit = 0;
-	int cached = 0;
+	int cached = 0, untracked = 0, opt_exclude = -1;
 	int seen_dashdash = 0;
 	int external_grep_allowed__ignored;
 	const char *show_in_pager = NULL, *default_pager = "dummy";
@@ -784,8 +802,13 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	struct option options[] = {
 		OPT_BOOLEAN(0, "cached", &cached,
 			"search in index instead of in the work tree"),
-		OPT_BOOLEAN(0, "index", &use_index,
-			"--no-index finds in contents not managed by git"),
+		{ OPTION_BOOLEAN, 0, "index", &use_index, NULL,
+			"finds in contents not managed by git",
+			PARSE_OPT_NOARG | PARSE_OPT_NEGHELP },
+		OPT_BOOLEAN(0, "untracked", &untracked,
+			"search in both tracked and untracked files"),
+		OPT_SET_INT(0, "exclude-standard", &opt_exclude,
+			    "search also in ignored files", 1),
 		OPT_GROUP(""),
 		OPT_BOOLEAN('v', "invert-match", &opt.invert,
 			"show non-matching lines"),
@@ -1059,13 +1082,16 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	if (!show_in_pager)
 		setup_pager();
 
+	if (!use_index && (untracked || cached))
+		die(_("--cached or --untracked cannot be used with --no-index."));
 
-	if (!use_index) {
-		if (cached)
-			die(_("--cached cannot be used with --no-index."));
+	if (!use_index || untracked) {
+		int use_exclude = (opt_exclude < 0) ? use_index : !!opt_exclude;
 		if (list.nr)
-			die(_("--no-index cannot be used with revs."));
-		hit = grep_directory(&opt, &pathspec);
+			die(_("--no-index or --untracked cannot be used with revs."));
+		hit = grep_directory(&opt, &pathspec, use_exclude);
+	} else if (0 <= opt_exclude) {
+		die(_("--[no-]exclude-standard cannot be used for tracked contents."));
 	} else if (!list.nr) {
 		if (!cached)
 			setup_work_tree();

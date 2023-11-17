@@ -722,13 +722,8 @@ static struct branch *new_branch(const char *name)
 
 	if (b)
 		die("Invalid attempt to create duplicate branch: %s", name);
-	switch (check_ref_format(name)) {
-	case 0: break; /* its valid */
-	case CHECK_REF_FORMAT_ONELEVEL:
-		break; /* valid, but too few '/', allow anyway */
-	default:
+	if (check_refname_format(name, REFNAME_ALLOW_ONELEVEL))
 		die("Branch name doesn't conform to GIT standards: %s", name);
-	}
 
 	b = pool_calloc(1, sizeof(struct branch));
 	b->name = pool_strdup(name);
@@ -2178,6 +2173,11 @@ static uintmax_t do_change_note_fanout(
 
 		if (tmp_hex_sha1_len == 40 && !get_sha1_hex(hex_sha1, sha1)) {
 			/* This is a note entry */
+			if (fanout == 0xff) {
+				/* Counting mode, no rename */
+				num_notes++;
+				continue;
+			}
 			construct_path_with_fanout(hex_sha1, fanout, realpath);
 			if (!strcmp(fullpath, realpath)) {
 				/* Note entry is in correct location */
@@ -2384,7 +2384,7 @@ static void file_change_cr(struct branch *b, int rename)
 		leaf.tree);
 }
 
-static void note_change_n(struct branch *b, unsigned char old_fanout)
+static void note_change_n(struct branch *b, unsigned char *old_fanout)
 {
 	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
@@ -2395,6 +2395,23 @@ static void note_change_n(struct branch *b, unsigned char old_fanout)
 	uint16_t inline_data = 0;
 	unsigned char new_fanout;
 
+	/*
+	 * When loading a branch, we don't traverse its tree to count the real
+	 * number of notes (too expensive to do this for all non-note refs).
+	 * This means that recently loaded notes refs might incorrectly have
+	 * b->num_notes == 0, and consequently, old_fanout might be wrong.
+	 *
+	 * Fix this by traversing the tree and counting the number of notes
+	 * when b->num_notes == 0. If the notes tree is truly empty, the
+	 * calculation should not take long.
+	 */
+	if (b->num_notes == 0 && *old_fanout == 0) {
+		/* Invoke change_note_fanout() in "counting mode". */
+		b->num_notes = change_note_fanout(&b->branch_tree, 0xff);
+		*old_fanout = convert_num_notes_to_fanout(b->num_notes);
+	}
+
+	/* Now parse the notemodify command. */
 	/* <dataref> or 'inline' */
 	if (*p == ':') {
 		char *x;
@@ -2416,6 +2433,8 @@ static void note_change_n(struct branch *b, unsigned char old_fanout)
 	/* <committish> */
 	s = lookup_branch(p);
 	if (s) {
+		if (is_null_sha1(s->sha1))
+			die("Can't add a note on empty branch.");
 		hashcpy(commit_sha1, s->sha1);
 	} else if (*p == ':') {
 		uintmax_t commit_mark = strtoumax(p + 1, NULL, 10);
@@ -2453,7 +2472,7 @@ static void note_change_n(struct branch *b, unsigned char old_fanout)
 			    typename(type), command_buf.buf);
 	}
 
-	construct_path_with_fanout(sha1_to_hex(commit_sha1), old_fanout, path);
+	construct_path_with_fanout(sha1_to_hex(commit_sha1), *old_fanout, path);
 	if (tree_content_remove(&b->branch_tree, path, NULL))
 		b->num_notes--;
 
@@ -2640,7 +2659,7 @@ static void parse_new_commit(void)
 		else if (!prefixcmp(command_buf.buf, "C "))
 			file_change_cr(b, 0);
 		else if (!prefixcmp(command_buf.buf, "N "))
-			note_change_n(b, prev_fanout);
+			note_change_n(b, &prev_fanout);
 		else if (!strcmp("deleteall", command_buf.buf))
 			file_change_deleteall(b);
 		else if (!prefixcmp(command_buf.buf, "ls "))
@@ -2717,6 +2736,8 @@ static void parse_new_tag(void)
 	from = strchr(command_buf.buf, ' ') + 1;
 	s = lookup_branch(from);
 	if (s) {
+		if (is_null_sha1(s->sha1))
+			die("Can't tag an empty branch.");
 		hashcpy(sha1, s->sha1);
 		type = OBJ_COMMIT;
 	} else if (*from == ':') {

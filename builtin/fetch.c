@@ -13,6 +13,7 @@
 #include "sigchain.h"
 #include "transport.h"
 #include "submodule.h"
+#include "connected.h"
 
 static const char * const builtin_fetch_usage[] = {
 	"git fetch [<options>] [<repository> [<refspec>...]]",
@@ -354,6 +355,18 @@ static int update_local_ref(struct ref *ref,
 	}
 }
 
+static int iterate_ref_map(void *cb_data, unsigned char sha1[20])
+{
+	struct ref **rm = cb_data;
+	struct ref *ref = *rm;
+
+	if (!ref)
+		return -1; /* end of the list */
+	*rm = ref->next;
+	hashcpy(sha1, ref->old_sha1);
+	return 0;
+}
+
 static int store_updated_refs(const char *raw_url, const char *remote_name,
 		struct ref *ref_map)
 {
@@ -373,6 +386,13 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 		url = transport_anonymize_url(raw_url);
 	else
 		url = xstrdup("foreign");
+
+	rm = ref_map;
+	if (check_everything_connected(iterate_ref_map, 0, &rm)) {
+		rc = error(_("%s did not send all necessary objects\n"), url);
+		goto abort;
+	}
+
 	for (rm = ref_map; rm; rm = rm->next) {
 		struct ref *ref = NULL;
 
@@ -454,13 +474,16 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 				fprintf(stderr, " %s\n", note.buf);
 		}
 	}
-	free(url);
-	fclose(fp);
+
 	if (rc & STORE_REF_ERROR_DF_CONFLICT)
 		error(_("some local refs could not be updated; try running\n"
 		      " 'git remote prune %s' to remove any old, conflicting "
 		      "branches"), remote_name);
+
+ abort:
 	strbuf_release(&note);
+	free(url);
+	fclose(fp);
 	return rc;
 }
 
@@ -468,23 +491,10 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
  * We would want to bypass the object transfer altogether if
  * everything we are going to fetch already exists and is connected
  * locally.
- *
- * The refs we are going to fetch are in ref_map.  If running
- *
- *  $ git rev-list --objects --stdin --not --all
- *
- * (feeding all the refs in ref_map on its standard input)
- * does not error out, that means everything reachable from the
- * refs we are going to fetch exists and is connected to some of
- * our existing refs.
  */
 static int quickfetch(struct ref *ref_map)
 {
-	struct child_process revlist;
-	struct ref *ref;
-	int err;
-	const char *argv[] = {"rev-list",
-		"--quiet", "--objects", "--stdin", "--not", "--all", NULL};
+	struct ref *rm = ref_map;
 
 	/*
 	 * If we are deepening a shallow clone we already have these
@@ -495,47 +505,7 @@ static int quickfetch(struct ref *ref_map)
 	 */
 	if (depth)
 		return -1;
-
-	if (!ref_map)
-		return 0;
-
-	memset(&revlist, 0, sizeof(revlist));
-	revlist.argv = argv;
-	revlist.git_cmd = 1;
-	revlist.no_stdout = 1;
-	revlist.no_stderr = 1;
-	revlist.in = -1;
-
-	err = start_command(&revlist);
-	if (err) {
-		error(_("could not run rev-list"));
-		return err;
-	}
-
-	/*
-	 * If rev-list --stdin encounters an unknown commit, it terminates,
-	 * which will cause SIGPIPE in the write loop below.
-	 */
-	sigchain_push(SIGPIPE, SIG_IGN);
-
-	for (ref = ref_map; ref; ref = ref->next) {
-		if (write_in_full(revlist.in, sha1_to_hex(ref->old_sha1), 40) < 0 ||
-		    write_str_in_full(revlist.in, "\n") < 0) {
-			if (errno != EPIPE && errno != EINVAL)
-				error(_("failed write to rev-list: %s"), strerror(errno));
-			err = -1;
-			break;
-		}
-	}
-
-	if (close(revlist.in)) {
-		error(_("failed to close rev-list's stdin: %s"), strerror(errno));
-		err = -1;
-	}
-
-	sigchain_pop(SIGPIPE);
-
-	return finish_command(&revlist) || err;
+	return check_everything_connected(iterate_ref_map, 1, &rm);
 }
 
 static int fetch_refs(struct transport *transport, struct ref *ref_map)

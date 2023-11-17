@@ -103,7 +103,7 @@ static enum commit_whence whence;
 static int use_editor = 1, include_status = 1;
 static int show_ignored_in_status;
 static const char *only_include_assumed;
-static struct strbuf message;
+static struct strbuf message = STRBUF_INIT;
 
 static int null_termination;
 static enum {
@@ -138,7 +138,7 @@ static struct option builtin_commit_options[] = {
 	OPT_STRING('C', "reuse-message", &use_message, "commit", "reuse message from specified commit"),
 	OPT_STRING(0, "fixup", &fixup_message, "commit", "use autosquash formatted message to fixup specified commit"),
 	OPT_STRING(0, "squash", &squash_message, "commit", "use autosquash formatted message to squash specified commit"),
-	OPT_BOOLEAN(0, "reset-author", &renew_authorship, "the commit is authored by me now (used with -C-c/--amend)"),
+	OPT_BOOLEAN(0, "reset-author", &renew_authorship, "the commit is authored by me now (used with -C/-c/--amend)"),
 	OPT_BOOLEAN('s', "signoff", &signoff, "add Signed-off-by:"),
 	OPT_FILENAME('t', "template", &template_file, "use specified template file"),
 	OPT_BOOLEAN('e', "edit", &edit_flag, "force edit of commit"),
@@ -255,8 +255,9 @@ static int list_paths(struct string_list *list, const char *with_tree,
 	m = xcalloc(1, i);
 
 	if (with_tree) {
-		const char *max_prefix = pathspec_prefix(prefix, pattern);
-		overlay_tree_on_cache(with_tree, max_prefix);
+		char *max_prefix = common_prefix(pattern);
+		overlay_tree_on_cache(with_tree, max_prefix ? max_prefix : prefix);
+		free(max_prefix);
 	}
 
 	for (i = 0; i < active_nr; i++) {
@@ -393,6 +394,7 @@ static char *prepare_index(int argc, const char **argv, const char *prefix,
 		fd = hold_locked_index(&index_lock, 1);
 		add_files_to_cache(also ? prefix : NULL, pathspec, 0);
 		refresh_cache_or_die(refresh_flags);
+		update_main_cache_tree(1);
 		if (write_cache(fd, active_cache, active_nr) ||
 		    close_lock_file(&index_lock))
 			die(_("unable to write new_index file"));
@@ -413,6 +415,7 @@ static char *prepare_index(int argc, const char **argv, const char *prefix,
 		fd = hold_locked_index(&index_lock, 1);
 		refresh_cache_or_die(refresh_flags);
 		if (active_cache_changed) {
+			update_main_cache_tree(1);
 			if (write_cache(fd, active_cache, active_nr) ||
 			    commit_locked_index(&index_lock))
 				die(_("unable to write new_index file"));
@@ -861,10 +864,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	 */
 	discard_cache();
 	read_cache_from(index_file);
-	if (!active_cache_tree)
-		active_cache_tree = cache_tree();
-	if (cache_tree_update(active_cache_tree,
-			      active_cache, active_nr, 0, 0) < 0) {
+	if (update_main_cache_tree(0)) {
 		error(_("Error building trees"));
 		return 0;
 	}
@@ -1516,6 +1516,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 	}
 
 	unlink(git_path("CHERRY_PICK_HEAD"));
+	unlink(git_path("REVERT_HEAD"));
 	unlink(git_path("MERGE_HEAD"));
 	unlink(git_path("MERGE_MSG"));
 	unlink(git_path("MERGE_MODE"));

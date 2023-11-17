@@ -45,9 +45,10 @@ lines.  Variables may belong directly to a section or to a given subsection.
 You can have `[section]` if you have `[section "subsection"]`, but you
 don't need to.
 
-There is also a case insensitive alternative `[section.subsection]` syntax.
-In this syntax, subsection names follow the same restrictions as for section
-names.
+There is also a deprecated `[section.subsection]` syntax. With this
+syntax, the subsection name is converted to lower-case and is also
+compared case sensitively. These subsection names follow the same
+restrictions as section names.
 
 All the other lines (and the remainder of the line after the section
 header) are recognized as setting variables, in the form
@@ -114,35 +115,32 @@ in the appropriate manual page. You will find a description of non-core
 porcelain configuration variables in the respective porcelain documentation.
 
 advice.*::
-	When set to 'true', display the given optional help message.
-	When set to 'false', do not display. The configuration variables
-	are:
+	These variables control various optional help messages designed to
+	aid new users. All 'advice.*' variables default to 'true', and you
+	can tell Git that you do not need help by setting these to 'false':
 +
 --
 	pushNonFastForward::
 		Advice shown when linkgit:git-push[1] refuses
-		non-fast-forward refs. Default: true.
+		non-fast-forward refs.
 	statusHints::
 		Directions on how to stage/unstage/add shown in the
 		output of linkgit:git-status[1] and the template shown
-		when writing commit messages. Default: true.
+		when writing commit messages.
 	commitBeforeMerge::
 		Advice shown when linkgit:git-merge[1] refuses to
 		merge to avoid overwriting local changes.
-		Default: true.
 	resolveConflict::
 		Advices shown by various commands when conflicts
 		prevent the operation from being performed.
-		Default: true.
 	implicitIdentity::
 		Advice on how to set your identity configuration when
 		your information is guessed from the system username and
-		domain name. Default: true.
-
+		domain name.
 	detachedHead::
-		Advice shown when you used linkgit::git-checkout[1] to
+		Advice shown when you used linkgit:git-checkout[1] to
 		move to the detach HEAD state, to instruct how to create
-		a local branch after the fact.  Default: true.
+		a local branch after the fact.
 --
 
 core.fileMode::
@@ -472,6 +470,12 @@ core.editor::
 	messages by launching an editor uses the value of this
 	variable when it is set, and the environment variable
 	`GIT_EDITOR` is not set.  See linkgit:git-var[1].
+
+sequence.editor::
+	Text editor used by `git rebase -i` for editing the rebase insn file.
+	The value is meant to be interpreted by the shell when it is used.
+	It can be overridden by the `GIT_SEQUENCE_EDITOR` environment variable.
+	When not configured the default commit message editor is used instead.
 
 core.pager::
 	The command that git will use to paginate output.  Can
@@ -857,6 +861,13 @@ fetch.recurseSubmodules::
 	when its superproject retrieves a commit that updates the submodule's
 	reference.
 
+fetch.fsckObjects::
+	If it is set to true, git-fetch-pack will check all fetched
+	objects. It will abort in the case of a malformed object or a
+	broken link. The result of an abort are only dangling objects.
+	Defaults to false. If not set, the value of `transfer.fsckObjects`
+	is used instead.
+
 fetch.unpackLimit::
 	If the number of objects fetched over the git native
 	transfer is below this
@@ -1063,6 +1074,23 @@ All gitcvs variables except for 'gitcvs.usecrlfattr' and
 'gitcvs.<access_method>.<varname>' (where 'access_method'
 is one of "ext" and "pserver") to make them apply only for the given
 access method.
+
+gitweb.category::
+gitweb.description::
+gitweb.owner::
+gitweb.url::
+	See linkgit:gitweb[1] for description.
+
+gitweb.avatar::
+gitweb.blame::
+gitweb.grep::
+gitweb.highlight::
+gitweb.patches::
+gitweb.pickaxe::
+gitweb.remote_heads::
+gitweb.showsizes::
+gitweb.snapshot::
+	See linkgit:gitweb.conf[5] for description.
 
 grep.lineNumber::
 	If set to true, enable '-n' option by default.
@@ -1596,7 +1624,8 @@ receive.fsckObjects::
 	If it is set to true, git-receive-pack will check all received
 	objects. It will abort in the case of a malformed object or a
 	broken link. The result of an abort are only dangling objects.
-	Defaults to false.
+	Defaults to false. If not set, the value of `transfer.fsckObjects`
+	is used instead.
 
 receive.unpackLimit::
 	If the number of objects received in a push is below this
@@ -1831,6 +1860,11 @@ tar.umask::
 	world write bit.  The special value "user" indicates that the
 	archiving user's umask will be used instead.  See umask(2) and
 	linkgit:git-archive[1].
+
+transfer.fsckObjects::
+	When `fetch.fsckObjects` or `receive.fsckObjects` are
+	not set, the value of this variable is used instead.
+	Defaults to false.
 
 transfer.unpackLimit::
 	When `fetch.unpackLimit` or `receive.unpackLimit` are
