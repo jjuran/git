@@ -321,6 +321,10 @@ our %feature = (
 	# Enable text search, which will list the commits which match author,
 	# committer or commit text to a given string.  Enabled by default.
 	# Project specific override is not supported.
+	#
+	# Note that this controls all search features, which means that if
+	# it is disabled, then 'grep' and 'pickaxe' search would also be
+	# disabled.
 	'search' => {
 		'override' => 0,
 		'default' => [1]},
@@ -661,13 +665,25 @@ sub read_config_file {
 	return;
 }
 
-our ($GITWEB_CONFIG, $GITWEB_CONFIG_SYSTEM);
+our ($GITWEB_CONFIG, $GITWEB_CONFIG_SYSTEM, $GITWEB_CONFIG_COMMON);
 sub evaluate_gitweb_config {
 	our $GITWEB_CONFIG = $ENV{'GITWEB_CONFIG'} || "++GITWEB_CONFIG++";
 	our $GITWEB_CONFIG_SYSTEM = $ENV{'GITWEB_CONFIG_SYSTEM'} || "++GITWEB_CONFIG_SYSTEM++";
+	our $GITWEB_CONFIG_COMMON = $ENV{'GITWEB_CONFIG_COMMON'} || "++GITWEB_CONFIG_COMMON++";
 
-	# use first config file that exists
-	read_config_file($GITWEB_CONFIG) or
+	# Protect agains duplications of file names, to not read config twice.
+	# Only one of $GITWEB_CONFIG and $GITWEB_CONFIG_SYSTEM is used, so
+	# there possibility of duplication of filename there doesn't matter.
+	$GITWEB_CONFIG = ""        if ($GITWEB_CONFIG eq $GITWEB_CONFIG_COMMON);
+	$GITWEB_CONFIG_SYSTEM = "" if ($GITWEB_CONFIG_SYSTEM eq $GITWEB_CONFIG_COMMON);
+
+	# Common system-wide settings for convenience.
+	# Those settings can be ovverriden by GITWEB_CONFIG or GITWEB_CONFIG_SYSTEM.
+	read_config_file($GITWEB_CONFIG_COMMON);
+
+	# Use first config file that exists.  This means use the per-instance
+	# GITWEB_CONFIG if exists, otherwise use GITWEB_SYSTEM_CONFIG.
+	read_config_file($GITWEB_CONFIG) and return;
 	read_config_file($GITWEB_CONFIG_SYSTEM);
 }
 
@@ -1498,6 +1514,17 @@ sub esc_path {
 		$str =~ s/ /&nbsp;/g;
 	}
 	$str =~ s|([[:cntrl:]])|quot_cec($1)|eg;
+	return $str;
+}
+
+# Sanitize for use in XHTML + application/xml+xhtm (valid XML 1.0)
+sub sanitize {
+	my $str = shift;
+
+	return undef unless defined $str;
+
+	$str = to_utf8($str);
+	$str =~ s|([[:cntrl:]])|($1 =~ /[\t\n\r]/ ? $1 : quot_cec($1))|eg;
 	return $str;
 }
 
@@ -2510,6 +2537,13 @@ sub git_get_project_config {
 
 	# key sanity check
 	return unless ($key);
+	# only subsection, if exists, is case sensitive,
+	# and not lowercased by 'git config -z -l'
+	if (my ($hi, $mi, $lo) = ($key =~ /^([^.]*)\.(.*)\.([^.]*)$/)) {
+		$key = join(".", lc($hi), $mi, lc($lo));
+	} else {
+		$key = lc($key);
+	}
 	$key =~ s/^gitweb\.//;
 	return if ($key =~ m/\W/);
 
@@ -2852,7 +2886,7 @@ sub filter_forks_from_projects_list {
 		$path =~ s/\.git$//;      # forks of 'repo.git' are in 'repo/' directory
 		next if ($path =~ m!/$!); # skip non-bare repositories, e.g. 'repo/.git'
 		next unless ($path);      # skip '.git' repository: tests, git-instaweb
-		next unless (-d $path);   # containing directory exists
+		next unless (-d "$projectroot/$path"); # containing directory exists
 		$pr->{'forks'} = [];      # there can be 0 or more forks of project
 
 		# add to trie
@@ -3562,12 +3596,9 @@ sub mimetype_guess_file {
 	open(my $mh, '<', $mimemap) or return undef;
 	while (<$mh>) {
 		next if m/^#/; # skip comments
-		my ($mimetype, $exts) = split(/\t+/);
-		if (defined $exts) {
-			my @exts = split(/\s+/, $exts);
-			foreach my $ext (@exts) {
-				$mimemap{$ext} = $mimetype;
-			}
+		my ($mimetype, @exts) = split(/\s+/);
+		foreach my $ext (@exts) {
+			$mimemap{$ext} = $mimetype;
 		}
 	}
 	close($mh);
@@ -3683,6 +3714,20 @@ sub get_page_title {
 	return $title;
 }
 
+sub get_content_type_html {
+	# require explicit support from the UA if we are to send the page as
+	# 'application/xhtml+xml', otherwise send it as plain old 'text/html'.
+	# we have to do this because MSIE sometimes globs '*/*', pretending to
+	# support xhtml+xml but choking when it gets what it asked for.
+	if (defined $cgi->http('HTTP_ACCEPT') &&
+	    $cgi->http('HTTP_ACCEPT') =~ m/(,|;|\s|^)application\/xhtml\+xml(,|;|\s|$)/ &&
+	    $cgi->Accept('application/xhtml+xml') != 0) {
+		return 'application/xhtml+xml';
+	} else {
+		return 'text/html';
+	}
+}
+
 sub print_feed_meta {
 	if (defined $project) {
 		my %href_params = get_feed_info();
@@ -3728,24 +3773,90 @@ sub print_feed_meta {
 	}
 }
 
+sub print_header_links {
+	my $status = shift;
+
+	# print out each stylesheet that exist, providing backwards capability
+	# for those people who defined $stylesheet in a config file
+	if (defined $stylesheet) {
+		print '<link rel="stylesheet" type="text/css" href="'.esc_url($stylesheet).'"/>'."\n";
+	} else {
+		foreach my $stylesheet (@stylesheets) {
+			next unless $stylesheet;
+			print '<link rel="stylesheet" type="text/css" href="'.esc_url($stylesheet).'"/>'."\n";
+		}
+	}
+	print_feed_meta()
+		if ($status eq '200 OK');
+	if (defined $favicon) {
+		print qq(<link rel="shortcut icon" href=").esc_url($favicon).qq(" type="image/png" />\n);
+	}
+}
+
+sub print_nav_breadcrumbs {
+	my %opts = @_;
+
+	print $cgi->a({-href => esc_url($home_link)}, $home_link_str) . " / ";
+	if (defined $project) {
+		print $cgi->a({-href => href(action=>"summary")}, esc_html($project));
+		if (defined $action) {
+			my $action_print = $action ;
+			if (defined $opts{-action_extra}) {
+				$action_print = $cgi->a({-href => href(action=>$action)},
+					$action);
+			}
+			print " / $action_print";
+		}
+		if (defined $opts{-action_extra}) {
+			print " / $opts{-action_extra}";
+		}
+		print "\n";
+	}
+}
+
+sub print_search_form {
+	if (!defined $searchtext) {
+		$searchtext = "";
+	}
+	my $search_hash;
+	if (defined $hash_base) {
+		$search_hash = $hash_base;
+	} elsif (defined $hash) {
+		$search_hash = $hash;
+	} else {
+		$search_hash = "HEAD";
+	}
+	my $action = $my_uri;
+	my $use_pathinfo = gitweb_check_feature('pathinfo');
+	if ($use_pathinfo) {
+		$action .= "/".esc_url($project);
+	}
+	print $cgi->startform(-method => "get", -action => $action) .
+	      "<div class=\"search\">\n" .
+	      (!$use_pathinfo &&
+	      $cgi->input({-name=>"p", -value=>$project, -type=>"hidden"}) . "\n") .
+	      $cgi->input({-name=>"a", -value=>"search", -type=>"hidden"}) . "\n" .
+	      $cgi->input({-name=>"h", -value=>$search_hash, -type=>"hidden"}) . "\n" .
+	      $cgi->popup_menu(-name => 'st', -default => 'commit',
+	                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe']) .
+	      $cgi->sup($cgi->a({-href => href(action=>"search_help")}, "?")) .
+	      " search:\n",
+	      $cgi->textfield(-name => "s", -value => $searchtext) . "\n" .
+	      "<span title=\"Extended regular expression\">" .
+	      $cgi->checkbox(-name => 'sr', -value => 1, -label => 're',
+	                     -checked => $search_use_regexp) .
+	      "</span>" .
+	      "</div>" .
+	      $cgi->end_form() . "\n";
+}
+
 sub git_header_html {
 	my $status = shift || "200 OK";
 	my $expires = shift;
 	my %opts = @_;
 
 	my $title = get_page_title();
-	my $content_type;
-	# require explicit support from the UA if we are to send the page as
-	# 'application/xhtml+xml', otherwise send it as plain old 'text/html'.
-	# we have to do this because MSIE sometimes globs '*/*', pretending to
-	# support xhtml+xml but choking when it gets what it asked for.
-	if (defined $cgi->http('HTTP_ACCEPT') &&
-	    $cgi->http('HTTP_ACCEPT') =~ m/(,|;|\s|^)application\/xhtml\+xml(,|;|\s|$)/ &&
-	    $cgi->Accept('application/xhtml+xml') != 0) {
-		$content_type = 'application/xhtml+xml';
-	} else {
-		$content_type = 'text/html';
-	}
+	my $content_type = get_content_type_html();
 	print $cgi->header(-type=>$content_type, -charset => 'utf-8',
 	                   -status=> $status, -expires => $expires)
 		unless ($opts{'-no_http_header'});
@@ -3767,22 +3878,7 @@ EOF
 	if ($ENV{'PATH_INFO'}) {
 		print "<base href=\"".esc_url($base_url)."\" />\n";
 	}
-	# print out each stylesheet that exist, providing backwards capability
-	# for those people who defined $stylesheet in a config file
-	if (defined $stylesheet) {
-		print '<link rel="stylesheet" type="text/css" href="'.esc_url($stylesheet).'"/>'."\n";
-	} else {
-		foreach my $stylesheet (@stylesheets) {
-			next unless $stylesheet;
-			print '<link rel="stylesheet" type="text/css" href="'.esc_url($stylesheet).'"/>'."\n";
-		}
-	}
-	print_feed_meta()
-		if ($status eq '200 OK');
-	if (defined $favicon) {
-		print qq(<link rel="shortcut icon" href=").esc_url($favicon).qq(" type="image/png" />\n);
-	}
-
+	print_header_links($status);
 	print "</head>\n" .
 	      "<body>\n";
 
@@ -3799,59 +3895,12 @@ EOF
 		                         -alt => "git",
 		                         -class => "logo"}));
 	}
-	print $cgi->a({-href => esc_url($home_link)}, $home_link_str) . " / ";
-	if (defined $project) {
-		print $cgi->a({-href => href(action=>"summary")}, esc_html($project));
-		if (defined $action) {
-			my $action_print = $action ;
-			if (defined $opts{-action_extra}) {
-				$action_print = $cgi->a({-href => href(action=>$action)},
-					$action);
-			}
-			print " / $action_print";
-		}
-		if (defined $opts{-action_extra}) {
-			print " / $opts{-action_extra}";
-		}
-		print "\n";
-	}
+	print_nav_breadcrumbs(%opts);
 	print "</div>\n";
 
 	my $have_search = gitweb_check_feature('search');
 	if (defined $project && $have_search) {
-		if (!defined $searchtext) {
-			$searchtext = "";
-		}
-		my $search_hash;
-		if (defined $hash_base) {
-			$search_hash = $hash_base;
-		} elsif (defined $hash) {
-			$search_hash = $hash;
-		} else {
-			$search_hash = "HEAD";
-		}
-		my $action = $my_uri;
-		my $use_pathinfo = gitweb_check_feature('pathinfo');
-		if ($use_pathinfo) {
-			$action .= "/".esc_url($project);
-		}
-		print $cgi->startform(-method => "get", -action => $action) .
-		      "<div class=\"search\">\n" .
-		      (!$use_pathinfo &&
-		      $cgi->input({-name=>"p", -value=>$project, -type=>"hidden"}) . "\n") .
-		      $cgi->input({-name=>"a", -value=>"search", -type=>"hidden"}) . "\n" .
-		      $cgi->input({-name=>"h", -value=>$search_hash, -type=>"hidden"}) . "\n" .
-		      $cgi->popup_menu(-name => 'st', -default => 'commit',
-		                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe']) .
-		      $cgi->sup($cgi->a({-href => href(action=>"search_help")}, "?")) .
-		      " search:\n",
-		      $cgi->textfield(-name => "s", -value => $searchtext) . "\n" .
-		      "<span title=\"Extended regular expression\">" .
-		      $cgi->checkbox(-name => 'sr', -value => 1, -label => 're',
-		                     -checked => $search_use_regexp) .
-		      "</span>" .
-		      "</div>" .
-		      $cgi->end_form() . "\n";
+		print_search_form();
 	}
 }
 
@@ -5506,6 +5555,216 @@ sub git_remotes_body {
 	}
 }
 
+sub git_search_message {
+	my %co = @_;
+
+	my $greptype;
+	if ($searchtype eq 'commit') {
+		$greptype = "--grep=";
+	} elsif ($searchtype eq 'author') {
+		$greptype = "--author=";
+	} elsif ($searchtype eq 'committer') {
+		$greptype = "--committer=";
+	}
+	$greptype .= $searchtext;
+	my @commitlist = parse_commits($hash, 101, (100 * $page), undef,
+	                               $greptype, '--regexp-ignore-case',
+	                               $search_use_regexp ? '--extended-regexp' : '--fixed-strings');
+
+	my $paging_nav = '';
+	if ($page > 0) {
+		$paging_nav .=
+			$cgi->a({-href => href(-replay=>1, page=>undef)},
+			        "first") .
+			" &sdot; " .
+			$cgi->a({-href => href(-replay=>1, page=>$page-1),
+			         -accesskey => "p", -title => "Alt-p"}, "prev");
+	} else {
+		$paging_nav .= "first &sdot; prev";
+	}
+	my $next_link = '';
+	if ($#commitlist >= 100) {
+		$next_link =
+			$cgi->a({-href => href(-replay=>1, page=>$page+1),
+			         -accesskey => "n", -title => "Alt-n"}, "next");
+		$paging_nav .= " &sdot; $next_link";
+	} else {
+		$paging_nav .= " &sdot; next";
+	}
+
+	git_header_html();
+
+	git_print_page_nav('','', $hash,$co{'tree'},$hash, $paging_nav);
+	git_print_header_div('commit', esc_html($co{'title'}), $hash);
+	if ($page == 0 && !@commitlist) {
+		print "<p>No match.</p>\n";
+	} else {
+		git_search_grep_body(\@commitlist, 0, 99, $next_link);
+	}
+
+	git_footer_html();
+}
+
+sub git_search_changes {
+	my %co = @_;
+
+	local $/ = "\n";
+	open my $fd, '-|', git_cmd(), '--no-pager', 'log', @diff_opts,
+		'--pretty=format:%H', '--no-abbrev', '--raw', "-S$searchtext",
+		($search_use_regexp ? '--pickaxe-regex' : ())
+			or die_error(500, "Open git-log failed");
+
+	git_header_html();
+
+	git_print_page_nav('','', $hash,$co{'tree'},$hash);
+	git_print_header_div('commit', esc_html($co{'title'}), $hash);
+
+	print "<table class=\"pickaxe search\">\n";
+	my $alternate = 1;
+	undef %co;
+	my @files;
+	while (my $line = <$fd>) {
+		chomp $line;
+		next unless $line;
+
+		my %set = parse_difftree_raw_line($line);
+		if (defined $set{'commit'}) {
+			# finish previous commit
+			if (%co) {
+				print "</td>\n" .
+				      "<td class=\"link\">" .
+				      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'})},
+				              "commit") .
+				      " | " .
+				      $cgi->a({-href => href(action=>"tree", hash=>$co{'tree'},
+				                             hash_base=>$co{'id'})},
+				              "tree") .
+				      "</td>\n" .
+				      "</tr>\n";
+			}
+
+			if ($alternate) {
+				print "<tr class=\"dark\">\n";
+			} else {
+				print "<tr class=\"light\">\n";
+			}
+			$alternate ^= 1;
+			%co = parse_commit($set{'commit'});
+			my $author = chop_and_escape_str($co{'author_name'}, 15, 5);
+			print "<td title=\"$co{'age_string_age'}\"><i>$co{'age_string_date'}</i></td>\n" .
+			      "<td><i>$author</i></td>\n" .
+			      "<td>" .
+			      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'}),
+			              -class => "list subject"},
+			              chop_and_escape_str($co{'title'}, 50) . "<br/>");
+		} elsif (defined $set{'to_id'}) {
+			next if ($set{'to_id'} =~ m/^0{40}$/);
+
+			print $cgi->a({-href => href(action=>"blob", hash_base=>$co{'id'},
+			                             hash=>$set{'to_id'}, file_name=>$set{'to_file'}),
+			              -class => "list"},
+			              "<span class=\"match\">" . esc_path($set{'file'}) . "</span>") .
+			      "<br/>\n";
+		}
+	}
+	close $fd;
+
+	# finish last commit (warning: repetition!)
+	if (%co) {
+		print "</td>\n" .
+		      "<td class=\"link\">" .
+		      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'})},
+		              "commit") .
+		      " | " .
+		      $cgi->a({-href => href(action=>"tree", hash=>$co{'tree'},
+		                             hash_base=>$co{'id'})},
+		              "tree") .
+		      "</td>\n" .
+		      "</tr>\n";
+	}
+
+	print "</table>\n";
+
+	git_footer_html();
+}
+
+sub git_search_files {
+	my %co = @_;
+
+	local $/ = "\n";
+	open my $fd, "-|", git_cmd(), 'grep', '-n',
+		$search_use_regexp ? ('-E', '-i') : '-F',
+		$searchtext, $co{'tree'}
+			or die_error(500, "Open git-grep failed");
+
+	git_header_html();
+
+	git_print_page_nav('','', $hash,$co{'tree'},$hash);
+	git_print_header_div('commit', esc_html($co{'title'}), $hash);
+
+	print "<table class=\"grep_search\">\n";
+	my $alternate = 1;
+	my $matches = 0;
+	my $lastfile = '';
+	while (my $line = <$fd>) {
+		chomp $line;
+		my ($file, $lno, $ltext, $binary);
+		last if ($matches++ > 1000);
+		if ($line =~ /^Binary file (.+) matches$/) {
+			$file = $1;
+			$binary = 1;
+		} else {
+			(undef, $file, $lno, $ltext) = split(/:/, $line, 4);
+		}
+		if ($file ne $lastfile) {
+			$lastfile and print "</td></tr>\n";
+			if ($alternate++) {
+				print "<tr class=\"dark\">\n";
+			} else {
+				print "<tr class=\"light\">\n";
+			}
+			print "<td class=\"list\">".
+				$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
+						       file_name=>"$file"),
+					-class => "list"}, esc_path($file));
+			print "</td><td>\n";
+			$lastfile = $file;
+		}
+		if ($binary) {
+			print "<div class=\"binary\">Binary file</div>\n";
+		} else {
+			$ltext = untabify($ltext);
+			if ($ltext =~ m/^(.*)($search_regexp)(.*)$/i) {
+				$ltext = esc_html($1, -nbsp=>1);
+				$ltext .= '<span class="match">';
+				$ltext .= esc_html($2, -nbsp=>1);
+				$ltext .= '</span>';
+				$ltext .= esc_html($3, -nbsp=>1);
+			} else {
+				$ltext = esc_html($ltext, -nbsp=>1);
+			}
+			print "<div class=\"pre\">" .
+				$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
+						       file_name=>"$file").'#l'.$lno,
+					-class => "linenr"}, sprintf('%4i', $lno))
+				. ' ' .  $ltext . "</div>\n";
+		}
+	}
+	if ($lastfile) {
+		print "</td></tr>\n";
+		if ($matches > 1000) {
+			print "<div class=\"diff nodifferences\">Too many matches, listing trimmed</div>\n";
+		}
+	} else {
+		print "<div class=\"diff nodifferences\">No matches found</div>\n";
+	}
+	close $fd;
+
+	print "</table>\n";
+
+	git_footer_html();
+}
+
 sub git_search_grep_body {
 	my ($commitlist, $from, $to, $extra) = @_;
 	$from = 0 unless defined $from;
@@ -6236,7 +6495,8 @@ sub git_blob {
 			$nr++;
 			$line = untabify($line);
 			printf qq!<div class="pre"><a id="l%i" href="%s#l%i" class="linenr">%4i</a> %s</div>\n!,
-			       $nr, esc_attr(href(-replay => 1)), $nr, $nr, $syntax ? $line : esc_html($line, -nbsp=>1);
+			       $nr, esc_attr(href(-replay => 1)), $nr, $nr,
+			       $syntax ? sanitize($line) : esc_html($line, -nbsp=>1);
 		}
 	}
 	close $fd
@@ -7061,7 +7321,23 @@ sub git_history {
 }
 
 sub git_search {
-	gitweb_check_feature('search') or die_error(403, "Search is disabled");
+	$searchtype ||= 'commit';
+
+	# check if appropriate features are enabled
+	gitweb_check_feature('search')
+		or die_error(403, "Search is disabled");
+	if ($searchtype eq 'pickaxe') {
+		# pickaxe may take all resources of your box and run for several minutes
+		# with every query - so decide by yourself how public you make this feature
+		gitweb_check_feature('pickaxe')
+			or die_error(403, "Pickaxe search is disabled");
+	}
+	if ($searchtype eq 'grep') {
+		# grep search might be potentially CPU-intensive, too
+		gitweb_check_feature('grep')
+			or die_error(403, "Grep search is disabled");
+	}
+
 	if (!defined $searchtext) {
 		die_error(400, "Text field is empty");
 	}
@@ -7076,205 +7352,17 @@ sub git_search {
 		$page = 0;
 	}
 
-	$searchtype ||= 'commit';
-	if ($searchtype eq 'pickaxe') {
-		# pickaxe may take all resources of your box and run for several minutes
-		# with every query - so decide by yourself how public you make this feature
-		gitweb_check_feature('pickaxe')
-		    or die_error(403, "Pickaxe is disabled");
+	if ($searchtype eq 'commit' ||
+	    $searchtype eq 'author' ||
+	    $searchtype eq 'committer') {
+		git_search_message(%co);
+	} elsif ($searchtype eq 'pickaxe') {
+		git_search_changes(%co);
+	} elsif ($searchtype eq 'grep') {
+		git_search_files(%co);
+	} else {
+		die_error(400, "Unknown search type");
 	}
-	if ($searchtype eq 'grep') {
-		gitweb_check_feature('grep')
-		    or die_error(403, "Grep is disabled");
-	}
-
-	git_header_html();
-
-	if ($searchtype eq 'commit' or $searchtype eq 'author' or $searchtype eq 'committer') {
-		my $greptype;
-		if ($searchtype eq 'commit') {
-			$greptype = "--grep=";
-		} elsif ($searchtype eq 'author') {
-			$greptype = "--author=";
-		} elsif ($searchtype eq 'committer') {
-			$greptype = "--committer=";
-		}
-		$greptype .= $searchtext;
-		my @commitlist = parse_commits($hash, 101, (100 * $page), undef,
-		                               $greptype, '--regexp-ignore-case',
-		                               $search_use_regexp ? '--extended-regexp' : '--fixed-strings');
-
-		my $paging_nav = '';
-		if ($page > 0) {
-			$paging_nav .=
-				$cgi->a({-href => href(action=>"search", hash=>$hash,
-				                       searchtext=>$searchtext,
-				                       searchtype=>$searchtype)},
-				        "first");
-			$paging_nav .= " &sdot; " .
-				$cgi->a({-href => href(-replay=>1, page=>$page-1),
-				         -accesskey => "p", -title => "Alt-p"}, "prev");
-		} else {
-			$paging_nav .= "first";
-			$paging_nav .= " &sdot; prev";
-		}
-		my $next_link = '';
-		if ($#commitlist >= 100) {
-			$next_link =
-				$cgi->a({-href => href(-replay=>1, page=>$page+1),
-				         -accesskey => "n", -title => "Alt-n"}, "next");
-			$paging_nav .= " &sdot; $next_link";
-		} else {
-			$paging_nav .= " &sdot; next";
-		}
-
-		git_print_page_nav('','', $hash,$co{'tree'},$hash, $paging_nav);
-		git_print_header_div('commit', esc_html($co{'title'}), $hash);
-		if ($page == 0 && !@commitlist) {
-			print "<p>No match.</p>\n";
-		} else {
-			git_search_grep_body(\@commitlist, 0, 99, $next_link);
-		}
-	}
-
-	if ($searchtype eq 'pickaxe') {
-		git_print_page_nav('','', $hash,$co{'tree'},$hash);
-		git_print_header_div('commit', esc_html($co{'title'}), $hash);
-
-		print "<table class=\"pickaxe search\">\n";
-		my $alternate = 1;
-		local $/ = "\n";
-		open my $fd, '-|', git_cmd(), '--no-pager', 'log', @diff_opts,
-			'--pretty=format:%H', '--no-abbrev', '--raw', "-S$searchtext",
-			($search_use_regexp ? '--pickaxe-regex' : ());
-		undef %co;
-		my @files;
-		while (my $line = <$fd>) {
-			chomp $line;
-			next unless $line;
-
-			my %set = parse_difftree_raw_line($line);
-			if (defined $set{'commit'}) {
-				# finish previous commit
-				if (%co) {
-					print "</td>\n" .
-					      "<td class=\"link\">" .
-					      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'})}, "commit") .
-					      " | " .
-					      $cgi->a({-href => href(action=>"tree", hash=>$co{'tree'}, hash_base=>$co{'id'})}, "tree");
-					print "</td>\n" .
-					      "</tr>\n";
-				}
-
-				if ($alternate) {
-					print "<tr class=\"dark\">\n";
-				} else {
-					print "<tr class=\"light\">\n";
-				}
-				$alternate ^= 1;
-				%co = parse_commit($set{'commit'});
-				my $author = chop_and_escape_str($co{'author_name'}, 15, 5);
-				print "<td title=\"$co{'age_string_age'}\"><i>$co{'age_string_date'}</i></td>\n" .
-				      "<td><i>$author</i></td>\n" .
-				      "<td>" .
-				      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'}),
-				              -class => "list subject"},
-				              chop_and_escape_str($co{'title'}, 50) . "<br/>");
-			} elsif (defined $set{'to_id'}) {
-				next if ($set{'to_id'} =~ m/^0{40}$/);
-
-				print $cgi->a({-href => href(action=>"blob", hash_base=>$co{'id'},
-				                             hash=>$set{'to_id'}, file_name=>$set{'to_file'}),
-				              -class => "list"},
-				              "<span class=\"match\">" . esc_path($set{'file'}) . "</span>") .
-				      "<br/>\n";
-			}
-		}
-		close $fd;
-
-		# finish last commit (warning: repetition!)
-		if (%co) {
-			print "</td>\n" .
-			      "<td class=\"link\">" .
-			      $cgi->a({-href => href(action=>"commit", hash=>$co{'id'})}, "commit") .
-			      " | " .
-			      $cgi->a({-href => href(action=>"tree", hash=>$co{'tree'}, hash_base=>$co{'id'})}, "tree");
-			print "</td>\n" .
-			      "</tr>\n";
-		}
-
-		print "</table>\n";
-	}
-
-	if ($searchtype eq 'grep') {
-		git_print_page_nav('','', $hash,$co{'tree'},$hash);
-		git_print_header_div('commit', esc_html($co{'title'}), $hash);
-
-		print "<table class=\"grep_search\">\n";
-		my $alternate = 1;
-		my $matches = 0;
-		local $/ = "\n";
-		open my $fd, "-|", git_cmd(), 'grep', '-n',
-			$search_use_regexp ? ('-E', '-i') : '-F',
-			$searchtext, $co{'tree'};
-		my $lastfile = '';
-		while (my $line = <$fd>) {
-			chomp $line;
-			my ($file, $lno, $ltext, $binary);
-			last if ($matches++ > 1000);
-			if ($line =~ /^Binary file (.+) matches$/) {
-				$file = $1;
-				$binary = 1;
-			} else {
-				(undef, $file, $lno, $ltext) = split(/:/, $line, 4);
-			}
-			if ($file ne $lastfile) {
-				$lastfile and print "</td></tr>\n";
-				if ($alternate++) {
-					print "<tr class=\"dark\">\n";
-				} else {
-					print "<tr class=\"light\">\n";
-				}
-				print "<td class=\"list\">".
-					$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
-							       file_name=>"$file"),
-						-class => "list"}, esc_path($file));
-				print "</td><td>\n";
-				$lastfile = $file;
-			}
-			if ($binary) {
-				print "<div class=\"binary\">Binary file</div>\n";
-			} else {
-				$ltext = untabify($ltext);
-				if ($ltext =~ m/^(.*)($search_regexp)(.*)$/i) {
-					$ltext = esc_html($1, -nbsp=>1);
-					$ltext .= '<span class="match">';
-					$ltext .= esc_html($2, -nbsp=>1);
-					$ltext .= '</span>';
-					$ltext .= esc_html($3, -nbsp=>1);
-				} else {
-					$ltext = esc_html($ltext, -nbsp=>1);
-				}
-				print "<div class=\"pre\">" .
-					$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
-							       file_name=>"$file").'#l'.$lno,
-						-class => "linenr"}, sprintf('%4i', $lno))
-					. ' ' .  $ltext . "</div>\n";
-			}
-		}
-		if ($lastfile) {
-			print "</td></tr>\n";
-			if ($matches > 1000) {
-				print "<div class=\"diff nodifferences\">Too many matches, listing trimmed</div>\n";
-			}
-		} else {
-			print "<div class=\"diff nodifferences\">No matches found</div>\n";
-		}
-		close $fd;
-
-		print "</table>\n";
-	}
-	git_footer_html();
 }
 
 sub git_search_help {

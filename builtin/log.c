@@ -367,9 +367,6 @@ int cmd_whatchanged(int argc, const char **argv, const char *prefix)
 
 	git_config(git_log_config, NULL);
 
-	if (diff_use_color_default == -1)
-		diff_use_color_default = git_use_color_default;
-
 	init_revisions(&rev, prefix);
 	rev.diff = 1;
 	rev.simplify_history = 0;
@@ -454,9 +451,6 @@ int cmd_show(int argc, const char **argv, const char *prefix)
 
 	git_config(git_log_config, NULL);
 
-	if (diff_use_color_default == -1)
-		diff_use_color_default = git_use_color_default;
-
 	init_pathspec(&match_all, NULL);
 	init_revisions(&rev, prefix);
 	rev.diff = 1;
@@ -532,9 +526,6 @@ int cmd_log_reflog(int argc, const char **argv, const char *prefix)
 
 	git_config(git_log_config, NULL);
 
-	if (diff_use_color_default == -1)
-		diff_use_color_default = git_use_color_default;
-
 	init_revisions(&rev, prefix);
 	init_reflog_walk(&rev.reflog_info);
 	rev.verbose_header = 1;
@@ -556,9 +547,6 @@ int cmd_log(int argc, const char **argv, const char *prefix)
 	struct setup_revision_opt opt;
 
 	git_config(git_log_config, NULL);
-
-	if (diff_use_color_default == -1)
-		diff_use_color_default = git_use_color_default;
 
 	init_revisions(&rev, prefix);
 	rev.always_show_header = 1;
@@ -628,7 +616,8 @@ static int git_format_config(const char *var, const char *value, void *cb)
 		string_list_append(&extra_cc, value);
 		return 0;
 	}
-	if (!strcmp(var, "diff.color") || !strcmp(var, "color.diff")) {
+	if (!strcmp(var, "diff.color") || !strcmp(var, "color.diff") ||
+	    !strcmp(var, "color.ui")) {
 		return 0;
 	}
 	if (!strcmp(var, "format.numbered")) {

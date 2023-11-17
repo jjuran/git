@@ -38,6 +38,13 @@ struct commit *lookup_commit_reference_gently(const unsigned char *sha1,
 					      int quiet);
 struct commit *lookup_commit_reference_by_name(const char *name);
 
+/*
+ * Look up object named by "sha1", dereference tag as necessary,
+ * get a commit and return it. If "sha1" does not dereference to
+ * a commit, use ref_name to report an error and die.
+ */
+struct commit *lookup_commit_or_die(const unsigned char *sha1, const char *ref_name);
+
 int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long size);
 int parse_commit(struct commit *item);
 
@@ -142,6 +149,7 @@ struct commit_graft {
 	int nr_parent; /* < 0 if shallow commit */
 	unsigned char parent[FLEX_ARRAY][20]; /* more */
 };
+typedef int (*each_commit_graft_fn)(const struct commit_graft *, void *);
 
 struct commit_graft *read_graft_line(char *buf, int len);
 int register_commit_graft(struct commit_graft *, int);
@@ -153,7 +161,7 @@ extern struct commit_list *get_octopus_merge_bases(struct commit_list *in);
 
 extern int register_shallow(const unsigned char *sha1);
 extern int unregister_shallow(const unsigned char *sha1);
-extern int write_shallow_commits(struct strbuf *out, int use_pack_protocol);
+extern int for_each_commit_graft(each_commit_graft_fn, void *);
 extern int is_repository_shallow(void);
 extern struct commit_list *get_shallow_commits(struct object_array *heads,
 		int depth, int shallow_flag, int not_shallow_flag);

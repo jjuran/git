@@ -71,7 +71,7 @@ static int parse_branch_color_slot(const char *var, int ofs)
 static int git_branch_config(const char *var, const char *value, void *cb)
 {
 	if (!strcmp(var, "color.branch")) {
-		branch_use_color = git_config_colorbool(var, value, -1);
+		branch_use_color = git_config_colorbool(var, value);
 		return 0;
 	}
 	if (!prefixcmp(var, "color.branch.")) {
@@ -88,7 +88,7 @@ static int git_branch_config(const char *var, const char *value, void *cb)
 
 static const char *branch_get_color(enum color_branch ix)
 {
-	if (branch_use_color > 0)
+	if (want_color(branch_use_color))
 		return branch_colors[ix];
 	return "";
 }
@@ -566,11 +566,7 @@ static void rename_branch(const char *oldname, const char *newname, int force)
 			die(_("Invalid branch name: '%s'"), oldname);
 	}
 
-	if (strbuf_check_branch_ref(&newref, newname))
-		die(_("Invalid branch name: '%s'"), newname);
-
-	if (resolve_ref(newref.buf, sha1, 1, NULL) && !force)
-		die(_("A branch named '%s' already exists."), newref.buf + 11);
+	validate_new_branchname(newname, &newref, force, 0);
 
 	strbuf_addf(&logmsg, "Branch: renamed %s to %s",
 		 oldref.buf, newref.buf);
@@ -618,7 +614,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 #endif
 
 	int delete = 0, rename = 0, force_create = 0;
-	int verbose = 0, abbrev = DEFAULT_ABBREV, detached = 0;
+	int verbose = 0, abbrev = -1, detached = 0;
 	int reflog = 0;
 	enum branch_track track;
 	int kinds = REF_LOCAL_BRANCH;
@@ -682,9 +678,6 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	git_config(git_branch_config, NULL);
 
-	if (branch_use_color == -1)
-		branch_use_color = git_use_color_default;
-
 	track = git_branch_track;
 
 	head = resolve_ref("HEAD", head_sha1, 0, NULL);
@@ -704,6 +697,9 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 			     0);
 	if (!!delete + !!rename + !!force_create > 1)
 		usage_with_options(builtin_branch_usage, options);
+
+	if (abbrev == -1)
+		abbrev = DEFAULT_ABBREV;
 
 	if (delete)
 		return delete_branches(argc, argv, delete > 1, kinds);

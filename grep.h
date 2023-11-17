@@ -7,6 +7,7 @@
 typedef int pcre;
 typedef int pcre_extra;
 #endif
+#include "kwset.h"
 
 enum grep_pat_token {
 	GREP_PATTERN,
@@ -41,6 +42,7 @@ struct grep_pat {
 	regex_t regexp;
 	pcre *pcre_regexp;
 	pcre_extra *pcre_extra_info;
+	kwset_t kws;
 	unsigned fixed:1;
 	unsigned ignore_case:1;
 	unsigned word_regexp:1;
@@ -98,6 +100,7 @@ struct grep_opt {
 	int color;
 	int max_depth;
 	int funcname;
+	int funcbody;
 	char color_context[COLOR_MAXLEN];
 	char color_filename[COLOR_MAXLEN];
 	char color_function[COLOR_MAXLEN];
@@ -110,6 +113,8 @@ struct grep_opt {
 	unsigned post_context;
 	unsigned last_shown;
 	int show_hunk_mark;
+	int file_break;
+	int heading;
 	void *priv;
 
 	void (*output)(struct grep_opt *opt, const void *data, size_t size);

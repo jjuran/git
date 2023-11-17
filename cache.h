@@ -6,6 +6,7 @@
 #include "hash.h"
 #include "advice.h"
 #include "gettext.h"
+#include "convert.h"
 
 #include SHA1_HEADER
 #ifndef git_SHA_CTX
@@ -393,6 +394,7 @@ static inline enum object_type object_type(unsigned int mode)
 }
 
 #define GIT_DIR_ENVIRONMENT "GIT_DIR"
+#define GIT_NAMESPACE_ENVIRONMENT "GIT_NAMESPACE"
 #define GIT_WORK_TREE_ENVIRONMENT "GIT_WORK_TREE"
 #define DEFAULT_GIT_DIR_ENVIRONMENT ".git"
 #define DB_ENVIRONMENT "GIT_OBJECT_DIRECTORY"
@@ -433,6 +435,8 @@ extern char *get_object_directory(void);
 extern char *get_index_file(void);
 extern char *get_graft_file(void);
 extern int set_git_dir(const char *path);
+extern const char *get_git_namespace(void);
+extern const char *strip_namespace(const char *namespaced_ref);
 extern const char *get_git_work_tree(void);
 extern const char *read_gitfile(const char *path);
 extern void set_git_work_tree(const char *tree);
@@ -440,6 +444,7 @@ extern void set_git_work_tree(const char *tree);
 #define ALTERNATE_DB_ENVIRONMENT "GIT_ALTERNATE_OBJECT_DIRECTORIES"
 
 extern const char **get_pathspec(const char *prefix, const char **pathspec);
+extern const char *pathspec_prefix(const char *prefix, const char **pathspec);
 extern void setup_work_tree(void);
 extern const char *setup_git_directory_gently(int *);
 extern const char *setup_git_directory(void);
@@ -584,6 +589,7 @@ extern int warn_ambiguous_refs;
 extern int shared_repository;
 extern const char *apply_default_whitespace;
 extern const char *apply_default_ignorewhitespace;
+extern const char *git_attributes_file;
 extern int zlib_compression_level;
 extern int core_compression_level;
 extern int core_compression_seen;
@@ -595,35 +601,6 @@ extern int read_replace_refs;
 extern int fsync_object_files;
 extern int core_preload_index;
 extern int core_apply_sparse_checkout;
-
-enum safe_crlf {
-	SAFE_CRLF_FALSE = 0,
-	SAFE_CRLF_FAIL = 1,
-	SAFE_CRLF_WARN = 2
-};
-
-extern enum safe_crlf safe_crlf;
-
-enum auto_crlf {
-	AUTO_CRLF_FALSE = 0,
-	AUTO_CRLF_TRUE = 1,
-	AUTO_CRLF_INPUT = -1
-};
-
-extern enum auto_crlf auto_crlf;
-
-enum eol {
-	EOL_UNSET,
-	EOL_CRLF,
-	EOL_LF,
-#ifdef NATIVE_CRLF
-	EOL_NATIVE = EOL_CRLF
-#else
-	EOL_NATIVE = EOL_LF
-#endif
-};
-
-extern enum eol core_eol;
 
 enum branch_track {
 	BRANCH_TRACK_UNSPECIFIED = -1,
@@ -761,7 +738,7 @@ extern char *expand_user_path(const char *path);
 char *enter_repo(char *path, int strict);
 static inline int is_absolute_path(const char *path)
 {
-	return path[0] == '/' || has_dos_drive_prefix(path);
+	return is_dir_sep(path[0]) || has_dos_drive_prefix(path);
 }
 int is_directory(const char *);
 const char *real_path(const char *path);
@@ -794,9 +771,15 @@ extern int hash_sha1_file(const void *buf, unsigned long len, const char *type, 
 extern int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
 extern int pretend_sha1_file(void *, unsigned long, enum object_type, unsigned char *);
 extern int force_object_loose(const unsigned char *sha1, time_t mtime);
+extern void *map_sha1_file(const unsigned char *sha1, unsigned long *size);
+extern int unpack_sha1_header(git_zstream *stream, unsigned char *map, unsigned long mapsize, void *buffer, unsigned long bufsiz);
+extern int parse_sha1_header(const char *hdr, unsigned long *sizep);
 
 /* global flag to enable extra checks when accessing packed objects */
 extern int do_check_packed_object_crc;
+
+/* for development: log offset of pack access */
+extern const char *log_pack_access;
 
 extern int check_sha1_signature(const unsigned char *sha1, void *buf, unsigned long size, const char *type);
 
@@ -1035,7 +1018,36 @@ extern off_t find_pack_entry_one(const unsigned char *, struct packed_git *);
 extern void *unpack_entry(struct packed_git *, off_t, enum object_type *, unsigned long *);
 extern unsigned long unpack_object_header_buffer(const unsigned char *buf, unsigned long len, enum object_type *type, unsigned long *sizep);
 extern unsigned long get_size_from_delta(struct packed_git *, struct pack_window **, off_t);
-extern const char *packed_object_info_detail(struct packed_git *, off_t, unsigned long *, unsigned long *, unsigned int *, unsigned char *);
+extern int unpack_object_header(struct packed_git *, struct pack_window **, off_t *, unsigned long *);
+
+struct object_info {
+	/* Request */
+	unsigned long *sizep;
+
+	/* Response */
+	enum {
+		OI_CACHED,
+		OI_LOOSE,
+		OI_PACKED,
+		OI_DBCACHED
+	} whence;
+	union {
+		/*
+		 * struct {
+		 * 	... Nothing to expose in this case
+		 * } cached;
+		 * struct {
+		 * 	... Nothing to expose in this case
+		 * } loose;
+		 */
+		struct {
+			struct packed_git *pack;
+			off_t offset;
+			unsigned int is_delta;
+		} packed;
+	} u;
+};
+extern int sha1_object_info_extended(const unsigned char *, struct object_info *);
 
 /* Dumb servers support */
 extern int update_server_info(int);
@@ -1076,6 +1088,8 @@ extern int git_config_system(void);
 extern int config_error_nonbool(const char *);
 extern const char *get_log_output_encoding(void);
 extern const char *get_commit_output_encoding(void);
+
+extern int git_config_parse_parameter(const char *, config_fn_t fn, void *data);
 
 extern const char *config_exclusive_filename;
 
@@ -1142,13 +1156,6 @@ extern int trace_want(const char *key);
 extern void trace_strbuf(const char *key, const struct strbuf *buf);
 
 void packet_trace_identity(const char *prog);
-
-/* convert.c */
-/* returns 1 if *dst was used */
-extern int convert_to_git(const char *path, const char *src, size_t len,
-                          struct strbuf *dst, enum safe_crlf checksafe);
-extern int convert_to_working_tree(const char *path, const char *src, size_t len, struct strbuf *dst);
-extern int renormalize_buffer(const char *path, const char *src, size_t len, struct strbuf *dst);
 
 /* add */
 /*

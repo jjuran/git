@@ -92,6 +92,10 @@ _x40="$_x05$_x05$_x05$_x05$_x05$_x05$_x05$_x05"
 # Zero SHA-1
 _z40=0000000000000000000000000000000000000000
 
+# Line feed
+LF='
+'
+
 # Each test should start with something like this, after copyright notices:
 #
 # test_description='Description of this test...
@@ -357,6 +361,24 @@ test_chmod () {
 	git update-index --add "--chmod=$@"
 }
 
+# Unset a configuration variable, but don't fail if it doesn't exist.
+test_unconfig () {
+	git config --unset-all "$@"
+	config_status=$?
+	case "$config_status" in
+	5) # ok, nothing to unset
+		config_status=0
+		;;
+	esac
+	return $config_status
+}
+
+# Set git config, automatically unsetting it after the test is over.
+test_config () {
+	test_when_finished "test_unconfig '$1'" &&
+	git config "$@"
+}
+
 # Use test_set_prereq to tell that a particular prerequisite is available.
 # The prerequisite can later be checked for in two ways:
 #
@@ -444,20 +466,26 @@ test_debug () {
 	test "$debug" = "" || eval "$1"
 }
 
+test_eval_ () {
+	# This is a separate function because some tests use
+	# "return" to end a test_expect_success block early.
+	eval >&3 2>&4 "$*"
+}
+
 test_run_ () {
 	test_cleanup=:
 	expecting_failure=$2
-	eval >&3 2>&4 "$1"
+	test_eval_ "$1"
 	eval_ret=$?
 
 	if test -z "$immediate" || test $eval_ret = 0 || test -n "$expecting_failure"
 	then
-		eval >&3 2>&4 "$test_cleanup"
+		test_eval_ "$test_cleanup"
 	fi
 	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"; then
 		echo ""
 	fi
-	return 0
+	return "$eval_ret"
 }
 
 test_skip () {
@@ -502,8 +530,7 @@ test_expect_failure () {
 	if ! test_skip "$@"
 	then
 		say >&3 "checking known breakage: $2"
-		test_run_ "$2" expecting_failure
-		if [ "$?" = 0 -a "$eval_ret" = 0 ]
+		if test_run_ "$2" expecting_failure
 		then
 			test_known_broken_ok_ "$1"
 		else
@@ -521,8 +548,7 @@ test_expect_success () {
 	if ! test_skip "$@"
 	then
 		say >&3 "expecting success: $2"
-		test_run_ "$2"
-		if [ "$?" = 0 -a "$eval_ret" = 0 ]
+		if test_run_ "$2"
 		then
 			test_ok_ "$1"
 		else
@@ -924,6 +950,8 @@ then
 	do
 		make_valgrind_symlink $file
 	done
+	# special-case the mergetools loadables
+	make_symlink "$GIT_BUILD_DIR"/mergetools "$GIT_VALGRIND/bin/mergetools"
 	OLDIFS=$IFS
 	IFS=:
 	for path in $PATH

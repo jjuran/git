@@ -46,6 +46,7 @@ static const char *real_git_dir;
 static char *option_upload_pack = "git-upload-pack";
 static int option_verbosity;
 static int option_progress;
+static struct string_list option_config;
 static struct string_list option_reference;
 
 static int opt_parse_reference(const struct option *opt, const char *arg, int unset)
@@ -93,7 +94,8 @@ static struct option builtin_clone_options[] = {
 		    "create a shallow clone of that depth"),
 	OPT_STRING(0, "separate-git-dir", &real_git_dir, "gitdir",
 		   "separate git dir from working tree"),
-
+	OPT_STRING_LIST('c', "config", &option_config, "key=value",
+			"set config inside the new repository"),
 	OPT_END()
 };
 
@@ -421,8 +423,9 @@ static void remove_junk_on_signal(int signo)
 static struct ref *wanted_peer_refs(const struct ref *refs,
 		struct refspec *refspec)
 {
-	struct ref *local_refs = NULL;
-	struct ref **tail = &local_refs;
+	struct ref *head = copy_ref(find_ref_by_name(refs, "HEAD"));
+	struct ref *local_refs = head;
+	struct ref **tail = head ? &head->next : &local_refs;
 
 	get_fetch_map(refs, refspec, &tail, 0);
 	if (!option_mirror)
@@ -435,11 +438,30 @@ static void write_remote_refs(const struct ref *local_refs)
 {
 	const struct ref *r;
 
-	for (r = local_refs; r; r = r->next)
+	for (r = local_refs; r; r = r->next) {
+		if (!r->peer_ref)
+			continue;
 		add_extra_ref(r->peer_ref->name, r->old_sha1, 0);
+	}
 
 	pack_refs(PACK_REFS_ALL);
 	clear_extra_refs();
+}
+
+static int write_one_config(const char *key, const char *value, void *data)
+{
+	return git_config_set_multivar(key, value ? value : "true", "^$", 0);
+}
+
+static void write_config(struct string_list *config)
+{
+	int i;
+
+	for (i = 0; i < config->nr; i++) {
+		if (git_config_parse_parameter(config->items[i].string,
+					       write_one_config, NULL) < 0)
+			die("unable to write parameters to config file");
+	}
 }
 
 int cmd_clone(int argc, const char **argv, const char *prefix)
@@ -555,11 +577,12 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	if (0 <= option_verbosity) {
 		if (option_bare)
-			printf(_("Cloning into bare repository %s...\n"), dir);
+			printf(_("Cloning into bare repository '%s'...\n"), dir);
 		else
-			printf(_("Cloning into %s...\n"), dir);
+			printf(_("Cloning into '%s'...\n"), dir);
 	}
 	init_db(option_template, INIT_DB_QUIET);
+	write_config(&option_config);
 
 	/*
 	 * At this point, the config exists, so we do not need the

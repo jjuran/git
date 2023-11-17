@@ -218,10 +218,14 @@ extern char *gitbasename(char *);
 #define is_dir_sep(c) ((c) == '/')
 #endif
 
+#ifndef find_last_dir_sep
+#define find_last_dir_sep(path) strrchr(path, '/')
+#endif
+
 #if __HP_cc >= 61000
 #define NORETURN __attribute__((noreturn))
 #define NORETURN_PTR
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) && !defined(NO_NORETURN)
 #define NORETURN __attribute__((__noreturn__))
 #define NORETURN_PTR __attribute__((__noreturn__))
 #elif defined(_MSC_VER)

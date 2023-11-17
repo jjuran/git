@@ -509,6 +509,20 @@ test_expect_success 'grep -p -B5' '
 	test_cmp expected actual
 '
 
+cat >expected <<EOF
+hello.c=int main(int argc, const char **argv)
+hello.c-{
+hello.c-	printf("Hello world.\n");
+hello.c:	return 0;
+hello.c-	/* char ?? */
+hello.c-}
+EOF
+
+test_expect_success 'grep -W' '
+	git grep -W return >actual &&
+	test_cmp expected actual
+'
+
 test_expect_success 'grep from a subdirectory to search wider area (1)' '
 	mkdir -p s &&
 	(
@@ -713,6 +727,101 @@ test_expect_success 'grep -G -F -P -E pattern' '
 test_expect_success LIBPCRE 'grep -G -F -E -P pattern' '
 	echo "ab:a+b*c" >expected &&
 	git grep -G -F -E -P "a\x{2b}b\x{2a}c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_config() {
+	git config "$1" "$2" &&
+	test_when_finished "git config --unset $1"
+}
+
+cat >expected <<EOF
+hello.c<RED>:<RESET>int main(int argc, const char **argv)
+hello.c<RED>-<RESET>{
+<RED>--<RESET>
+hello.c<RED>:<RESET>	/* char ?? */
+hello.c<RED>-<RESET>}
+<RED>--<RESET>
+hello_world<RED>:<RESET>Hello_world
+hello_world<RED>-<RESET>HeLLo_world
+EOF
+
+test_expect_success 'grep --color, separator' '
+	test_config color.grep.context		normal &&
+	test_config color.grep.filename		normal &&
+	test_config color.grep.function		normal &&
+	test_config color.grep.linenumber	normal &&
+	test_config color.grep.match		normal &&
+	test_config color.grep.selected		normal &&
+	test_config color.grep.separator	red &&
+
+	git grep --color=always -A1 -e char -e lo_w hello.c hello_world |
+	test_decode_color >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+hello.c:int main(int argc, const char **argv)
+hello.c:	/* char ?? */
+
+hello_world:Hello_world
+EOF
+
+test_expect_success 'grep --break' '
+	git grep --break -e char -e lo_w hello.c hello_world >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+hello.c:int main(int argc, const char **argv)
+hello.c-{
+--
+hello.c:	/* char ?? */
+hello.c-}
+
+hello_world:Hello_world
+hello_world-HeLLo_world
+EOF
+
+test_expect_success 'grep --break with context' '
+	git grep --break -A1 -e char -e lo_w hello.c hello_world >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+hello.c
+int main(int argc, const char **argv)
+	/* char ?? */
+hello_world
+Hello_world
+EOF
+
+test_expect_success 'grep --heading' '
+	git grep --heading -e char -e lo_w hello.c hello_world >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+<BOLD;GREEN>hello.c<RESET>
+2:int main(int argc, const <BLACK;BYELLOW>char<RESET> **argv)
+6:	/* <BLACK;BYELLOW>char<RESET> ?? */
+
+<BOLD;GREEN>hello_world<RESET>
+3:Hel<BLACK;BYELLOW>lo_w<RESET>orld
+EOF
+
+test_expect_success 'mimic ack-grep --group' '
+	test_config color.grep.context		normal &&
+	test_config color.grep.filename		"bold green" &&
+	test_config color.grep.function		normal &&
+	test_config color.grep.linenumber	normal &&
+	test_config color.grep.match		"black yellow" &&
+	test_config color.grep.selected		normal &&
+	test_config color.grep.separator	normal &&
+
+	git grep --break --heading -n --color \
+		-e char -e lo_w hello.c hello_world |
+	test_decode_color >actual &&
 	test_cmp expected actual
 '
 

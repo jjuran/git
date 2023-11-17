@@ -19,6 +19,7 @@
 #include "ll-merge.h"
 #include "resolve-undo.h"
 #include "submodule.h"
+#include "argv-array.h"
 
 static const char * const checkout_usage[] = {
 	"git checkout [options] <branch>",
@@ -71,7 +72,7 @@ static int update_some(const unsigned char *sha1, const char *base, int baselen,
 	hashcpy(ce->sha1, sha1);
 	memcpy(ce->name, base, baselen);
 	memcpy(ce->name + baselen, pathname, len - baselen);
-	ce->ce_flags = create_ce_flags(len, 0);
+	ce->ce_flags = create_ce_flags(len, 0) | CE_UPDATE;
 	ce->ce_mode = create_ce_mode(mode);
 	add_cache_entry(ce, ADD_CACHE_OK_TO_ADD | ADD_CACHE_OK_TO_REPLACE);
 	return 0;
@@ -228,6 +229,8 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 
 	for (pos = 0; pos < active_nr; pos++) {
 		struct cache_entry *ce = active_cache[pos];
+		if (source_tree && !(ce->ce_flags & CE_UPDATE))
+			continue;
 		match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, ps_matched);
 	}
 
@@ -266,6 +269,8 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 	state.refresh_cache = 1;
 	for (pos = 0; pos < active_nr; pos++) {
 		struct cache_entry *ce = active_cache[pos];
+		if (source_tree && !(ce->ce_flags & CE_UPDATE))
+			continue;
 		if (match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, NULL)) {
 			if (!ce_stage(ce)) {
 				errs |= checkout_entry(ce, &state, NULL);
@@ -406,7 +411,7 @@ static int merge_working_tree(struct checkout_opts *opts,
 		topts.fn = twoway_merge;
 		topts.dir = xcalloc(1, sizeof(*topts.dir));
 		topts.dir->flags |= DIR_SHOW_IGNORED;
-		topts.dir->exclude_per_dir = ".gitignore";
+		setup_standard_excludes(topts.dir);
 		tree = parse_tree_indirect(old->commit ?
 					   old->commit->object.sha1 :
 					   EMPTY_TREE_SHA1_BIN);
@@ -588,24 +593,12 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 		report_tracking(new);
 }
 
-struct rev_list_args {
-	int argc;
-	int alloc;
-	const char **argv;
-};
-
-static void add_one_rev_list_arg(struct rev_list_args *args, const char *s)
-{
-	ALLOC_GROW(args->argv, args->argc + 1, args->alloc);
-	args->argv[args->argc++] = s;
-}
-
 static int add_one_ref_to_rev_list_arg(const char *refname,
 				       const unsigned char *sha1,
 				       int flags,
 				       void *cb_data)
 {
-	add_one_rev_list_arg(cb_data, refname);
+	argv_array_push(cb_data, refname);
 	return 0;
 }
 
@@ -657,24 +650,25 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
 		"Warning: you are leaving %d commit behind, "
 		"not connected to\n"
 		"any of your branches:\n\n"
-		"%s\n"
-		"If you want to keep it by creating a new branch, "
-		"this may be a good time\nto do so with:\n\n"
-		" git branch new_branch_name %s\n\n",
+		"%s\n",
 		/* The plural version */
 		"Warning: you are leaving %d commits behind, "
 		"not connected to\n"
 		"any of your branches:\n\n"
-		"%s\n"
-		"If you want to keep them by creating a new branch, "
-		"this may be a good time\nto do so with:\n\n"
-		" git branch new_branch_name %s\n\n",
+		"%s\n",
 		/* Give ngettext() the count */
 		lost),
 		lost,
-		sb.buf,
-		sha1_to_hex(commit->object.sha1));
+		sb.buf);
 	strbuf_release(&sb);
+
+	if (advice_detached_head)
+		fprintf(stderr,
+			_(
+			"If you want to keep them by creating a new branch, "
+			"this may be a good time\nto do so with:\n\n"
+			" git branch new_branch_name %s\n\n"),
+			sha1_to_hex(commit->object.sha1));
 }
 
 /*
@@ -684,15 +678,14 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
  */
 static void orphaned_commit_warning(struct commit *commit)
 {
-	struct rev_list_args args = { 0, 0, NULL };
+	struct argv_array args = ARGV_ARRAY_INIT;
 	struct rev_info revs;
 
-	add_one_rev_list_arg(&args, "(internal)");
-	add_one_rev_list_arg(&args, sha1_to_hex(commit->object.sha1));
-	add_one_rev_list_arg(&args, "--not");
+	argv_array_push(&args, "(internal)");
+	argv_array_push(&args, sha1_to_hex(commit->object.sha1));
+	argv_array_push(&args, "--not");
 	for_each_ref(add_one_ref_to_rev_list_arg, &args);
-	add_one_rev_list_arg(&args, "--");
-	add_one_rev_list_arg(&args, NULL);
+	argv_array_push(&args, "--");
 
 	init_revisions(&revs, NULL);
 	if (setup_revisions(args.argc - 1, args.argv, &revs, NULL) != 1)
@@ -704,6 +697,7 @@ static void orphaned_commit_warning(struct commit *commit)
 	else
 		describe_detached_head(_("Previous HEAD position was"), commit);
 
+	argv_array_clear(&args);
 	clear_commit_marks(commit, -1);
 	for_each_ref(clear_commit_marks_from_one_ref, NULL);
 }
@@ -1080,15 +1074,10 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 
 	if (opts.new_branch) {
 		struct strbuf buf = STRBUF_INIT;
-		if (strbuf_check_branch_ref(&buf, opts.new_branch))
-			die(_("git checkout: we do not like '%s' as a branch name."),
-			    opts.new_branch);
-		if (ref_exists(buf.buf)) {
-			opts.branch_exists = 1;
-			if (!opts.new_branch_force)
-				die(_("git checkout: branch %s already exists"),
-				    opts.new_branch);
-		}
+
+		opts.branch_exists = validate_new_branchname(opts.new_branch, &buf,
+							     !!opts.new_branch_force, 0);
+
 		strbuf_release(&buf);
 	}
 

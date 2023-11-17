@@ -10,8 +10,8 @@ SYNOPSIS
 --------
 [verse]
 'git' [--version] [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
-    [-p|--paginate|--no-pager] [--no-replace-objects]
-    [--bare] [--git-dir=<path>] [--work-tree=<path>]
+    [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
+    [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
     [-c <name>=<value>]
     [--help] <command> [<args>]
 
@@ -43,6 +43,18 @@ You are reading the documentation for the latest (possibly
 unreleased) version of git, that is available from 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
+
+* link:v1.7.7.7/git.html[documentation for release 1.7.7.7]
+
+* release notes for
+  link:RelNotes/1.7.7.7.txt[1.7.7.7],
+  link:RelNotes/1.7.7.6.txt[1.7.7.6],
+  link:RelNotes/1.7.7.5.txt[1.7.7.5],
+  link:RelNotes/1.7.7.4.txt[1.7.7.4],
+  link:RelNotes/1.7.7.3.txt[1.7.7.3],
+  link:RelNotes/1.7.7.2.txt[1.7.7.2],
+  link:RelNotes/1.7.7.1.txt[1.7.7.1],
+  link:RelNotes/1.7.7.txt[1.7.7].
 
 * link:v1.7.6.6/git.html[documentation for release 1.7.6.6]
 
@@ -336,6 +348,11 @@ help ...`.
 	variable (see core.worktree in linkgit:git-config[1] for a
 	more detailed discussion).
 
+--namespace=<path>::
+	Set the git namespace.  See linkgit:gitnamespaces[7] for more
+	details.  Equivalent to setting the `GIT_NAMESPACE` environment
+	variable.
+
 --bare::
 	Treat the repository as a bare repository.  If GIT_DIR
 	environment is not set, it is set to the current working
@@ -598,6 +615,10 @@ git so take care if using Cogito etc.
 	a .git directory (i.e. $GIT_DIR is not set).
 	This can also be controlled by the '--work-tree' command line
 	option and the core.worktree configuration variable.
+
+'GIT_NAMESPACE'::
+	Set the git namespace; see linkgit:gitnamespaces[7] for details.
+	The '--namespace' command-line option also sets this value.
 
 'GIT_CEILING_DIRECTORIES'::
 	This should be a colon-separated list of absolute paths.
