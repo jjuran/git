@@ -1,3 +1,6 @@
+#ifndef BLOCKSHA1_SHA1_H
+#define BLOCKSHA1_SHA1_H
+
 /*
  * SHA1 routine optimized to do word accesses rather than byte accesses,
  * and to avoid unnecessary copies into the context array.
@@ -20,3 +23,5 @@ void blk_SHA1_Final(unsigned char hashout[20], blk_SHA_CTX *ctx);
 #define git_SHA1_Init	blk_SHA1_Init
 #define git_SHA1_Update	blk_SHA1_Update
 #define git_SHA1_Final	blk_SHA1_Final
+
+#endif
