@@ -119,6 +119,7 @@ compat/obstack.c
 compat/strcasestr.c
 config.c
 connect.c
+connected.c
 convert.c
 copy.c
 csum-file.c
@@ -195,6 +196,7 @@ rerere.c
 resolve-undo.c
 revision.c
 run-command.c
+sequencer.c
 server-info.c
 setup.c
 sha1-array.c
