@@ -165,10 +165,6 @@ static void parse_args(int argc, const char **argv, struct replay_opts *opts)
 		OPT_END(),
 	};
 
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus reset
-#endif
-
 	if (opts->action == CHERRY_PICK) {
 		struct option cp_extra[] = {
 			OPT_BOOLEAN('x', NULL, &opts->record_origin, "append commit name"),
@@ -178,6 +174,10 @@ static void parse_args(int argc, const char **argv, struct replay_opts *opts)
 		if (parse_options_concat(options, ARRAY_SIZE(options), cp_extra))
 			die(_("program error"));
 	}
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, options, usage_str,
 			PARSE_OPT_KEEP_ARGV0 |
