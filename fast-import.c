@@ -855,15 +855,15 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
 
 static void start_packfile(void)
 {
-	static char tmpfile[PATH_MAX];
+	static char tmp_file[PATH_MAX];
 	struct packed_git *p;
 	struct pack_header hdr;
 	int pack_fd;
 
-	pack_fd = odb_mkstemp(tmpfile, sizeof(tmpfile),
+	pack_fd = odb_mkstemp(tmp_file, sizeof(tmp_file),
 			      "pack/tmp_pack_XXXXXX");
-	p = xcalloc(1, sizeof(*p) + strlen(tmpfile) + 2);
-	strcpy(p->pack_name, tmpfile);
+	p = xcalloc(1, sizeof(*p) + strlen(tmp_file) + 2);
+	strcpy(p->pack_name, tmp_file);
 	p->pack_fd = pack_fd;
 	p->do_not_close = 1;
 	pack_file = sha1fd(pack_fd, p->pack_name);
@@ -1143,17 +1143,11 @@ static int store_object(
 	return 0;
 }
 
-static void truncate_pack(off_t to, git_SHA_CTX *ctx)
+static void truncate_pack(struct sha1file_checkpoint *checkpoint)
 {
-	if (ftruncate(pack_data->pack_fd, to)
-	 || lseek(pack_data->pack_fd, to, SEEK_SET) != to)
+	if (sha1file_truncate(pack_file, checkpoint))
 		die_errno("cannot truncate pack to skip duplicate");
-	pack_size = to;
-
-	/* yes this is a layering violation */
-	pack_file->total = to;
-	pack_file->offset = 0;
-	pack_file->ctx = *ctx;
+	pack_size = checkpoint->offset;
 }
 
 static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
@@ -1166,8 +1160,8 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 	unsigned long hdrlen;
 	off_t offset;
 	git_SHA_CTX c;
-	git_SHA_CTX pack_file_ctx;
 	git_zstream s;
+	struct sha1file_checkpoint checkpoint;
 	int status = Z_OK;
 
 	/* Determine if we should auto-checkpoint. */
@@ -1175,11 +1169,8 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 		|| (pack_size + 60 + len) < pack_size)
 		cycle_packfile();
 
-	offset = pack_size;
-
-	/* preserve the pack_file SHA1 ctx in case we have to truncate later */
-	sha1flush(pack_file);
-	pack_file_ctx = pack_file->ctx;
+	sha1file_checkpoint(pack_file, &checkpoint);
+	offset = checkpoint.offset;
 
 	hdrlen = snprintf((char *)out_buf, out_sz, "blob %" PRIuMAX, len) + 1;
 	if (out_sz <= hdrlen)
@@ -1245,14 +1236,14 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 
 	if (e->idx.offset) {
 		duplicate_count_by_type[OBJ_BLOB]++;
-		truncate_pack(offset, &pack_file_ctx);
+		truncate_pack(&checkpoint);
 
 	} else if (find_sha1_pack(sha1, packed_git)) {
 		e->type = OBJ_BLOB;
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1; /* just not zero! */
 		duplicate_count_by_type[OBJ_BLOB]++;
-		truncate_pack(offset, &pack_file_ctx);
+		truncate_pack(&checkpoint);
 
 	} else {
 		e->depth = 0;
@@ -1650,6 +1641,8 @@ static int tree_content_get(
 		n = slash1 - p;
 	else
 		n = strlen(p);
+	if (!n)
+		die("Empty path component found in input");
 
 	if (!root->tree)
 		load_tree(root);
@@ -2721,7 +2714,7 @@ static void parse_new_tag(void)
 	/* Obtain the new tag name from the rest of our command */
 	sp = strchr(command_buf.buf, ' ') + 1;
 	t = pool_alloc(sizeof(struct tag));
-	t->next_tag = NULL;
+	memset(t, 0, sizeof(struct tag));
 	t->name = pool_strdup(sp);
 	if (last_tag)
 		last_tag->next_tag = t;
@@ -3037,6 +3030,8 @@ static void parse_ls(struct branch *b)
 		store_tree(&leaf);
 
 	print_ls(leaf.versions[1].mode, leaf.versions[1].sha1, p);
+	if (leaf.tree)
+		release_tree_content_recursive(leaf.tree);
 	if (!b || root != &b->branch_tree)
 		release_tree_entry(root);
 }
@@ -3313,6 +3308,8 @@ int main(int argc, const char **argv)
 	unsigned int i;
 
 	git_extract_argv0_path(argv[0]);
+
+	git_setup_gettext();
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage(fast_import_usage);

@@ -7,6 +7,7 @@ MAN5_TXT=gitattributes.txt gitignore.txt gitmodules.txt githooks.txt \
 MAN7_TXT=gitcli.txt gittutorial.txt gittutorial-2.txt \
 	gitcvs-migration.txt gitcore-tutorial.txt gitglossary.txt \
 	gitdiffcore.txt gitnamespaces.txt gitrevisions.txt gitworkflows.txt
+MAN7_TXT += gitcredentials.txt
 
 MAN_TXT = $(MAN1_TXT) $(MAN5_TXT) $(MAN7_TXT)
 MAN_XML=$(patsubst %.txt,%.xml,$(MAN_TXT))
@@ -19,7 +20,10 @@ ARTICLES += everyday
 ARTICLES += git-tools
 ARTICLES += git-bisect-lk2009
 # with their own formatting rules.
-SP_ARTICLES = howto/revert-branch-rebase howto/using-merge-subtree user-manual
+SP_ARTICLES = user-manual
+SP_ARTICLES += howto/revert-branch-rebase
+SP_ARTICLES += howto/using-merge-subtree
+SP_ARTICLES += howto/using-signed-tag-in-pull-request
 API_DOCS = $(patsubst %.txt,%,$(filter-out technical/api-index-skel.txt technical/api-index.txt, $(wildcard technical/api-*.txt)))
 SP_ARTICLES += $(API_DOCS)
 SP_ARTICLES += technical/api-index

@@ -419,7 +419,7 @@ static int rev_same_tree_as_empty(struct rev_info *revs, struct commit *commit)
 static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 {
 	struct commit_list **pp, *parent;
-	int tree_changed = 0, tree_same = 0;
+	int tree_changed = 0, tree_same = 0, nth_parent = 0;
 
 	/*
 	 * If we don't do pruning, everything is interesting
@@ -447,6 +447,14 @@ static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 	while ((parent = *pp) != NULL) {
 		struct commit *p = parent->item;
 
+		/*
+		 * Do not compare with later parents when we care only about
+		 * the first parent chain, in order to avoid derailing the
+		 * traversal to follow a side branch that brought everything
+		 * in the path we are limited to by the pathspec.
+		 */
+		if (revs->first_parent_only && nth_parent++)
+			break;
 		if (parse_commit(p) < 0)
 			die("cannot simplify commit %s (because of %s)",
 			    sha1_to_hex(commit->object.sha1),
@@ -1472,6 +1480,8 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 		revs->show_notes = 1;
 		revs->show_notes_given = 1;
 		revs->notes_opt.use_default_notes = 1;
+	} else if (!strcmp(arg, "--show-signature")) {
+		revs->show_signature = 1;
 	} else if (!prefixcmp(arg, "--show-notes=") ||
 		   !prefixcmp(arg, "--notes=")) {
 		struct strbuf buf = STRBUF_INIT;
@@ -2129,7 +2139,6 @@ static int commit_match(struct commit *commit, struct rev_info *opt)
 	if (!opt->grep_filter.pattern_list && !opt->grep_filter.header_list)
 		return 1;
 	return grep_buffer(&opt->grep_filter,
-			   NULL, /* we say nothing, not even filename */
 			   commit->buffer, strlen(commit->buffer));
 }
 

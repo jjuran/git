@@ -34,6 +34,7 @@ struct checkout_opts {
 	int force_detach;
 	int writeout_stage;
 	int writeout_error;
+	int overwrite_ignore;
 
 	/* not set by parse_options */
 	int branch_exists;
@@ -300,7 +301,7 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 	    commit_locked_index(lock_file))
 		die(_("unable to write new index file"));
 
-	resolve_ref("HEAD", rev, 0, &flag);
+	read_ref_full("HEAD", rev, 0, &flag);
 	head = lookup_commit_reference_gently(rev, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
@@ -421,9 +422,11 @@ static int merge_working_tree(struct checkout_opts *opts,
 		topts.gently = opts->merge && old->commit;
 		topts.verbose_update = !opts->quiet;
 		topts.fn = twoway_merge;
-		topts.dir = xcalloc(1, sizeof(*topts.dir));
-		topts.dir->flags |= DIR_SHOW_IGNORED;
-		setup_standard_excludes(topts.dir);
+		if (opts->overwrite_ignore) {
+			topts.dir = xcalloc(1, sizeof(*topts.dir));
+			topts.dir->flags |= DIR_SHOW_IGNORED;
+			setup_standard_excludes(topts.dir);
+		}
 		tree = parse_tree_indirect(old->commit ?
 					   old->commit->object.sha1 :
 					   EMPTY_TREE_SHA1_BIN);
@@ -714,15 +717,14 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 {
 	int ret = 0;
 	struct branch_info old;
+	void *path_to_free;
 	unsigned char rev[20];
 	int flag;
 	memset(&old, 0, sizeof(old));
-	old.path = xstrdup(resolve_ref("HEAD", rev, 0, &flag));
+	old.path = path_to_free = resolve_refdup("HEAD", rev, 0, &flag);
 	old.commit = lookup_commit_reference_gently(rev, 1);
-	if (!(flag & REF_ISSYMREF)) {
-		free((char *)old.path);
+	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
-	}
 
 	if (old.path && !prefixcmp(old.path, "refs/heads/"))
 		old.name = old.path + strlen("refs/heads/");
@@ -736,8 +738,10 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	}
 
 	ret = merge_working_tree(opts, &old, new);
-	if (ret)
+	if (ret) {
+		free(path_to_free);
 		return ret;
+	}
 
 	if (!opts->quiet && !old.path && old.commit && new->commit != old.commit)
 		orphaned_commit_warning(old.commit);
@@ -745,7 +749,7 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	update_refs_for_switch(opts, &old, new);
 
 	ret = post_checkout_hook(old.commit, new->commit, 1);
-	free((char *)old.path);
+	free(path_to_free);
 	return ret || opts->writeout_error;
 }
 
@@ -884,7 +888,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 	setup_branch_path(new);
 
 	if (!check_refname_format(new->path, 0) &&
-	    resolve_ref(new->path, branch_rev, 1, NULL))
+	    !read_ref(new->path, branch_rev))
 		hashcpy(rev, branch_rev);
 	else
 		new->path = NULL; /* not an existing branch */
@@ -918,6 +922,17 @@ static int parse_branchname_arg(int argc, const char **argv,
 	return argcount;
 }
 
+static int switch_unborn_to_new_branch(struct checkout_opts *opts)
+{
+	int status;
+	struct strbuf branch_ref = STRBUF_INIT;
+
+	strbuf_addf(&branch_ref, "refs/heads/%s", opts->new_branch);
+	status = create_symref("HEAD", branch_ref.buf, "checkout -b");
+	strbuf_release(&branch_ref);
+	return status;
+}
+
 int cmd_checkout(int argc, const char **argv, const char *prefix)
 {
 #ifdef USE_CPLUSPLUS_FOR_INIT
@@ -949,6 +964,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 			    3),
 		OPT__FORCE(&opts.force, "force checkout (throw away local modifications)"),
 		OPT_BOOLEAN('m', "merge", &opts.merge, "perform a 3-way merge with the new branch"),
+		OPT_BOOLEAN(0, "overwrite-ignore", &opts.overwrite_ignore, "update ignored files (default)"),
 		OPT_STRING(0, "conflict", &conflict_style, "style",
 			   "conflict style (merge or diff3)"),
 		OPT_BOOLEAN('p', "patch", &patch_mode, "select hunks interactively"),
@@ -964,6 +980,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 
 	memset(&opts, 0, sizeof(opts));
 	memset(&new, 0, sizeof(new));
+	opts.overwrite_ignore = 1;
 
 	gitmodules_config();
 	git_config(git_checkout_config, &opts);
@@ -1096,5 +1113,13 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 	if (opts.writeout_stage)
 		die(_("--ours/--theirs is incompatible with switching branches."));
 
+	if (!new.commit) {
+		unsigned char rev[20];
+		int flag;
+
+		if (!read_ref_full("HEAD", rev, 0, &flag) &&
+		    (flag & REF_ISSYMREF) && is_null_sha1(rev))
+			return switch_unborn_to_new_branch(&opts);
+	}
 	return switch_branches(&opts, &new);
 }

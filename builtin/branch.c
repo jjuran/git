@@ -104,6 +104,7 @@ static int branch_merged(int kind, const char *name,
 	 */
 	struct commit *reference_rev = NULL;
 	const char *reference_name = NULL;
+	void *reference_name_to_free = NULL;
 	int merged;
 
 	if (kind == REF_LOCAL_BRANCH) {
@@ -114,8 +115,8 @@ static int branch_merged(int kind, const char *name,
 		    branch->merge &&
 		    branch->merge[0] &&
 		    branch->merge[0]->dst &&
-		    (reference_name =
-		     resolve_ref(branch->merge[0]->dst, sha1, 1, NULL)) != NULL)
+		    (reference_name = reference_name_to_free =
+		     resolve_refdup(branch->merge[0]->dst, sha1, 1, NULL)) != NULL)
 			reference_rev = lookup_commit_reference(sha1);
 	}
 	if (!reference_rev)
@@ -141,6 +142,7 @@ static int branch_merged(int kind, const char *name,
 				"         '%s', even though it is merged to HEAD."),
 				name, reference_name);
 	}
+	free(reference_name_to_free);
 	return merged;
 }
 
@@ -186,7 +188,7 @@ static int delete_branches(int argc, const char **argv, int force, int kinds)
 		free(name);
 
 		name = xstrdup(mkpath(fmt, bname.buf));
-		if (!resolve_ref(name, sha1, 1, NULL)) {
+		if (read_ref(name, sha1)) {
 			error(_("%sbranch '%s' not found."),
 					remote, bname.buf);
 			ret = 1;
@@ -250,7 +252,7 @@ static char *resolve_symref(const char *src, const char *prefix)
 	int flag;
 	const char *dst, *cp;
 
-	dst = resolve_ref(src, sha1, 0, &flag);
+	dst = resolve_ref_unsafe(src, sha1, 0, &flag);
 	if (!(dst && (flag & REF_ISSYMREF)))
 		return NULL;
 	if (prefix && (cp = skip_prefix(dst, prefix)))
@@ -528,6 +530,10 @@ static int print_ref_list(int kinds, int detached, int verbose, int abbrev, stru
 	if (merge_filter != NO_FILTER) {
 		struct commit *filter;
 		filter = lookup_commit_reference_gently(merge_filter_ref, 0);
+		if (!filter)
+			die("object '%s' does not point to a commit",
+			    sha1_to_hex(merge_filter_ref));
+
 		filter->object.flags |= UNINTERESTING;
 		add_pending_object(&ref_list.revs,
 				   (struct object *) filter, "");
@@ -565,7 +571,6 @@ static int print_ref_list(int kinds, int detached, int verbose, int abbrev, stru
 static void rename_branch(const char *oldname, const char *newname, int force)
 {
 	struct strbuf oldref = STRBUF_INIT, newref = STRBUF_INIT, logmsg = STRBUF_INIT;
-	unsigned char sha1[20];
 	struct strbuf oldsection = STRBUF_INIT, newsection = STRBUF_INIT;
 	int recovery = 0;
 	int clobber_head_ok;
@@ -578,7 +583,7 @@ static void rename_branch(const char *oldname, const char *newname, int force)
 		 * Bad name --- this could be an attempt to rename a
 		 * ref that we used to allow to be created by accident.
 		 */
-		if (resolve_ref(oldref.buf, sha1, 1, NULL))
+		if (ref_exists(oldref.buf))
 			recovery = 1;
 		else
 			die(_("Invalid branch name: '%s'"), oldname);
@@ -630,6 +635,44 @@ static int opt_parse_merge_filter(const struct option *opt, const char *arg, int
 	return 0;
 }
 
+static const char edit_description[] = "BRANCH_DESCRIPTION";
+
+static int edit_branch_description(const char *branch_name)
+{
+	FILE *fp;
+	int status;
+	struct strbuf buf = STRBUF_INIT;
+	struct strbuf name = STRBUF_INIT;
+
+	read_branch_desc(&buf, branch_name);
+	if (!buf.len || buf.buf[buf.len-1] != '\n')
+		strbuf_addch(&buf, '\n');
+	strbuf_addf(&buf,
+		    "# Please edit the description for the branch\n"
+		    "#   %s\n"
+		    "# Lines starting with '#' will be stripped.\n",
+		    branch_name);
+	fp = fopen(git_path(edit_description), "w");
+	if ((fwrite(buf.buf, 1, buf.len, fp) < buf.len) || fclose(fp)) {
+		strbuf_release(&buf);
+		return error(_("could not write branch description template: %s\n"),
+			     strerror(errno));
+	}
+	strbuf_reset(&buf);
+	if (launch_editor(git_path(edit_description), &buf, NULL)) {
+		strbuf_release(&buf);
+		return -1;
+	}
+	stripspace(&buf, 1);
+
+	strbuf_addf(&name, "branch.%s.description", branch_name);
+	status = git_config_set(name.buf, buf.buf);
+	strbuf_release(&name);
+	strbuf_release(&buf);
+
+	return status;
+}
+
 int cmd_branch(int argc, const char **argv, const char *prefix)
 {
 #ifdef USE_CPLUSPLUS_FOR_INIT
@@ -639,7 +682,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	int delete = 0, rename = 0, force_create = 0, list = 0;
 	int verbose = 0, abbrev = -1, detached = 0;
-	int reflog = 0;
+	int reflog = 0, edit_description = 0;
 	enum branch_track track;
 	int kinds = REF_LOCAL_BRANCH;
 	struct commit_list *with_commit = NULL;
@@ -678,6 +721,8 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		OPT_BIT('M', NULL, &rename, "move/rename a branch, even if target exists", 2),
 		OPT_BOOLEAN(0, "list", &list, "list branch names"),
 		OPT_BOOLEAN('l', "create-reflog", &reflog, "create the branch's reflog"),
+		OPT_BOOLEAN(0, "edit-description", &edit_description,
+			    "edit the description for the branch"),
 		OPT__FORCE(&force_create, "force creation (when already exists)"),
 		{
 			OPTION_CALLBACK, 0, "no-merged", &merge_filter_ref,
@@ -705,10 +750,9 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 
 	track = git_branch_track;
 
-	head = resolve_ref("HEAD", head_sha1, 0, NULL);
+	head = resolve_refdup("HEAD", head_sha1, 0, NULL);
 	if (!head)
 		die(_("Failed to resolve HEAD as a valid ref."));
-	head = xstrdup(head);
 	if (!strcmp(head, "HEAD")) {
 		detached = 1;
 	} else {
@@ -721,7 +765,7 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 	argc = parse_options(argc, argv, prefix, options, builtin_branch_usage,
 			     0);
 
-	if (!delete && !rename && argc == 0)
+	if (!delete && !rename && !edit_description && argc == 0)
 		list = 1;
 
 	if (!!delete + !!rename + !!force_create + !!list > 1)
@@ -735,7 +779,34 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 	else if (list)
 		return print_ref_list(kinds, detached, verbose, abbrev,
 				      with_commit, argv);
-	else if (rename) {
+	else if (edit_description) {
+		const char *branch_name;
+		struct strbuf branch_ref = STRBUF_INIT;
+
+		if (detached)
+			die("Cannot give description to detached HEAD");
+		if (!argc)
+			branch_name = head;
+		else if (argc == 1)
+			branch_name = argv[0];
+		else
+			usage_with_options(builtin_branch_usage, options);
+
+		strbuf_addf(&branch_ref, "refs/heads/%s", branch_name);
+		if (!ref_exists(branch_ref.buf)) {
+			strbuf_release(&branch_ref);
+
+			if (!argc)
+				return error("No commit on branch '%s' yet.",
+					     branch_name);
+			else
+				return error("No such branch '%s'.", branch_name);
+		}
+		strbuf_release(&branch_ref);
+
+		if (edit_branch_description(branch_name))
+			return 1;
+	} else if (rename) {
 		if (argc == 1)
 			rename_branch(head, argv[0], rename > 1);
 		else if (argc == 2)

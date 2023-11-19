@@ -33,10 +33,12 @@ static int transfer_unpack_limit = -1;
 static int unpack_limit = 100;
 static int report_status;
 static int use_sideband;
+static int quiet;
 static int prefer_ofs_delta = 1;
 static int auto_update_server_info;
 static int auto_gc = 1;
 static const char *head_name;
+static void *head_name_to_free;
 static int sent_capabilities;
 
 static enum deny_action parse_deny_action(const char *var, const char *value)
@@ -114,20 +116,19 @@ static int receive_pack_config(const char *var, const char *value, void *cb)
 	return git_default_config(var, value, cb);
 }
 
-static int show_ref(const char *path, const unsigned char *sha1, int flag, void *cb_data)
+static void show_ref(const char *path, const unsigned char *sha1)
 {
 	if (sent_capabilities)
 		packet_write(1, "%s %s\n", sha1_to_hex(sha1), path);
 	else
 		packet_write(1, "%s %s%c%s%s\n",
 			     sha1_to_hex(sha1), path, 0,
-			     " report-status delete-refs side-band-64k",
+			     " report-status delete-refs side-band-64k quiet",
 			     prefer_ofs_delta ? " ofs-delta" : "");
 	sent_capabilities = 1;
-	return 0;
 }
 
-static int show_ref_cb(const char *path, const unsigned char *sha1, int flag, void *cb_data)
+static int show_ref_cb(const char *path, const unsigned char *sha1, int flag, void *unused)
 {
 	path = strip_namespace(path);
 	/*
@@ -140,15 +141,33 @@ static int show_ref_cb(const char *path, const unsigned char *sha1, int flag, vo
 	 */
 	if (!path)
 		path = ".have";
-	return show_ref(path, sha1, flag, cb_data);
+	show_ref(path, sha1);
+	return 0;
+}
+
+static void show_one_alternate_sha1(const unsigned char sha1[20], void *unused)
+{
+	show_ref(".have", sha1);
+}
+
+static void collect_one_alternate_ref(const struct ref *ref, void *data)
+{
+	struct sha1_array *sa = data;
+	sha1_array_append(sa, ref->old_sha1);
 }
 
 static void write_head_info(void)
 {
+	struct sha1_array sa = SHA1_ARRAY_INIT;
+	for_each_alternate_ref(collect_one_alternate_ref, &sa);
+	sha1_array_for_each_unique(&sa, show_one_alternate_sha1, NULL);
+	sha1_array_clear(&sa);
 	for_each_ref(show_ref_cb, NULL);
 	if (!sent_capabilities)
-		show_ref("capabilities^{}", null_sha1, 0, NULL);
+		show_ref("capabilities^{}", null_sha1);
 
+	/* EOF */
+	packet_flush(1);
 }
 
 struct command {
@@ -571,7 +590,7 @@ static void check_aliased_update(struct command *cmd, struct string_list *list)
 	int flag;
 
 	strbuf_addf(&buf, "%s%s", get_git_namespace(), cmd->ref_name);
-	dst_name = resolve_ref(buf.buf, sha1, 0, &flag);
+	dst_name = resolve_ref_unsafe(buf.buf, sha1, 0, &flag);
 	strbuf_release(&buf);
 
 	if (!(flag & REF_ISSYMREF))
@@ -623,8 +642,10 @@ static void check_aliased_updates(struct command *commands)
 	}
 	sort_string_list(&ref_list);
 
-	for (cmd = commands; cmd; cmd = cmd->next)
-		check_aliased_update(cmd, &ref_list);
+	for (cmd = commands; cmd; cmd = cmd->next) {
+		if (!cmd->error_string)
+			check_aliased_update(cmd, &ref_list);
+	}
 
 	string_list_clear(&ref_list, 0);
 }
@@ -688,18 +709,27 @@ static void execute_commands(struct command *commands, const char *unpacker_erro
 		set_connectivity_errors(commands);
 
 	if (run_receive_hook(commands, pre_receive_hook, 0)) {
-		for (cmd = commands; cmd; cmd = cmd->next)
-			cmd->error_string = "pre-receive hook declined";
+		for (cmd = commands; cmd; cmd = cmd->next) {
+			if (!cmd->error_string)
+				cmd->error_string = "pre-receive hook declined";
+		}
 		return;
 	}
 
 	check_aliased_updates(commands);
 
-	head_name = resolve_ref("HEAD", sha1, 0, NULL);
+	free(head_name_to_free);
+	head_name = head_name_to_free = resolve_refdup("HEAD", sha1, 0, NULL);
 
-	for (cmd = commands; cmd; cmd = cmd->next)
-		if (!cmd->skip_update)
-			cmd->error_string = update(cmd);
+	for (cmd = commands; cmd; cmd = cmd->next) {
+		if (cmd->error_string)
+			continue;
+
+		if (cmd->skip_update)
+			continue;
+
+		cmd->error_string = update(cmd);
+	}
 }
 
 static struct command *read_head_info(void)
@@ -729,10 +759,13 @@ static struct command *read_head_info(void)
 		refname = line + 82;
 		reflen = strlen(refname);
 		if (reflen + 82 < len) {
-			if (strstr(refname + reflen + 1, "report-status"))
+			const char *feature_list = refname + reflen + 1;
+			if (parse_feature_request(feature_list, "report-status"))
 				report_status = 1;
-			if (strstr(refname + reflen + 1, "side-band-64k"))
+			if (parse_feature_request(feature_list, "side-band-64k"))
 				use_sideband = LARGE_PACKET_MAX;
+			if (parse_feature_request(feature_list, "quiet"))
+				quiet = 1;
 		}
 		cmd = xcalloc(1, sizeof(struct command) + len - 80);
 		hashcpy(cmd->old_sha1, old_sha1);
@@ -786,8 +819,10 @@ static const char *unpack(void)
 
 	if (ntohl(hdr.hdr_entries) < unpack_limit) {
 		int code, i = 0;
-		const char *unpacker[4];
+		const char *unpacker[5];
 		unpacker[i++] = "unpack-objects";
+		if (quiet)
+			unpacker[i++] = "-q";
 		if (fsck_objects)
 			unpacker[i++] = "--strict";
 		unpacker[i++] = hdr_arg;
@@ -867,25 +902,6 @@ static int delete_only(struct command *commands)
 	return 1;
 }
 
-static void add_one_alternate_sha1(const unsigned char sha1[20], void *unused)
-{
-	add_extra_ref(".have", sha1, 0);
-}
-
-static void collect_one_alternate_ref(const struct ref *ref, void *data)
-{
-	struct sha1_array *sa = data;
-	sha1_array_append(sa, ref->old_sha1);
-}
-
-static void add_alternate_refs(void)
-{
-	struct sha1_array sa = SHA1_ARRAY_INIT;
-	for_each_alternate_ref(collect_one_alternate_ref, &sa);
-	sha1_array_for_each_unique(&sa, add_one_alternate_sha1, NULL);
-	sha1_array_clear(&sa);
-}
-
 int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 {
 	int advertise_refs = 0;
@@ -901,6 +917,11 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 		const char *arg = *argv++;
 
 		if (*arg == '-') {
+			if (!strcmp(arg, "--quiet")) {
+				quiet = 1;
+				continue;
+			}
+
 			if (!strcmp(arg, "--advertise-refs")) {
 				advertise_refs = 1;
 				continue;
@@ -935,12 +956,7 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 		unpack_limit = receive_unpack_limit;
 
 	if (advertise_refs || !stateless_rpc) {
-		add_alternate_refs();
 		write_head_info();
-		clear_extra_refs();
-
-		/* EOF */
-		packet_flush(1);
 	}
 	if (advertise_refs)
 		return 0;

@@ -38,7 +38,9 @@ created (i.e. a lightweight tag).
 A GnuPG signed tag object will be created when `-s` or `-u
 <key-id>` is used.  When `-u <key-id>` is not used, the
 committer identity for the current user is used to find the
-GnuPG key for signing.
+GnuPG key for signing. 	The configuration variable `gpg.program`
+is used to specify custom GnuPG binary.
+
 
 OPTIONS
 -------
@@ -48,11 +50,11 @@ OPTIONS
 
 -s::
 --sign::
-	Make a GPG-signed tag, using the default e-mail address's key
+	Make a GPG-signed tag, using the default e-mail address's key.
 
 -u <key-id>::
 --local-user=<key-id>::
-	Make a GPG-signed tag, using the given key
+	Make a GPG-signed tag, using the given key.
 
 -f::
 --force::
@@ -98,6 +100,13 @@ OPTIONS
 	read the message from the standard input.
 	Implies `-a` if none of `-a`, `-s`, or `-u <key-id>`
 	is given.
+
+--cleanup=<mode>::
+	This option sets how the tag message is cleaned up.
+	The  '<mode>' can be one of 'verbatim', 'whitespace' and 'strip'.  The
+	'strip' mode is default. The 'verbatim' mode does not change message at
+	all, 'whitespace' removes just leading/trailing whitespace lines and
+	'strip' removes both whitespace and commentary.
 
 <tagname>::
 	The name of the tag to create, delete, or describe.

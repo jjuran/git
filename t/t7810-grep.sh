@@ -246,6 +246,28 @@ do
 done
 
 cat >expected <<EOF
+file
+EOF
+test_expect_success 'grep -l -C' '
+	git grep -l -C1 foo >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+file:5
+EOF
+test_expect_success 'grep -l -C' '
+	git grep -c -C1 foo >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep -L -C' '
+	git ls-files >expected &&
+	git grep -L -C1 nonexistent_string >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
 file:foo mmap bar_mmap
 EOF
 
@@ -519,6 +541,20 @@ hello.c-}
 EOF
 
 test_expect_success 'grep -W' '
+	git grep -W return >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+hello.c=	printf("Hello world.\n");
+hello.c:	return 0;
+hello.c-	/* char ?? */
+EOF
+
+test_expect_success 'grep -W with userdiff' '
+	test_when_finished "rm -f .gitattributes" &&
+	git config diff.custom.xfuncname "(printf.*|})$" &&
+	echo "hello.c diff=custom" >.gitattributes &&
 	git grep -W return >actual &&
 	test_cmp expected actual
 '

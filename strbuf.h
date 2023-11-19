@@ -100,6 +100,14 @@ extern void strbuf_addf(struct strbuf *sb, const char *fmt, ...);
 __attribute__((format (printf,2,0)))
 extern void strbuf_vaddf(struct strbuf *sb, const char *fmt, va_list ap);
 
+extern void strbuf_add_lines(struct strbuf *sb, const char *prefix, const char *buf, size_t size);
+
+static inline void strbuf_complete_line(struct strbuf *sb)
+{
+	if (sb->len && sb->buf[sb->len - 1] != '\n')
+		strbuf_addch(sb, '\n');
+}
+
 extern size_t strbuf_fread(struct strbuf *, size_t, FILE *);
 /* XXX: if read fails, any partial read is undone */
 extern ssize_t strbuf_read(struct strbuf *, int fd, size_t hint);
@@ -115,5 +123,10 @@ extern int launch_editor(const char *path, struct strbuf *buffer, const char *co
 
 extern int strbuf_branchname(struct strbuf *sb, const char *name);
 extern int strbuf_check_branch_ref(struct strbuf *sb, const char *name);
+
+extern void strbuf_add_urlencode(struct strbuf *, const char *, size_t,
+				 int reserved);
+extern void strbuf_addstr_urlencode(struct strbuf *, const char *,
+				    int reserved);
 
 #endif /* STRBUF_H */

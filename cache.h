@@ -35,6 +35,7 @@ int git_inflate(git_zstream *, int flush);
 void git_deflate_init(git_zstream *, int level);
 void git_deflate_init_gzip(git_zstream *, int level);
 void git_deflate_end(git_zstream *);
+int git_deflate_abort(git_zstream *);
 int git_deflate_end_gently(git_zstream *);
 int git_deflate(git_zstream *, int flush);
 unsigned long git_deflate_bound(git_zstream *, unsigned long);
@@ -306,7 +307,7 @@ static inline unsigned int canon_mode(unsigned int mode)
 }
 
 #define flexible_size(STRUCT,len) ((offsetof(struct STRUCT,name) + (len) + 8) & ~7)
-#define cache_entry_size(len) flexible_size(cache_entry,len)
+#define cache_entry_size(len) (offsetof(struct cache_entry,name) + (len) + 1)
 #define ondisk_cache_entry_size(len) flexible_size(ondisk_cache_entry,len)
 #define ondisk_cache_entry_extended_size(len) flexible_size(ondisk_cache_entry_extended,len)
 
@@ -316,7 +317,6 @@ struct index_state {
 	struct string_list *resolve_undo;
 	struct cache_tree *cache_tree;
 	struct cache_time timestamp;
-	void *alloc;
 	unsigned name_hash_initialized : 1,
 		 initialized : 1;
 	struct hash_table name_hash;
@@ -432,6 +432,7 @@ extern char *git_work_tree_cfg;
 extern int is_inside_work_tree(void);
 extern int have_git_dir(void);
 extern const char *get_git_dir(void);
+extern int is_git_directory(const char *path);
 extern char *get_object_directory(void);
 extern char *get_index_file(void);
 extern char *get_graft_file(void);
@@ -598,6 +599,7 @@ extern size_t packed_git_window_size;
 extern size_t packed_git_limit;
 extern size_t delta_base_cache_limit;
 extern unsigned long big_file_threshold;
+extern unsigned long pack_size_limit_cfg;
 extern int read_replace_refs;
 extern int fsync_object_files;
 extern int core_preload_index;
@@ -832,7 +834,9 @@ static inline int get_sha1_with_context(const char *str, unsigned char *sha1, st
 extern int get_sha1_hex(const char *hex, unsigned char *sha1);
 
 extern char *sha1_to_hex(const unsigned char *sha1);	/* static buffer result! */
-extern int read_ref(const char *filename, unsigned char *sha1);
+extern int read_ref_full(const char *refname, unsigned char *sha1,
+			 int reading, int *flags);
+extern int read_ref(const char *refname, unsigned char *sha1);
 
 /*
  * Resolve a reference, recursively following symbolic refererences.
@@ -864,7 +868,8 @@ extern int read_ref(const char *filename, unsigned char *sha1);
  *
  * errno is sometimes set on errors, but not always.
  */
-extern const char *resolve_ref(const char *ref, unsigned char *sha1, int reading, int *flag);
+extern const char *resolve_ref_unsafe(const char *ref, unsigned char *sha1, int reading, int *flag);
+extern char *resolve_refdup(const char *ref, unsigned char *sha1, int reading, int *flag);
 
 extern int dwim_ref(const char *str, int len, unsigned char *sha1, char **ref);
 extern int dwim_log(const char *str, int len, unsigned char *sha1, char **ref);
@@ -873,7 +878,7 @@ extern int get_sha1_mb(const char *str, unsigned char *sha1);
 
 extern int refname_match(const char *abbrev_name, const char *full_name, const char **rules);
 extern const char *ref_rev_parse_rules[];
-extern const char *ref_fetch_rules[];
+#define ref_fetch_rules ref_rev_parse_rules
 
 extern int create_symref(const char *ref, const char *refs_heads_master, const char *logmsg);
 extern int validate_headref(const char *ref);
@@ -1024,7 +1029,6 @@ struct ref {
 extern struct ref *find_ref_by_name(const struct ref *list, const char *name);
 
 #define CONNECT_VERBOSE       (1u << 0)
-extern char *git_getpass(const char *prompt);
 extern struct child_process *git_connect(int fd[2], const char *url, const char *prog, int flags);
 extern int finish_connect(struct child_process *conn);
 extern int git_connection_is_socket(struct child_process *conn);
@@ -1034,6 +1038,7 @@ struct extra_have_objects {
 };
 extern struct ref **get_remote_heads(int in, struct ref **list, unsigned int flags, struct extra_have_objects *);
 extern int server_supports(const char *feature);
+extern const char *parse_feature_request(const char *features, const char *feature);
 
 extern struct packed_git *parse_pack_index(unsigned char *sha1, const char *idx_path);
 
@@ -1172,6 +1177,7 @@ extern void setup_pager(void);
 extern const char *pager_program;
 extern int pager_in_use(void);
 extern int pager_use_color;
+extern int term_columns(void);
 
 extern const char *editor_program;
 extern const char *askpass_program;

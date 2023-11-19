@@ -78,8 +78,8 @@ test_expect_success "fetch test for-merge" '
 	master_in_two=`cd ../two && git rev-parse master` &&
 	one_in_two=`cd ../two && git rev-parse one` &&
 	{
-		echo "$master_in_two	not-for-merge"
 		echo "$one_in_two	"
+		echo "$master_in_two	not-for-merge"
 	} >expected &&
 	cut -f -2 .git/FETCH_HEAD >actual &&
 	test_cmp expected actual'
@@ -174,7 +174,7 @@ test_expect_success 'fetch must not resolve short tag name' '
 
 '
 
-test_expect_success 'fetch must not resolve short remote name' '
+test_expect_success 'fetch can now resolve short remote name' '
 
 	cd "$D" &&
 	git update-ref refs/remotes/six/HEAD HEAD &&
@@ -183,8 +183,7 @@ test_expect_success 'fetch must not resolve short remote name' '
 	cd six &&
 	git init &&
 
-	test_must_fail git fetch .. six:six
-
+	git fetch .. six:six
 '
 
 test_expect_success 'create bundle 1' '

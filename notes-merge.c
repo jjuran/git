@@ -533,7 +533,7 @@ static int merge_from_diffs(struct notes_merge_options *o,
 }
 
 void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
-			 const char *msg, unsigned char *result_sha1)
+			 const struct strbuf *msg, unsigned char *result_sha1)
 {
 	unsigned char tree_sha1[20];
 
@@ -554,7 +554,7 @@ void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
 		/* else: t->ref points to nothing, assume root/orphan commit */
 	}
 
-	if (commit_tree(msg, tree_sha1, parents, result_sha1, NULL))
+	if (commit_tree(msg, tree_sha1, parents, result_sha1, NULL, NULL))
 		die("Failed to commit notes tree to database");
 }
 
@@ -576,7 +576,7 @@ int notes_merge(struct notes_merge_options *o,
 	       o->local_ref, o->remote_ref);
 
 	/* Dereference o->local_ref into local_sha1 */
-	if (!resolve_ref(o->local_ref, local_sha1, 0, NULL))
+	if (read_ref_full(o->local_ref, local_sha1, 0, NULL))
 		die("Failed to resolve local notes ref '%s'", o->local_ref);
 	else if (!check_refname_format(o->local_ref, 0) &&
 		is_null_sha1(local_sha1))
@@ -671,7 +671,7 @@ int notes_merge(struct notes_merge_options *o,
 		struct commit_list *parents = NULL;
 		commit_list_insert(remote, &parents); /* LIFO order */
 		commit_list_insert(local, &parents);
-		create_notes_commit(local_tree, parents, o->commit_msg.buf,
+		create_notes_commit(local_tree, parents, &o->commit_msg,
 				    result_sha1);
 	}
 
@@ -698,7 +698,8 @@ int notes_merge_commit(struct notes_merge_options *o,
 	struct dir_struct dir;
 	char *path = xstrdup(git_path(NOTES_MERGE_WORKTREE "/"));
 	int path_len = strlen(path), i;
-	const char *msg = strstr(partial_commit->buffer, "\n\n");
+	char *msg = strstr(partial_commit->buffer, "\n\n");
+	struct strbuf sb_msg = STRBUF_INIT;
 
 	if (o->verbosity >= 3)
 		printf("Committing notes in notes merge worktree at %.*s\n",
@@ -736,7 +737,8 @@ int notes_merge_commit(struct notes_merge_options *o,
 				sha1_to_hex(obj_sha1), sha1_to_hex(blob_sha1));
 	}
 
-	create_notes_commit(partial_tree, partial_commit->parents, msg,
+	strbuf_attach(&sb_msg, msg, strlen(msg), strlen(msg) + 1);
+	create_notes_commit(partial_tree, partial_commit->parents, &sb_msg,
 			    result_sha1);
 	if (o->verbosity >= 4)
 		printf("Finalized notes merge commit: %s\n",

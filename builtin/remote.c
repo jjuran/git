@@ -16,7 +16,7 @@ static const char * const builtin_remote_usage[] = {
 	"git remote [-v | --verbose] show [-n] <name>",
 	"git remote prune [-n | --dry-run] <name>",
 	"git remote [-v | --verbose] update [-p | --prune] [(<group> | <remote>)...]",
-	"git remote set-branches <name> [--add] <branch>...",
+	"git remote set-branches [--add] <name> <branch>...",
 	"git remote set-url <name> <newurl> [<oldurl>]",
 	"git remote set-url --add <name> <newurl>",
 	"git remote set-url --delete <name> <url>",
@@ -360,8 +360,7 @@ static int get_ref_states(const struct ref *remote_refs, struct ref_states *stat
 	states->tracked.strdup_strings = 1;
 	states->stale.strdup_strings = 1;
 	for (ref = fetch_map; ref; ref = ref->next) {
-		unsigned char sha1[20];
-		if (!ref->peer_ref || read_ref(ref->peer_ref->name, sha1))
+		if (!ref->peer_ref || !ref_exists(ref->peer_ref->name))
 			string_list_append(&states->new, abbrev_branch(ref->name));
 		else
 			string_list_append(&states->tracked, abbrev_branch(ref->name));
@@ -591,7 +590,7 @@ static int read_remote_branches(const char *refname,
 	strbuf_addf(&buf, "refs/remotes/%s/", rename->old);
 	if (!prefixcmp(refname, buf.buf)) {
 		item = string_list_append(rename->remote_branches, xstrdup(refname));
-		symref = resolve_ref(refname, orig_sha1, 1, &flag);
+		symref = resolve_ref_unsafe(refname, orig_sha1, 1, &flag);
 		if (flag & REF_ISSYMREF)
 			item->util = xstrdup(symref);
 		else
@@ -727,7 +726,7 @@ static int mv(int argc, const char **argv)
 		int flag = 0;
 		unsigned char sha1[20];
 
-		resolve_ref(item->string, sha1, 1, &flag);
+		read_ref_full(item->string, sha1, 1, &flag);
 		if (!(flag & REF_ISSYMREF))
 			continue;
 		if (delete_ref(item->string, NULL, REF_NODEREF))
@@ -1254,10 +1253,9 @@ static int set_head(int argc, const char **argv)
 		usage_with_options(builtin_remote_sethead_usage, options);
 
 	if (head_name) {
-		unsigned char sha1[20];
 		strbuf_addf(&buf2, "refs/remotes/%s/%s", argv[0], head_name);
 		/* make sure it's valid */
-		if (!resolve_ref(buf2.buf, sha1, 1, NULL))
+		if (!ref_exists(buf2.buf))
 			result |= error("Not a valid ref: %s", buf2.buf);
 		else if (create_symref(buf.buf, buf2.buf, "remote set-head"))
 			result |= error("Could not setup %s", buf.buf);

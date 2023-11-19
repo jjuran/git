@@ -38,7 +38,7 @@ cat > expect << EOF
 	WhatEver = Second
 EOF
 test_expect_success 'similar section' '
-	git config Cores.WhatEver Second
+	git config Cores.WhatEver Second &&
 	test_cmp expect .git/config
 '
 
@@ -958,6 +958,37 @@ test_expect_success 'git -c complains about empty key' '
 
 test_expect_success 'git -c complains about empty key and value' '
 	test_must_fail git -c "" rev-parse
+'
+
+# malformed configuration files
+test_expect_success 'barf on syntax error' '
+	cat >.git/config <<-\EOF &&
+	# broken section line
+	[section]
+	key garbage
+	EOF
+	test_must_fail git config --get section.key >actual 2>error &&
+	grep " line 3 " error
+'
+
+test_expect_success 'barf on incomplete section header' '
+	cat >.git/config <<-\EOF &&
+	# broken section line
+	[section
+	key = value
+	EOF
+	test_must_fail git config --get section.key >actual 2>error &&
+	grep " line 2 " error
+'
+
+test_expect_success 'barf on incomplete string' '
+	cat >.git/config <<-\EOF &&
+	# broken section line
+	[section]
+	key = "value string
+	EOF
+	test_must_fail git config --get section.key >actual 2>error &&
+	grep " line 3 " error
 '
 
 test_done

@@ -53,9 +53,10 @@ def p4_build_cmd(cmd):
 
 def chdir(dir):
     # P4 uses the PWD environment variable rather than getcwd(). Since we're
-    # not using the shell, we have to set it ourselves.
-    os.environ['PWD']=dir
+    # not using the shell, we have to set it ourselves.  This path could
+    # be relative, so go there first, then figure out where we ended up.
     os.chdir(dir)
+    os.environ['PWD'] = os.getcwd()
 
 def die(msg):
     if verbose:
@@ -361,6 +362,11 @@ def isValidGitDir(path):
 def parseRevision(ref):
     return read_pipe("git rev-parse %s" % ref).strip()
 
+def branchExists(ref):
+    rev = read_pipe(["git", "rev-parse", "-q", "--verify", ref],
+                     ignore_error=True)
+    return len(rev) > 0
+
 def extractLogMessageFromGitCommit(commit):
     logMessage = ""
 
@@ -548,6 +554,46 @@ def p4PathStartsWith(path, prefix):
     if ignorecase:
         return path.lower().startswith(prefix.lower())
     return path.startswith(prefix)
+
+def getClientSpec():
+    """Look at the p4 client spec, create a View() object that contains
+       all the mappings, and return it."""
+
+    specList = p4CmdList("client -o")
+    if len(specList) != 1:
+        die('Output from "client -o" is %d lines, expecting 1' %
+            len(specList))
+
+    # dictionary of all client parameters
+    entry = specList[0]
+
+    # just the keys that start with "View"
+    view_keys = [ k for k in entry.keys() if k.startswith("View") ]
+
+    # hold this new View
+    view = View()
+
+    # append the lines, in order, to the view
+    for view_num in range(len(view_keys)):
+        k = "View%d" % view_num
+        if k not in view_keys:
+            die("Expected view key %s missing" % k)
+        view.append(entry[k])
+
+    return view
+
+def getClientRoot():
+    """Grab the client directory."""
+
+    output = p4CmdList("client -o")
+    if len(output) != 1:
+        die('Output from "client -o" is %d lines, expecting 1' % len(output))
+
+    entry = output[0]
+    if "Root" not in entry:
+        die('Client has no "Root"')
+
+    return entry["Root"]
 
 class Command:
     def __init__(self):
@@ -847,6 +893,41 @@ class P4Submit(Command, P4UserMap):
 
         return template
 
+    def edit_template(self, template_file):
+        """Invoke the editor to let the user change the submission
+           message.  Return true if okay to continue with the submit."""
+
+        # if configured to skip the editing part, just submit
+        if gitConfig("git-p4.skipSubmitEdit") == "true":
+            return True
+
+        # look at the modification time, to check later if the user saved
+        # the file
+        mtime = os.stat(template_file).st_mtime
+
+        # invoke the editor
+        if os.environ.has_key("P4EDITOR"):
+            editor = os.environ.get("P4EDITOR")
+        else:
+            editor = read_pipe("git var GIT_EDITOR").strip()
+        system(editor + " " + template_file)
+
+        # If the file was not saved, prompt to see if this patch should
+        # be skipped.  But skip this verification step if configured so.
+        if gitConfig("git-p4.skipSubmitEditCheck") == "true":
+            return True
+
+        # modification time updated means user saved the file
+        if os.stat(template_file).st_mtime > mtime:
+            return True
+
+        while True:
+            response = raw_input("Submit template unchanged. Submit anyway? [y]es, [n]o (skip this patch) ")
+            if response == 'y':
+                return True
+            if response == 'n':
+                return False
+
     def applyCommit(self, id):
         print "Applying %s" % (read_pipe("git log --max-count=1 --pretty=oneline %s" % id))
 
@@ -1001,7 +1082,7 @@ class P4Submit(Command, P4UserMap):
 
             separatorLine = "######## everything below this line is just the diff #######\n"
 
-            [handle, fileName] = tempfile.mkstemp()
+            (handle, fileName) = tempfile.mkstemp()
             tmpFile = os.fdopen(handle, "w+")
             if self.isWindows:
                 submitTemplate = submitTemplate.replace("\n", "\r\n")
@@ -1009,25 +1090,9 @@ class P4Submit(Command, P4UserMap):
                 newdiff = newdiff.replace("\n", "\r\n")
             tmpFile.write(submitTemplate + separatorLine + diff + newdiff)
             tmpFile.close()
-            mtime = os.stat(fileName).st_mtime
-            if os.environ.has_key("P4EDITOR"):
-                editor = os.environ.get("P4EDITOR")
-            else:
-                editor = read_pipe("git var GIT_EDITOR").strip()
-            system(editor + " " + fileName)
 
-            if gitConfig("git-p4.skipSubmitEditCheck") == "true":
-                checkModTime = False
-            else:
-                checkModTime = True
-
-            response = "y"
-            if checkModTime and (os.stat(fileName).st_mtime <= mtime):
-                response = "x"
-                while response != "y" and response != "n":
-                    response = raw_input("Submit template unchanged. Submit anyway? [y]es, [n]o (skip this patch) ")
-
-            if response == "y":
+            if self.edit_template(fileName):
+                # read the edited message and submit
                 tmpFile = open(fileName, "rb")
                 message = tmpFile.read()
                 tmpFile.close()
@@ -1039,11 +1104,13 @@ class P4Submit(Command, P4UserMap):
                 if self.preserveUser:
                     if p4User:
                         # Get last changelist number. Cannot easily get it from
-                        # the submit command output as the output is unmarshalled.
+                        # the submit command output as the output is
+                        # unmarshalled.
                         changelist = self.lastP4Changelist()
                         self.modifyChangelistUser(changelist, p4User)
-
             else:
+                # skip this patch
+                print "Submission cancelled, undoing p4 changes."
                 for f in editedFiles:
                     p4_revert(f)
                 for f in filesToAdd:
@@ -1067,6 +1134,8 @@ class P4Submit(Command, P4UserMap):
                 die("Detecting current git branch failed!")
         elif len(args) == 1:
             self.master = args[0]
+            if not branchExists(self.master):
+                die("Branch %s does not exist" % self.master)
         else:
             return False
 
@@ -1090,14 +1159,27 @@ class P4Submit(Command, P4UserMap):
             print "Internal error: cannot locate perforce depot path from existing branches"
             sys.exit(128)
 
-        self.clientPath = p4Where(self.depotPath)
+        self.useClientSpec = False
+        if gitConfig("git-p4.useclientspec", "--bool") == "true":
+            self.useClientSpec = True
+        if self.useClientSpec:
+            self.clientSpecDirs = getClientSpec()
 
-        if len(self.clientPath) == 0:
-            print "Error: Cannot locate perforce checkout of %s in client view" % self.depotPath
-            sys.exit(128)
+        if self.useClientSpec:
+            # all files are relative to the client spec
+            self.clientPath = getClientRoot()
+        else:
+            self.clientPath = p4Where(self.depotPath)
+
+        if self.clientPath == "":
+            die("Error: Cannot locate perforce checkout of %s in client view" % self.depotPath)
 
         print "Perforce checkout for depot path %s located at %s" % (self.depotPath, self.clientPath)
         self.oldWorkingDirectory = os.getcwd()
+
+        # ensure the clientPath exists
+        if not os.path.exists(self.clientPath):
+            os.makedirs(self.clientPath)
 
         chdir(self.clientPath)
         print "Synchronizing p4 checkout..."
@@ -1135,6 +1217,218 @@ class P4Submit(Command, P4UserMap):
             rebase.rebase()
 
         return True
+
+class View(object):
+    """Represent a p4 view ("p4 help views"), and map files in a
+       repo according to the view."""
+
+    class Path(object):
+        """A depot or client path, possibly containing wildcards.
+           The only one supported is ... at the end, currently.
+           Initialize with the full path, with //depot or //client."""
+
+        def __init__(self, path, is_depot):
+            self.path = path
+            self.is_depot = is_depot
+            self.find_wildcards()
+            # remember the prefix bit, useful for relative mappings
+            m = re.match("(//[^/]+/)", self.path)
+            if not m:
+                die("Path %s does not start with //prefix/" % self.path)
+            prefix = m.group(1)
+            if not self.is_depot:
+                # strip //client/ on client paths
+                self.path = self.path[len(prefix):]
+
+        def find_wildcards(self):
+            """Make sure wildcards are valid, and set up internal
+               variables."""
+
+            self.ends_triple_dot = False
+            # There are three wildcards allowed in p4 views
+            # (see "p4 help views").  This code knows how to
+            # handle "..." (only at the end), but cannot deal with
+            # "%%n" or "*".  Only check the depot_side, as p4 should
+            # validate that the client_side matches too.
+            if re.search(r'%%[1-9]', self.path):
+                die("Can't handle %%n wildcards in view: %s" % self.path)
+            if self.path.find("*") >= 0:
+                die("Can't handle * wildcards in view: %s" % self.path)
+            triple_dot_index = self.path.find("...")
+            if triple_dot_index >= 0:
+                if not self.path.endswith("..."):
+                    die("Can handle ... wildcard only at end of path: %s" %
+                        self.path)
+                self.ends_triple_dot = True
+
+        def ensure_compatible(self, other_path):
+            """Make sure the wildcards agree."""
+            if self.ends_triple_dot != other_path.ends_triple_dot:
+                 die("Both paths must end with ... if either does;\n" +
+                     "paths: %s %s" % (self.path, other_path.path))
+
+        def match_wildcards(self, test_path):
+            """See if this test_path matches us, and fill in the value
+               of the wildcards if so.  Returns a tuple of
+               (True|False, wildcards[]).  For now, only the ... at end
+               is supported, so at most one wildcard."""
+            if self.ends_triple_dot:
+                dotless = self.path[:-3]
+                if test_path.startswith(dotless):
+                    wildcard = test_path[len(dotless):]
+                    return (True, [ wildcard ])
+            else:
+                if test_path == self.path:
+                    return (True, [])
+            return (False, [])
+
+        def match(self, test_path):
+            """Just return if it matches; don't bother with the wildcards."""
+            b, _ = self.match_wildcards(test_path)
+            return b
+
+        def fill_in_wildcards(self, wildcards):
+            """Return the relative path, with the wildcards filled in
+               if there are any."""
+            if self.ends_triple_dot:
+                return self.path[:-3] + wildcards[0]
+            else:
+                return self.path
+
+    class Mapping(object):
+        def __init__(self, depot_side, client_side, overlay, exclude):
+            # depot_side is without the trailing /... if it had one
+            self.depot_side = View.Path(depot_side, is_depot=True)
+            self.client_side = View.Path(client_side, is_depot=False)
+            self.overlay = overlay  # started with "+"
+            self.exclude = exclude  # started with "-"
+            assert not (self.overlay and self.exclude)
+            self.depot_side.ensure_compatible(self.client_side)
+
+        def __str__(self):
+            c = " "
+            if self.overlay:
+                c = "+"
+            if self.exclude:
+                c = "-"
+            return "View.Mapping: %s%s -> %s" % \
+                   (c, self.depot_side, self.client_side)
+
+        def map_depot_to_client(self, depot_path):
+            """Calculate the client path if using this mapping on the
+               given depot path; does not consider the effect of other
+               mappings in a view.  Even excluded mappings are returned."""
+            matches, wildcards = self.depot_side.match_wildcards(depot_path)
+            if not matches:
+                return ""
+            client_path = self.client_side.fill_in_wildcards(wildcards)
+            return client_path
+
+    #
+    # View methods
+    #
+    def __init__(self):
+        self.mappings = []
+
+    def append(self, view_line):
+        """Parse a view line, splitting it into depot and client
+           sides.  Append to self.mappings, preserving order."""
+
+        # Split the view line into exactly two words.  P4 enforces
+        # structure on these lines that simplifies this quite a bit.
+        #
+        # Either or both words may be double-quoted.
+        # Single quotes do not matter.
+        # Double-quote marks cannot occur inside the words.
+        # A + or - prefix is also inside the quotes.
+        # There are no quotes unless they contain a space.
+        # The line is already white-space stripped.
+        # The two words are separated by a single space.
+        #
+        if view_line[0] == '"':
+            # First word is double quoted.  Find its end.
+            close_quote_index = view_line.find('"', 1)
+            if close_quote_index <= 0:
+                die("No first-word closing quote found: %s" % view_line)
+            depot_side = view_line[1:close_quote_index]
+            # skip closing quote and space
+            rhs_index = close_quote_index + 1 + 1
+        else:
+            space_index = view_line.find(" ")
+            if space_index <= 0:
+                die("No word-splitting space found: %s" % view_line)
+            depot_side = view_line[0:space_index]
+            rhs_index = space_index + 1
+
+        if view_line[rhs_index] == '"':
+            # Second word is double quoted.  Make sure there is a
+            # double quote at the end too.
+            if not view_line.endswith('"'):
+                die("View line with rhs quote should end with one: %s" %
+                    view_line)
+            # skip the quotes
+            client_side = view_line[rhs_index+1:-1]
+        else:
+            client_side = view_line[rhs_index:]
+
+        # prefix + means overlay on previous mapping
+        overlay = False
+        if depot_side.startswith("+"):
+            overlay = True
+            depot_side = depot_side[1:]
+
+        # prefix - means exclude this path
+        exclude = False
+        if depot_side.startswith("-"):
+            exclude = True
+            depot_side = depot_side[1:]
+
+        m = View.Mapping(depot_side, client_side, overlay, exclude)
+        self.mappings.append(m)
+
+    def map_in_client(self, depot_path):
+        """Return the relative location in the client where this
+           depot file should live.  Returns "" if the file should
+           not be mapped in the client."""
+
+        paths_filled = []
+        client_path = ""
+
+        # look at later entries first
+        for m in self.mappings[::-1]:
+
+            # see where will this path end up in the client
+            p = m.map_depot_to_client(depot_path)
+
+            if p == "":
+                # Depot path does not belong in client.  Must remember
+                # this, as previous items should not cause files to
+                # exist in this path either.  Remember that the list is
+                # being walked from the end, which has higher precedence.
+                # Overlap mappings do not exclude previous mappings.
+                if not m.overlay:
+                    paths_filled.append(m.client_side)
+
+            else:
+                # This mapping matched; no need to search any further.
+                # But, the mapping could be rejected if the client path
+                # has already been claimed by an earlier mapping.
+                already_mapped_in_client = False
+                for f in paths_filled:
+                    # this is View.Path.match
+                    if f.match(p):
+                        already_mapped_in_client = True
+                        break
+                if not already_mapped_in_client:
+                    # Include this file, unless it is from a line that
+                    # explicitly said to exclude it.
+                    if not m.exclude:
+                        client_path = p
+
+                # a match, even if rejected, always stops the search
+                break
+
+        return client_path
 
 class P4Sync(Command, P4UserMap):
     delete_actions = ( "delete", "move/delete", "purge" )
@@ -1183,7 +1477,8 @@ class P4Sync(Command, P4UserMap):
         self.p4BranchesInGit = []
         self.cloneExclude = []
         self.useClientSpec = False
-        self.clientSpecDirs = []
+        self.useClientSpec_from_options = False
+        self.clientSpecDirs = None
 
         if gitConfig("git-p4.syncFromOrigin") == "false":
             self.syncWithOrigin = False
@@ -1234,20 +1529,7 @@ class P4Sync(Command, P4UserMap):
 
     def stripRepoPath(self, path, prefixes):
         if self.useClientSpec:
-
-            # if using the client spec, we use the output directory
-            # specified in the client.  For example, a view
-            #   //depot/foo/branch/... //client/branch/foo/...
-            # will end up putting all foo/branch files into
-            #  branch/foo/
-            for val in self.clientSpecDirs:
-                if path.startswith(val[0]):
-                    # replace the depot path with the client path
-                    path = path.replace(val[0], val[1][1])
-                    # now strip out the client (//client/...)
-                    path = re.sub("^(//[^/]+/)", '', path)
-                    # the rest is all path
-                    return path
+            return self.clientSpecDirs.map_in_client(path)
 
         if self.keepRepoPath:
             prefixes = [re.sub("^(//[^/]+/).*", r'\1', prefixes[0])]
@@ -1397,19 +1679,17 @@ class P4Sync(Command, P4UserMap):
         filesToDelete = []
 
         for f in files:
-            includeFile = True
-            for val in self.clientSpecDirs:
-                if f['path'].startswith(val[0]):
-                    if val[1][0] <= 0:
-                        includeFile = False
-                    break
+            # if using a client spec, only add the files that have
+            # a path in the client
+            if self.clientSpecDirs:
+                if self.clientSpecDirs.map_in_client(f['path']) == "":
+                    continue
 
-            if includeFile:
-                filesForCommit.append(f)
-                if f['action'] in self.delete_actions:
-                    filesToDelete.append(f)
-                else:
-                    filesToRead.append(f)
+            filesForCommit.append(f)
+            if f['action'] in self.delete_actions:
+                filesToDelete.append(f)
+            else:
+                filesToRead.append(f)
 
         # deleted files...
         for f in filesToDelete:
@@ -1847,52 +2127,6 @@ class P4Sync(Command, P4UserMap):
             print self.gitError.read()
 
 
-    def getClientSpec(self):
-        specList = p4CmdList( "client -o" )
-        temp = {}
-        for entry in specList:
-            for k,v in entry.iteritems():
-                if k.startswith("View"):
-
-                    # p4 has these %%1 to %%9 arguments in specs to
-                    # reorder paths; which we can't handle (yet :)
-                    if re.match('%%\d', v) != None:
-                        print "Sorry, can't handle %%n arguments in client specs"
-                        sys.exit(1)
-
-                    if v.startswith('"'):
-                        start = 1
-                    else:
-                        start = 0
-                    index = v.find("...")
-
-                    # save the "client view"; i.e the RHS of the view
-                    # line that tells the client where to put the
-                    # files for this view.
-                    cv = v[index+3:].strip() # +3 to remove previous '...'
-
-                    # if the client view doesn't end with a
-                    # ... wildcard, then we're going to mess up the
-                    # output directory, so fail gracefully.
-                    if not cv.endswith('...'):
-                        print 'Sorry, client view in "%s" needs to end with wildcard' % (k)
-                        sys.exit(1)
-                    cv=cv[:-3]
-
-                    # now save the view; +index means included, -index
-                    # means it should be filtered out.
-                    v = v[start:index]
-                    if v.startswith("-"):
-                        v = v[1:]
-                        include = -len(v)
-                    else:
-                        include = len(v)
-
-                    temp[v] = (include, cv)
-
-        self.clientSpecDirs = temp.items()
-        self.clientSpecDirs.sort( lambda x, y: abs( y[1][0] ) - abs( x[1][0] ) )
-
     def run(self, args):
         self.depotPaths = []
         self.changeRange = ""
@@ -1925,8 +2159,15 @@ class P4Sync(Command, P4UserMap):
             if not gitBranchExists(self.refPrefix + "HEAD") and self.importIntoRemotes and gitBranchExists(self.branch):
                 system("git symbolic-ref %sHEAD %s" % (self.refPrefix, self.branch))
 
-        if self.useClientSpec or gitConfig("git-p4.useclientspec") == "true":
-            self.getClientSpec()
+        # accept either the command-line option, or the configuration variable
+        if self.useClientSpec:
+            # will use this after clone to set the variable
+            self.useClientSpec_from_options = True
+        else:
+            if gitConfig("git-p4.useclientspec", "--bool") == "true":
+                self.useClientSpec = True
+        if self.useClientSpec:
+            self.clientSpecDirs = getClientSpec()
 
         # TODO: should always look at previous commits,
         # merge with previous imports, if possible.
@@ -1998,6 +2239,17 @@ class P4Sync(Command, P4UserMap):
         revision = ""
         self.users = {}
 
+        # Make sure no revision specifiers are used when --changesfile
+        # is specified.
+        bad_changesfile = False
+        if len(self.changesFile) > 0:
+            for p in self.depotPaths:
+                if p.find("@") >= 0 or p.find("#") >= 0:
+                    bad_changesfile = True
+                    break
+        if bad_changesfile:
+            die("Option --changesfile is incompatible with revision specifiers")
+
         newPaths = []
         for p in self.depotPaths:
             if p.find("@") != -1:
@@ -2014,7 +2266,10 @@ class P4Sync(Command, P4UserMap):
                 revision = p[hashIdx:]
                 p = p[:hashIdx]
             elif self.previousDepotPaths == []:
-                revision = "#head"
+                # pay attention to changesfile, if given, else import
+                # the entire p4 tree at the head revision
+                if len(self.changesFile) == 0:
+                    revision = "#head"
 
             p = re.sub ("\.\.\.$", "", p)
             if not p.endswith("/"):
@@ -2227,6 +2482,10 @@ class P4Clone(P4Sync):
             else:
                 print "Could not detect main branch. No checkout/master branch created."
 
+        # auto-set this variable if invoked with --use-client-spec
+        if self.useClientSpec_from_options:
+            system("git config --bool git-p4.useclientspec true")
+
         return True
 
 class P4Branches(Command):
@@ -2309,7 +2568,8 @@ def main():
     args = sys.argv[2:]
 
     if len(options) > 0:
-        options.append(optparse.make_option("--git-dir", dest="gitdir"))
+        if cmd.needsGit:
+            options.append(optparse.make_option("--git-dir", dest="gitdir"))
 
         parser = optparse.OptionParser(cmd.usage.replace("%prog", "%prog " + cmdName),
                                        options,
@@ -2339,6 +2599,7 @@ def main():
 
     if not cmd.run(args):
         parser.print_help()
+        sys.exit(2)
 
 
 if __name__ == '__main__':

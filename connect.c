@@ -101,8 +101,27 @@ struct ref **get_remote_heads(int in, struct ref **list,
 
 int server_supports(const char *feature)
 {
-	return server_capabilities &&
-		strstr(server_capabilities, feature) != NULL;
+	return !!parse_feature_request(server_capabilities, feature);
+}
+
+const char *parse_feature_request(const char *feature_list, const char *feature)
+{
+	int len;
+
+	if (!feature_list)
+		return NULL;
+
+	len = strlen(feature);
+	while (*feature_list) {
+		const char *found = strstr(feature_list, feature);
+		if (!found)
+			return NULL;
+		if ((feature_list == found || isspace(found[-1])) &&
+		    (!found[len] || isspace(found[len]) || found[len] == '='))
+			return found;
+		feature_list = found + 1;
+	}
+	return NULL;
 }
 
 enum protocol {
@@ -613,48 +632,4 @@ int finish_connect(struct child_process *conn)
 	free(conn->argv);
 	free(conn);
 	return code;
-}
-
-char *git_getpass(const char *prompt)
-{
-	const char *askpass;
-	struct child_process pass;
-	const char *args[3];
-	static struct strbuf buffer = STRBUF_INIT;
-
-	askpass = getenv("GIT_ASKPASS");
-	if (!askpass)
-		askpass = askpass_program;
-	if (!askpass)
-		askpass = getenv("SSH_ASKPASS");
-	if (!askpass || !(*askpass)) {
-		char *result = getpass(prompt);
-		if (!result)
-			die_errno("Could not read password");
-		return result;
-	}
-
-	args[0] = askpass;
-	args[1]	= prompt;
-	args[2] = NULL;
-
-	memset(&pass, 0, sizeof(pass));
-	pass.argv = args;
-	pass.out = -1;
-
-	if (start_command(&pass))
-		exit(1);
-
-	strbuf_reset(&buffer);
-	if (strbuf_read(&buffer, pass.out, 20) < 0)
-		die("failed to read password from %s\n", askpass);
-
-	close(pass.out);
-
-	if (finish_command(&pass))
-		exit(1);
-
-	strbuf_setlen(&buffer, strcspn(buffer.buf, "\r\n"));
-
-	return buffer.buf;
 }
