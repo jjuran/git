@@ -21,6 +21,7 @@
 
 #define NO_CURL  1
 #define NO_EXPAT 1
+#define NO_GETTEXT 1
 #define NO_ICONV 1
 #define NO_IPV6  1
 #define NO_NSEC  1
