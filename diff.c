@@ -1512,7 +1512,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	 */
 
 	if (options->stat_width == -1)
-		width = term_columns();
+		width = term_columns() - options->output_prefix_length;
 	else
 		width = options->stat_width ? options->stat_width : 80;
 
@@ -1540,8 +1540,12 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	 * Adjust adjustable widths not to exceed maximum width
 	 */
 	if (name_width + number_width + 6 + graph_width > width) {
-		if (graph_width > width * 3/8 - number_width - 6)
+		if (graph_width > width * 3/8 - number_width - 6) {
 			graph_width = width * 3/8 - number_width - 6;
+			if (graph_width < 6)
+				graph_width = 6;
+		}
+
 		if (options->stat_graph_width &&
 		    graph_width > options->stat_graph_width)
 			graph_width = options->stat_graph_width;
@@ -3543,9 +3547,9 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	else if (!strcmp(arg, "--ignore-space-at-eol"))
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_AT_EOL);
 	else if (!strcmp(arg, "--patience"))
-		DIFF_XDL_SET(options, PATIENCE_DIFF);
+		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))
-		DIFF_XDL_SET(options, HISTOGRAM_DIFF);
+		options->xdl_opts = DIFF_WITH_ALG(options, HISTOGRAM_DIFF);
 
 	/* flags options */
 	else if (!strcmp(arg, "--binary")) {
