@@ -2334,6 +2334,10 @@ static int option_parse_ulong(const struct option *opt,
 
 int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int use_internal_rev_list = 0;
 	int thin = 0;
 	int all_progress_implied = 0;
@@ -2404,6 +2408,10 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 			    "do not hide commits by grafts", 0),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	read_replace_refs = 0;
 
