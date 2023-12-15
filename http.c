@@ -295,8 +295,10 @@ static CURL *get_curl_handle(void)
 	if (curl_ftp_no_epsv)
 		curl_easy_setopt(result, CURLOPT_FTP_USE_EPSV, 0);
 
-	if (curl_http_proxy)
+	if (curl_http_proxy) {
 		curl_easy_setopt(result, CURLOPT_PROXY, curl_http_proxy);
+		curl_easy_setopt(result, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+	}
 
 	return result;
 }
@@ -827,7 +829,7 @@ int http_get_strbuf(const char *url, struct strbuf *result, int options)
 }
 
 /*
- * Downloads an url and stores the result in the given file.
+ * Downloads a URL and stores the result in the given file.
  *
  * If a previous interrupted download is detected (i.e. a previous temporary
  * file is still around) the download is resumed.

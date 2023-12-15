@@ -264,7 +264,7 @@ struct tree *write_tree_from_memory(struct merge_options *o)
 
 	if (!cache_tree_fully_valid(active_cache_tree) &&
 	    cache_tree_update(active_cache_tree,
-			      active_cache, active_nr, 0, 0, 0) < 0)
+			      active_cache, active_nr, 0) < 0)
 		die("error building trees");
 
 	result = lookup_tree(active_cache_tree->sha1);
@@ -485,6 +485,7 @@ static struct string_list *get_renames(struct merge_options *o,
 	renames = xcalloc(1, sizeof(struct string_list));
 	diff_setup(&opts);
 	DIFF_OPT_SET(&opts, RECURSIVE);
+	DIFF_OPT_CLR(&opts, RENAME_EMPTY);
 	opts.detect_rename = DIFF_DETECT_RENAME;
 	opts.rename_limit = o->merge_rename_limit >= 0 ? o->merge_rename_limit :
 			    o->diff_rename_limit >= 0 ? o->diff_rename_limit :
@@ -1914,7 +1915,7 @@ int merge_recursive(struct merge_options *o,
 		/* if there is no common ancestor, use an empty tree */
 		struct tree *tree;
 
-		tree = lookup_tree((const unsigned char *)EMPTY_TREE_SHA1_BIN);
+		tree = lookup_tree(EMPTY_TREE_SHA1_BIN);
 		merged_common_ancestors = make_virtual_commit(tree, "ancestor");
 	}
 

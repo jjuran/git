@@ -399,6 +399,8 @@ static void finish(struct commit *head_commit,
 	if (new_head && show_diffstat) {
 		struct diff_options opts;
 		diff_setup(&opts);
+		opts.stat_width = -1; /* use full terminal width */
+		opts.stat_graph_width = -1; /* respect statGraphWidth config */
 		opts.output_format |=
 			DIFF_FORMAT_SUMMARY | DIFF_FORMAT_DIFFSTAT;
 		opts.detect_rename = DIFF_DETECT_RENAME;
@@ -903,12 +905,12 @@ static void prepare_to_commit(void)
 	write_merge_msg(&msg);
 	run_hook(get_index_file(), "prepare-commit-msg",
 		 git_path("MERGE_MSG"), "merge", NULL, NULL);
-	if (option_edit) {
+	if (0 < option_edit) {
 		if (launch_editor(git_path("MERGE_MSG"), NULL, NULL))
 			abort_commit(NULL);
 	}
 	read_merge_msg(&msg);
-	stripspace(&msg, option_edit);
+	stripspace(&msg, 0 < option_edit);
 	if (!msg.len)
 		abort_commit(_("Empty commit message."));
 	strbuf_release(&merge_msg);
@@ -1323,15 +1325,12 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 		if (!fast_forward_only &&
 		    merge_remote_util(commit) &&
 		    merge_remote_util(commit)->obj &&
-		    merge_remote_util(commit)->obj->type == OBJ_TAG) {
-			if (option_edit < 0)
-				option_edit = default_edit_option();
+		    merge_remote_util(commit)->obj->type == OBJ_TAG)
 			allow_fast_forward = 0;
-		}
 	}
 
 	if (option_edit < 0)
-		option_edit = 0;
+		option_edit = default_edit_option();
 
 	if (!use_strategies) {
 		if (!remoteheads->next)

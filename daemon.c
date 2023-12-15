@@ -1094,6 +1094,8 @@ static int serve(struct string_list *listen_addr, int listen_port,
 
 	drop_privileges(cred);
 
+	loginfo("Ready to rumble");
+
 	return service_loop(&socklist);
 }
 
@@ -1278,10 +1280,8 @@ int main(int argc, char **argv)
 	if (inetd_mode || serve_mode)
 		return execute();
 
-	if (detach) {
+	if (detach)
 		daemonize();
-		loginfo("Ready to rumble");
-	}
 	else
 		sanitize_stdfds();
 
