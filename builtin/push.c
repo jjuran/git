@@ -111,6 +111,9 @@ static NORETURN int die_push_simple(struct branch *branch, struct remote *remote
 	      "%s"),
 	    remote->name, short_upstream,
 	    remote->name, branch->name, advice_maybe);
+	
+	/* Not reached */
+	return 0;
 }
 
 static void setup_push_upstream(struct remote *remote, int simple)
