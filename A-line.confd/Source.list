@@ -27,6 +27,7 @@ builtin/checkout-index.c
 builtin/checkout.c
 builtin/clean.c
 builtin/clone.c
+builtin/column.c
 builtin/commit-tree.c
 builtin/commit.c
 builtin/config.c
@@ -109,6 +110,7 @@ bundle.c
 cache-tree.c
 check-racy.c
 color.c
+column.c
 combine-diff.c
 commit.c
 compat/basename.c
@@ -169,6 +171,7 @@ mailmap.c
 match-trees.c
 merge-file.c
 merge-recursive.c
+mergesort.c
 name-hash.c
 notes.c
 notes-cache.c
@@ -244,6 +247,7 @@ url.c
 usage.c
 userdiff.c
 utf8.c
+varint.c
 walker.c
 wrapper.c
 write_or_die.c
