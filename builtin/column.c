@@ -18,6 +18,10 @@ static int column_config(const char *var, const char *value, void *cb)
 
 int cmd_column(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct string_list list = STRING_LIST_INIT_DUP;
 	struct strbuf sb = STRBUF_INIT;
 	struct column_options copts;
@@ -32,6 +36,10 @@ int cmd_column(int argc, const char **argv, const char *prefix)
 		OPT_INTEGER(0, "padding", &copts.padding, "Padding space between columns"),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	/* This one is special and must be the first one */
 	if (argc > 1 && !prefixcmp(argv[1], "--command=")) {
