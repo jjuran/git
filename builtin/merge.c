@@ -1130,6 +1130,10 @@ static int default_edit_option(void)
 		st_stdin.st_mode == st_stdout.st_mode);
 }
 
+#if defined(__MWERKS__)  &&  defined(__POWERPC__)
+#pragma optimization_level 1
+#endif
+
 static struct commit_list *collect_parents(struct commit *head_commit,
 					   int *head_subsumed,
 					   int argc, const char **argv)
@@ -1163,6 +1167,10 @@ static struct commit_list *collect_parents(struct commit *head_commit,
 	}
 	return remoteheads;
 }
+
+#if defined(__MWERKS__)  &&  defined(__POWERPC__)
+#pragma optimization_level reset
+#endif
 
 int cmd_merge(int argc, const char **argv, const char *prefix)
 {
