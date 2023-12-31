@@ -8,6 +8,13 @@ test_description='Binary diff and apply
 
 . ./test-lib.sh
 
+cat >expect.binary-numstat <<\EOF
+1	1	a
+-	-	b
+1	1	c
+-	-	d
+EOF
+
 test_expect_success 'prepare repository' \
 	'echo AIT >a && echo BIT >b && echo CIT >c && echo DIT >d &&
 	 git update-index --add a b c d &&
@@ -23,13 +30,35 @@ cat > expected <<\EOF
  d |  Bin
  4 files changed, 2 insertions(+), 2 deletions(-)
 EOF
-test_expect_success 'diff without --binary' \
-	'git diff | git apply --stat --summary >current &&
-	 test_cmp expected current'
+test_expect_success '"apply --stat" output for binary file change' '
+	git diff >diff &&
+	git apply --stat --summary <diff >current &&
+	test_i18ncmp expected current
+'
 
-test_expect_success 'diff with --binary' \
-	'git diff --binary | git apply --stat --summary >current &&
-	 test_cmp expected current'
+test_expect_success 'diff --shortstat output for binary file change' '
+	echo " 4 files changed, 2 insertions(+), 2 deletions(-)" >expected &&
+	git diff --shortstat >current &&
+	test_i18ncmp expected current
+'
+
+test_expect_success 'diff --shortstat output for binary file change only' '
+	echo " 1 file changed, 0 insertions(+), 0 deletions(-)" >expected &&
+	git diff --shortstat -- b >current &&
+	test_i18ncmp expected current
+'
+
+test_expect_success 'apply --numstat notices binary file change' '
+	git diff >diff &&
+	git apply --numstat <diff >current &&
+	test_cmp expect.binary-numstat current
+'
+
+test_expect_success 'apply --numstat understands diff --binary format' '
+	git diff --binary >diff &&
+	git apply --numstat <diff >current &&
+	test_cmp expect.binary-numstat current
+'
 
 # apply needs to be able to skip the binary material correctly
 # in order to report the line number of a corrupt patch.
@@ -88,6 +117,25 @@ test_expect_success 'diff --no-index with binary creation' '
 	echo Q >expected &&
 	nul_to_q <binary >actual &&
 	test_cmp expected actual
+'
+
+cat >expect <<EOF
+ binfile  |   Bin 0 -> 1026 bytes
+ textfile | 10000 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+EOF
+
+test_expect_success 'diff --stat with binary files and big change count' '
+	echo X | dd of=binfile bs=1k seek=1 &&
+	git add binfile &&
+	i=0 &&
+	while test $i -lt 10000; do
+		echo $i &&
+		i=$(($i + 1))
+	done >textfile &&
+	git add textfile &&
+	git diff --cached --stat binfile textfile >output &&
+	grep " | " output >actual &&
+	test_cmp expect actual
 '
 
 test_done

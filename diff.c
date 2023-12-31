@@ -1446,8 +1446,8 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 {
 	int i, len, add, del, adds = 0, dels = 0;
 	uintmax_t max_change = 0, max_len = 0;
-	int total_files = data->nr;
-	int width, name_width, graph_width, number_width = 4, count;
+	int total_files = data->nr, count;
+	int width, name_width, graph_width, number_width = 0, bin_width = 0;
 	const char *reset, *add_c, *del_c;
 	const char *line_prefix = "";
 	int extra_shown = 0;
@@ -1483,8 +1483,21 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		if (max_len < len)
 			max_len = len;
 
-		if (file->is_binary || file->is_unmerged)
+		if (file->is_unmerged) {
+			/* "Unmerged" is 8 characters */
+			bin_width = bin_width < 8 ? 8 : bin_width;
 			continue;
+		}
+		if (file->is_binary) {
+			/* "Bin XXX -> YYY bytes" */
+			int w = 14 + decimal_width(file->added)
+				+ decimal_width(file->deleted);
+			bin_width = bin_width < w ? w : bin_width;
+			/* Display change counts aligned with "Bin" */
+			number_width = 3;
+			continue;
+		}
+
 		if (max_change < change)
 			max_change = change;
 	}
@@ -1509,12 +1522,22 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	 * stat_name_width fixes the maximum width of the filename,
 	 * and is also used to divide available columns if there
 	 * aren't enough.
+	 *
+	 * Binary files are displayed with "Bin XXX -> YYY bytes"
+	 * instead of the change count and graph. This part is treated
+	 * similarly to the graph part, except that it is not
+	 * "scaled". If total width is too small to accomodate the
+	 * guaranteed minimum width of the filename part and the
+	 * separators and this message, this message will "overflow"
+	 * making the line longer than the maximum width.
 	 */
 
 	if (options->stat_width == -1)
 		width = term_columns() - options->output_prefix_length;
 	else
 		width = options->stat_width ? options->stat_width : 80;
+	number_width = decimal_width(max_change) > number_width ?
+		decimal_width(max_change) : number_width;
 
 	if (options->stat_graph_width == -1)
 		options->stat_graph_width = diff_stat_graph_width;
@@ -1528,10 +1551,14 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 
 	/*
 	 * First assign sizes that are wanted, ignoring available width.
+	 * strlen("Bin XXX -> YYY bytes") == bin_width, and the part
+	 * starting from "XXX" should fit in graph_width.
 	 */
-	graph_width = (options->stat_graph_width &&
-		       options->stat_graph_width < max_change) ?
-		options->stat_graph_width : max_change;
+	graph_width = max_change + 4 > bin_width ? max_change : bin_width - 4;
+	if (options->stat_graph_width &&
+	    options->stat_graph_width < graph_width)
+		graph_width = options->stat_graph_width;
+
 	name_width = (options->stat_name_width > 0 &&
 		      options->stat_name_width < max_len) ?
 		options->stat_name_width : max_len;
@@ -1590,8 +1617,12 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		if (data->files[i]->is_binary) {
 			fprintf(options->file, "%s", line_prefix);
 			show_name(options->file, prefix, name, len);
-			fprintf(options->file, "  Bin ");
-			fprintf(options->file, "%s%"PRIuMAX"%s",
+			fprintf(options->file, " %*s", number_width, "Bin");
+			if (!added && !deleted) {
+				putc('\n', options->file);
+				continue;
+			}
+			fprintf(options->file, " %s%"PRIuMAX"%s",
 				del_c, deleted, reset);
 			fprintf(options->file, " -> ");
 			fprintf(options->file, "%s%"PRIuMAX"%s",
@@ -1603,7 +1634,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		else if (data->files[i]->is_unmerged) {
 			fprintf(options->file, "%s", line_prefix);
 			show_name(options->file, prefix, name, len);
-			fprintf(options->file, "  Unmerged\n");
+			fprintf(options->file, " Unmerged\n");
 			continue;
 		}
 
@@ -1632,8 +1663,9 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		}
 		fprintf(options->file, "%s", line_prefix);
 		show_name(options->file, prefix, name, len);
-		fprintf(options->file, "%5"PRIuMAX"%s", added + deleted,
-				added + deleted ? " " : "");
+		fprintf(options->file, " %*"PRIuMAX"%s",
+			number_width, added + deleted,
+			added + deleted ? " " : "");
 		show_graph(options->file, '+', add, add_c, reset);
 		show_graph(options->file, '-', del, del_c, reset);
 		fprintf(options->file, "\n");
@@ -1664,17 +1696,16 @@ static void show_shortstats(struct diffstat_t *data, struct diff_options *option
 		return;
 
 	for (i = 0; i < data->nr; i++) {
-		if (!data->files[i]->is_binary &&
-		    !data->files[i]->is_unmerged) {
-			int added = data->files[i]->added;
-			int deleted= data->files[i]->deleted;
-			if (!data->files[i]->is_renamed &&
-			    (added + deleted == 0)) {
-				total_files--;
-			} else {
-				adds += added;
-				dels += deleted;
-			}
+		int added = data->files[i]->added;
+		int deleted= data->files[i]->deleted;
+
+		if (data->files[i]->is_unmerged)
+			continue;
+		if (!data->files[i]->is_renamed && (added + deleted == 0)) {
+			total_files--;
+		} else if (!data->files[i]->is_binary) { /* don't count bytes */
+			adds += added;
+			dels += deleted;
 		}
 	}
 	if (options->output_prefix) {
@@ -2374,6 +2405,7 @@ static void builtin_diffstat(const char *name_a, const char *name_b,
 {
 	mmfile_t mf1, mf2;
 	struct diffstat_file *data;
+	int same_contents;
 
 	data = diffstat_add(diffstat, name_a, name_b);
 
@@ -2382,10 +2414,17 @@ static void builtin_diffstat(const char *name_a, const char *name_b,
 		return;
 	}
 
+	same_contents = !hashcmp(one->sha1, two->sha1);
+
 	if (diff_filespec_is_binary(one) || diff_filespec_is_binary(two)) {
 		data->is_binary = 1;
-		data->added = diff_filespec_size(two);
-		data->deleted = diff_filespec_size(one);
+		if (same_contents) {
+			data->added = 0;
+			data->deleted = 0;
+		} else {
+			data->added = diff_filespec_size(two);
+			data->deleted = diff_filespec_size(one);
+		}
 	}
 
 	else if (complete_rewrite) {
@@ -2395,7 +2434,7 @@ static void builtin_diffstat(const char *name_a, const char *name_b,
 		data->added = count_lines(two->data, two->size);
 	}
 
-	else {
+	else if (!same_contents) {
 		/* Crazy xdl interfaces.. */
 		xpparam_t xpp;
 		xdemitconf_t xecfg;

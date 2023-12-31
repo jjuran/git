@@ -531,6 +531,7 @@ static void filter_refs(struct ref **refs, int nr_match, char **match)
 	struct ref **newtail = &newlist;
 	struct ref *ref, *next;
 	struct ref *fastarray[32];
+	int match_pos;
 
 	if (nr_match && !args.fetch_all) {
 		if (ARRAY_SIZE(fastarray) < nr_match)
@@ -543,6 +544,7 @@ static void filter_refs(struct ref **refs, int nr_match, char **match)
 	else
 		return_refs = NULL;
 
+	match_pos = 0;
 	for (ref = *refs; ref; ref = next) {
 		next = ref->next;
 		if (!memcmp(ref->name, "refs/", 5) &&
@@ -556,15 +558,20 @@ static void filter_refs(struct ref **refs, int nr_match, char **match)
 			continue;
 		}
 		else {
-			int i;
-			for (i = 0; i < nr_match; i++) {
-				if (!strcmp(ref->name, match[i])) {
-					match[i][0] = '\0';
-					return_refs[i] = ref;
+			int cmp = -1;
+			while (match_pos < nr_match) {
+				cmp = strcmp(ref->name, match[match_pos]);
+				if (cmp < 0) /* definitely do not have it */
+					break;
+				else if (cmp == 0) { /* definitely have it */
+					match[match_pos][0] = '\0';
+					return_refs[match_pos] = ref;
 					break;
 				}
+				else /* might have it; keep looking */
+					match_pos++;
 			}
-			if (i < nr_match)
+			if (!cmp)
 				continue; /* we will link it later */
 		}
 		free(ref);
@@ -780,6 +787,8 @@ static struct ref *do_fetch_pack(int fd[2],
 	struct ref *ref = copy_ref_list(orig_ref);
 	unsigned char sha1[20];
 
+	sort_ref_list(&ref, ref_compare_name);
+
 	if (is_repository_shallow() && !server_supports("shallow"))
 		die("Server does not support shallow clients");
 	if (server_supports("multi_ack_detailed")) {
@@ -837,21 +846,12 @@ static int remove_duplicates(int nr_heads, char **heads)
 {
 	int src, dst;
 
-	for (src = dst = 0; src < nr_heads; src++) {
-		/* If heads[src] is different from any of
-		 * heads[0..dst], push it in.
-		 */
-		int i;
-		for (i = 0; i < dst; i++) {
-			if (!strcmp(heads[i], heads[src]))
-				break;
-		}
-		if (i < dst)
-			continue;
-		if (src != dst)
-			heads[dst] = heads[src];
-		dst++;
-	}
+	if (!nr_heads)
+		return 0;
+
+	for (src = dst = 1; src < nr_heads; src++)
+		if (strcmp(heads[src], heads[dst-1]))
+			heads[dst++] = heads[src];
 	return dst;
 }
 
@@ -902,9 +902,11 @@ static void fetch_pack_setup(void)
 
 int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 {
-	int i, ret, nr_heads;
+	int i, ret;
 	struct ref *ref = NULL;
-	char *dest = NULL, **heads;
+	const char *dest = NULL;
+	int alloc_heads = 0, nr_heads = 0;
+	char **heads = NULL;
 	int fd[2];
 	char *pack_lockfile = NULL;
 	char **pack_lockfile_ptr = NULL;
@@ -912,84 +914,79 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 
 	packet_trace_identity("fetch-pack");
 
-	nr_heads = 0;
-	heads = NULL;
-	for (i = 1; i < argc; i++) {
+	for (i = 1; i < argc && *argv[i] == '-'; i++) {
 		const char *arg = argv[i];
 
-		if (*arg == '-') {
-			if (!prefixcmp(arg, "--upload-pack=")) {
-				args.uploadpack = arg + 14;
-				continue;
-			}
-			if (!prefixcmp(arg, "--exec=")) {
-				args.uploadpack = arg + 7;
-				continue;
-			}
-			if (!strcmp("--quiet", arg) || !strcmp("-q", arg)) {
-				args.quiet = 1;
-				continue;
-			}
-			if (!strcmp("--keep", arg) || !strcmp("-k", arg)) {
-				args.lock_pack = args.keep_pack;
-				args.keep_pack = 1;
-				continue;
-			}
-			if (!strcmp("--thin", arg)) {
-				args.use_thin_pack = 1;
-				continue;
-			}
-			if (!strcmp("--include-tag", arg)) {
-				args.include_tag = 1;
-				continue;
-			}
-			if (!strcmp("--all", arg)) {
-				args.fetch_all = 1;
-				continue;
-			}
-			if (!strcmp("--stdin", arg)) {
-				args.stdin_refs = 1;
-				continue;
-			}
-			if (!strcmp("-v", arg)) {
-				args.verbose = 1;
-				continue;
-			}
-			if (!prefixcmp(arg, "--depth=")) {
-				args.depth = strtol(arg + 8, NULL, 0);
-				continue;
-			}
-			if (!strcmp("--no-progress", arg)) {
-				args.no_progress = 1;
-				continue;
-			}
-			if (!strcmp("--stateless-rpc", arg)) {
-				args.stateless_rpc = 1;
-				continue;
-			}
-			if (!strcmp("--lock-pack", arg)) {
-				args.lock_pack = 1;
-				pack_lockfile_ptr = &pack_lockfile;
-				continue;
-			}
-			usage(fetch_pack_usage);
+		if (!prefixcmp(arg, "--upload-pack=")) {
+			args.uploadpack = arg + 14;
+			continue;
 		}
-		dest = (char *)arg;
-		heads = (char **)(argv + i + 1);
-		nr_heads = argc - i - 1;
-		break;
+		if (!prefixcmp(arg, "--exec=")) {
+			args.uploadpack = arg + 7;
+			continue;
+		}
+		if (!strcmp("--quiet", arg) || !strcmp("-q", arg)) {
+			args.quiet = 1;
+			continue;
+		}
+		if (!strcmp("--keep", arg) || !strcmp("-k", arg)) {
+			args.lock_pack = args.keep_pack;
+			args.keep_pack = 1;
+			continue;
+		}
+		if (!strcmp("--thin", arg)) {
+			args.use_thin_pack = 1;
+			continue;
+		}
+		if (!strcmp("--include-tag", arg)) {
+			args.include_tag = 1;
+			continue;
+		}
+		if (!strcmp("--all", arg)) {
+			args.fetch_all = 1;
+			continue;
+		}
+		if (!strcmp("--stdin", arg)) {
+			args.stdin_refs = 1;
+			continue;
+		}
+		if (!strcmp("-v", arg)) {
+			args.verbose = 1;
+			continue;
+		}
+		if (!prefixcmp(arg, "--depth=")) {
+			args.depth = strtol(arg + 8, NULL, 0);
+			continue;
+		}
+		if (!strcmp("--no-progress", arg)) {
+			args.no_progress = 1;
+			continue;
+		}
+		if (!strcmp("--stateless-rpc", arg)) {
+			args.stateless_rpc = 1;
+			continue;
+		}
+		if (!strcmp("--lock-pack", arg)) {
+			args.lock_pack = 1;
+			pack_lockfile_ptr = &pack_lockfile;
+			continue;
+		}
+		usage(fetch_pack_usage);
 	}
-	if (!dest)
+
+	if (i < argc)
+		dest = argv[i++];
+	else
 		usage(fetch_pack_usage);
 
+	/*
+	 * Copy refs from cmdline to growable list, then append any
+	 * refs from the standard input:
+	 */
+	ALLOC_GROW(heads, argc - i, alloc_heads);
+	for (; i < argc; i++)
+		heads[nr_heads++] = xstrdup(argv[i]);
 	if (args.stdin_refs) {
-		/*
-		 * Copy refs from cmdline to new growable list, then
-		 * append the refs from the standard input.
-		 */
-		int alloc_heads = nr_heads;
-		int size = nr_heads * sizeof(*heads);
-		heads = memcpy(xmalloc(size), heads, size);
 		if (args.stateless_rpc) {
 			/* in stateless RPC mode we use pkt-line to read
 			 * from stdin, until we get a flush packet
@@ -1021,7 +1018,7 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 		fd[0] = 0;
 		fd[1] = 1;
 	} else {
-		conn = git_connect(fd, (char *)dest, args.uploadpack,
+		conn = git_connect(fd, dest, args.uploadpack,
 				   args.verbose ? CONNECT_VERBOSE : 0);
 	}
 
@@ -1060,6 +1057,11 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 	return ret;
 }
 
+static int compare_heads(const void *a, const void *b)
+{
+	return strcmp(*(const char **)a, *(const char **)b);
+}
+
 struct ref *fetch_pack(struct fetch_pack_args *my_args,
 		       int fd[], struct child_process *conn,
 		       const struct ref *ref,
@@ -1079,8 +1081,11 @@ struct ref *fetch_pack(struct fetch_pack_args *my_args,
 			st.st_mtime = 0;
 	}
 
-	if (heads && nr_heads)
+	if (heads && nr_heads) {
+		qsort(heads, nr_heads, sizeof(*heads), compare_heads);
 		nr_heads = remove_duplicates(nr_heads, heads);
+	}
+
 	if (!ref) {
 		packet_flush(fd[1]);
 		die("no matching remote head");

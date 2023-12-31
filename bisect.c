@@ -841,7 +841,7 @@ static int check_ancestors(const char *prefix)
  */
 static void check_good_are_ancestors_of_bad(const char *prefix, int no_checkout)
 {
-	const char *filename = git_path("BISECT_ANCESTORS_OK");
+	char *filename = xstrdup(git_path("BISECT_ANCESTORS_OK"));
 	struct stat st;
 	int fd;
 
@@ -850,11 +850,11 @@ static void check_good_are_ancestors_of_bad(const char *prefix, int no_checkout)
 
 	/* Check if file BISECT_ANCESTORS_OK exists. */
 	if (!stat(filename, &st) && S_ISREG(st.st_mode))
-		return;
+		goto done;
 
 	/* Bisecting with no good rev is ok. */
 	if (good_revs.nr == 0)
-		return;
+		goto done;
 
 	/* Check if all good revs are ancestor of the bad rev. */
 	if (check_ancestors(prefix))
@@ -867,6 +867,8 @@ static void check_good_are_ancestors_of_bad(const char *prefix, int no_checkout)
 			filename, strerror(errno));
 	else
 		close(fd);
+ done:
+	free(filename);
 }
 
 /*

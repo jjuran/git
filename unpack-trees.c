@@ -1027,6 +1027,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	o->result.initialized = 1;
 	o->result.timestamp.sec = o->src_index->timestamp.sec;
 	o->result.timestamp.nsec = o->src_index->timestamp.nsec;
+	o->result.version = o->src_index->version;
 	o->merge_size = len;
 	mark_all_ce_unused(o->src_index);
 
@@ -1792,7 +1793,7 @@ int bind_merge(struct cache_entry **src,
 	struct cache_entry *a = src[1];
 
 	if (o->merge_size != 1)
-		return error("Cannot do a bind merge of %d trees\n",
+		return error("Cannot do a bind merge of %d trees",
 			     o->merge_size);
 	if (a && old)
 		return o->gently ? -1 :

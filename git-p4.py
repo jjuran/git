@@ -14,6 +14,8 @@ import re, shutil
 
 verbose = False
 
+# Only labels/tags matching this will be imported/exported
+defaultLabelRegexp = r'[a-zA-Z0-9_\-.]+$'
 
 def p4_build_cmd(cmd):
     """Build a suitable p4 command line.
@@ -131,25 +133,29 @@ def p4_system(cmd):
     subprocess.check_call(real_cmd, shell=expand)
 
 def p4_integrate(src, dest):
-    p4_system(["integrate", "-Dt", src, dest])
+    p4_system(["integrate", "-Dt", wildcard_encode(src), wildcard_encode(dest)])
 
-def p4_sync(path):
-    p4_system(["sync", path])
+def p4_sync(f, *options):
+    p4_system(["sync"] + list(options) + [wildcard_encode(f)])
 
 def p4_add(f):
-    p4_system(["add", f])
+    # forcibly add file names with wildcards
+    if wildcard_present(f):
+        p4_system(["add", "-f", f])
+    else:
+        p4_system(["add", f])
 
 def p4_delete(f):
-    p4_system(["delete", f])
+    p4_system(["delete", wildcard_encode(f)])
 
 def p4_edit(f):
-    p4_system(["edit", f])
+    p4_system(["edit", wildcard_encode(f)])
 
 def p4_revert(f):
-    p4_system(["revert", f])
+    p4_system(["revert", wildcard_encode(f)])
 
-def p4_reopen(type, file):
-    p4_system(["reopen", "-t", type, file])
+def p4_reopen(type, f):
+    p4_system(["reopen", "-t", type, wildcard_encode(f)])
 
 #
 # Canonicalize the p4 type and return a tuple of the
@@ -246,12 +252,32 @@ def setP4ExecBit(file, mode):
 def getP4OpenedType(file):
     # Returns the perforce file type for the given file.
 
-    result = p4_read_pipe(["opened", file])
+    result = p4_read_pipe(["opened", wildcard_encode(file)])
     match = re.match(".*\((.+)\)\r?$", result)
     if match:
         return match.group(1)
     else:
         die("Could not determine file type for %s (result: '%s')" % (file, result))
+
+# Return the set of all p4 labels
+def getP4Labels(depotPaths):
+    labels = set()
+    if isinstance(depotPaths,basestring):
+        depotPaths = [depotPaths]
+
+    for l in p4CmdList(["labels"] + ["%s..." % p for p in depotPaths]):
+        label = l['label']
+        labels.add(label)
+
+    return labels
+
+# Return the set of all git tags
+def getGitTags():
+    gitTags = set()
+    for line in read_pipe_lines(["git", "tag"]):
+        tag = line.strip()
+        gitTags.add(tag)
+    return gitTags
 
 def diffTreePattern():
     # This is a simple generator for the diff tree regex pattern. This could be
@@ -636,10 +662,39 @@ def getClientRoot():
 
     return entry["Root"]
 
+#
+# P4 wildcards are not allowed in filenames.  P4 complains
+# if you simply add them, but you can force it with "-f", in
+# which case it translates them into %xx encoding internally.
+#
+def wildcard_decode(path):
+    # Search for and fix just these four characters.  Do % last so
+    # that fixing it does not inadvertently create new %-escapes.
+    # Cannot have * in a filename in windows; untested as to
+    # what p4 would do in such a case.
+    if not platform.system() == "Windows":
+        path = path.replace("%2A", "*")
+    path = path.replace("%23", "#") \
+               .replace("%40", "@") \
+               .replace("%25", "%")
+    return path
+
+def wildcard_encode(path):
+    # do % first to avoid double-encoding the %s introduced here
+    path = path.replace("%", "%25") \
+               .replace("*", "%2A") \
+               .replace("#", "%23") \
+               .replace("@", "%40")
+    return path
+
+def wildcard_present(path):
+    return path.translate(None, "*#@%") != path
+
 class Command:
     def __init__(self):
         self.usage = "usage: %prog [options]"
         self.needsGit = True
+        self.verbose = False
 
 class P4UserMap:
     def __init__(self):
@@ -705,13 +760,9 @@ class P4UserMap:
 class P4Debug(Command):
     def __init__(self):
         Command.__init__(self)
-        self.options = [
-            optparse.make_option("--verbose", dest="verbose", action="store_true",
-                                 default=False),
-            ]
+        self.options = []
         self.description = "A tool to debug the output of p4 -G."
         self.needsGit = False
-        self.verbose = False
 
     def run(self, args):
         j = 0
@@ -725,11 +776,9 @@ class P4RollBack(Command):
     def __init__(self):
         Command.__init__(self)
         self.options = [
-            optparse.make_option("--verbose", dest="verbose", action="store_true"),
             optparse.make_option("--local", dest="rollbackLocalBranches", action="store_true")
         ]
         self.description = "A tool to debug the multi-branch import. Don't use :)"
-        self.verbose = False
         self.rollbackLocalBranches = False
 
     def run(self, args):
@@ -787,20 +836,20 @@ class P4Submit(Command, P4UserMap):
         Command.__init__(self)
         P4UserMap.__init__(self)
         self.options = [
-                optparse.make_option("--verbose", dest="verbose", action="store_true"),
                 optparse.make_option("--origin", dest="origin"),
                 optparse.make_option("-M", dest="detectRenames", action="store_true"),
                 # preserve the user, requires relevant p4 permissions
                 optparse.make_option("--preserve-user", dest="preserveUser", action="store_true"),
+                optparse.make_option("--export-labels", dest="exportLabels", action="store_true"),
         ]
         self.description = "Submit changes from git to the perforce depot."
         self.usage += " [name of git branch to submit into perforce depot]"
         self.interactive = True
         self.origin = ""
         self.detectRenames = False
-        self.verbose = False
         self.preserveUser = gitConfig("git-p4.preserveUser").lower() == "true"
         self.isWindows = (platform.system() == "Windows")
+        self.exportLabels = False
 
     def check(self):
         if len(p4CmdList("opened ...")) > 0:
@@ -970,7 +1019,7 @@ class P4Submit(Command, P4UserMap):
         mtime = os.stat(template_file).st_mtime
 
         # invoke the editor
-        if os.environ.has_key("P4EDITOR"):
+        if os.environ.has_key("P4EDITOR") and (os.environ.get("P4EDITOR") != ""):
             editor = os.environ.get("P4EDITOR")
         else:
             editor = read_pipe("git var GIT_EDITOR").strip()
@@ -1021,6 +1070,7 @@ class P4Submit(Command, P4UserMap):
         filesToAdd = set()
         filesToDelete = set()
         editedFiles = set()
+        pureRenameCopy = set()
         filesToChangeExecBit = {}
 
         for line in diff:
@@ -1044,10 +1094,13 @@ class P4Submit(Command, P4UserMap):
             elif modifier == "C":
                 src, dest = diff['src'], diff['dst']
                 p4_integrate(src, dest)
+                pureRenameCopy.add(dest)
                 if diff['src_sha1'] != diff['dst_sha1']:
                     p4_edit(dest)
+                    pureRenameCopy.discard(dest)
                 if isModeExecChanged(diff['src_mode'], diff['dst_mode']):
                     p4_edit(dest)
+                    pureRenameCopy.discard(dest)
                     filesToChangeExecBit[dest] = diff['dst_mode']
                 os.unlink(dest)
                 editedFiles.add(dest)
@@ -1056,6 +1109,8 @@ class P4Submit(Command, P4UserMap):
                 p4_integrate(src, dest)
                 if diff['src_sha1'] != diff['dst_sha1']:
                     p4_edit(dest)
+                else:
+                    pureRenameCopy.add(dest)
                 if isModeExecChanged(diff['src_mode'], diff['dst_mode']):
                     p4_edit(dest)
                     filesToChangeExecBit[dest] = diff['dst_mode']
@@ -1129,12 +1184,12 @@ class P4Submit(Command, P4UserMap):
                     print "The following files should be scheduled for deletion with p4 delete:"
                     print " ".join(filesToDelete)
                 die("Please resolve and submit the conflict manually and "
-                    + "continue afterwards with git-p4 submit --continue")
+                    + "continue afterwards with git p4 submit --continue")
             elif response == "w":
                 system(diffcmd + " > patch.txt")
                 print "Patch saved to patch.txt in %s !" % self.clientPath
                 die("Please resolve and submit the conflict manually and "
-                    "continue afterwards with git-p4 submit --continue")
+                    "continue afterwards with git p4 submit --continue")
 
         system(applyPatchCmd)
 
@@ -1164,7 +1219,8 @@ class P4Submit(Command, P4UserMap):
                 del(os.environ["P4DIFF"])
             diff = ""
             for editedFile in editedFiles:
-                diff += p4_read_pipe(['diff', '-du', editedFile])
+                diff += p4_read_pipe(['diff', '-du',
+                                      wildcard_encode(editedFile)])
 
             newdiff = ""
             for newFile in filesToAdd:
@@ -1178,8 +1234,8 @@ class P4Submit(Command, P4UserMap):
 
             if self.checkAuthorship and not self.p4UserIsMe(p4User):
                 submitTemplate += "######## git author %s does not match your p4 account.\n" % gitEmail
-                submitTemplate += "######## Use git-p4 option --preserve-user to modify authorship\n"
-                submitTemplate += "######## Use git-p4 config git-p4.skipUserNameCheck hides this message.\n"
+                submitTemplate += "######## Use option --preserve-user to modify authorship.\n"
+                submitTemplate += "######## Variable git-p4.skipUserNameCheck hides this message.\n"
 
             separatorLine = "######## everything below this line is just the diff #######\n"
 
@@ -1209,6 +1265,12 @@ class P4Submit(Command, P4UserMap):
                         # unmarshalled.
                         changelist = self.lastP4Changelist()
                         self.modifyChangelistUser(changelist, p4User)
+
+                # The rename/copy happened by applying a patch that created a
+                # new file.  This leaves it writable, which confuses p4.
+                for f in pureRenameCopy:
+                    p4_sync(f, "-f")
+
             else:
                 # skip this patch
                 print "Submission cancelled, undoing p4 changes."
@@ -1227,6 +1289,71 @@ class P4Submit(Command, P4UserMap):
             print ("Perforce submit template written as %s. "
                    + "Please review/edit and then use p4 submit -i < %s to submit directly!"
                    % (fileName, fileName))
+
+    # Export git tags as p4 labels. Create a p4 label and then tag
+    # with that.
+    def exportGitTags(self, gitTags):
+        validLabelRegexp = gitConfig("git-p4.labelExportRegexp")
+        if len(validLabelRegexp) == 0:
+            validLabelRegexp = defaultLabelRegexp
+        m = re.compile(validLabelRegexp)
+
+        for name in gitTags:
+
+            if not m.match(name):
+                if verbose:
+                    print "tag %s does not match regexp %s" % (name, validLabelRegexp)
+                continue
+
+            # Get the p4 commit this corresponds to
+            logMessage = extractLogMessageFromGitCommit(name)
+            values = extractSettingsGitLog(logMessage)
+
+            if not values.has_key('change'):
+                # a tag pointing to something not sent to p4; ignore
+                if verbose:
+                    print "git tag %s does not give a p4 commit" % name
+                continue
+            else:
+                changelist = values['change']
+
+            # Get the tag details.
+            inHeader = True
+            isAnnotated = False
+            body = []
+            for l in read_pipe_lines(["git", "cat-file", "-p", name]):
+                l = l.strip()
+                if inHeader:
+                    if re.match(r'tag\s+', l):
+                        isAnnotated = True
+                    elif re.match(r'\s*$', l):
+                        inHeader = False
+                        continue
+                else:
+                    body.append(l)
+
+            if not isAnnotated:
+                body = ["lightweight tag imported by git p4\n"]
+
+            # Create the label - use the same view as the client spec we are using
+            clientSpec = getClientSpec()
+
+            labelTemplate  = "Label: %s\n" % name
+            labelTemplate += "Description:\n"
+            for b in body:
+                labelTemplate += "\t" + b + "\n"
+            labelTemplate += "View:\n"
+            for mapping in clientSpec.mappings:
+                labelTemplate += "\t%s\n" % mapping.depot_side.path
+
+            p4_write_pipe(["label", "-i"], labelTemplate)
+
+            # Use the label
+            p4_system(["tag", "-l", name] +
+                      ["%s@%s" % (mapping.depot_side.path, changelist) for mapping in clientSpec.mappings])
+
+            if verbose:
+                print "created p4 label for tag %s" % name
 
     def run(self, args):
         if len(args) == 0:
@@ -1279,12 +1406,18 @@ class P4Submit(Command, P4UserMap):
         self.oldWorkingDirectory = os.getcwd()
 
         # ensure the clientPath exists
+        new_client_dir = False
         if not os.path.exists(self.clientPath):
+            new_client_dir = True
             os.makedirs(self.clientPath)
 
         chdir(self.clientPath)
         print "Synchronizing p4 checkout..."
-        p4_sync("...")
+        if new_client_dir:
+            # old one was destroyed, and maybe nobody told p4
+            p4_sync("...", "-f")
+        else:
+            p4_sync("...")
         self.check()
 
         commits = []
@@ -1316,6 +1449,16 @@ class P4Submit(Command, P4UserMap):
 
             rebase = P4Rebase()
             rebase.rebase()
+
+        if gitConfig("git-p4.exportLabels", "--bool") == "true":
+            self.exportLabels = True
+
+        if self.exportLabels:
+            p4Labels = getP4Labels(self.depotPath)
+            gitTags = getGitTags()
+
+            missingGitTags = gitTags - p4Labels
+            self.exportGitTags(missingGitTags)
 
         return True
 
@@ -1544,7 +1687,7 @@ class P4Sync(Command, P4UserMap):
                 optparse.make_option("--changesfile", dest="changesFile"),
                 optparse.make_option("--silent", dest="silent", action="store_true"),
                 optparse.make_option("--detect-labels", dest="detectLabels", action="store_true"),
-                optparse.make_option("--verbose", dest="verbose", action="store_true"),
+                optparse.make_option("--import-labels", dest="importLabels", action="store_true"),
                 optparse.make_option("--import-local", dest="importIntoRemotes", action="store_false",
                                      help="Import into refs/heads/ , not refs/remotes"),
                 optparse.make_option("--max-changes", dest="maxChanges"),
@@ -1568,9 +1711,9 @@ class P4Sync(Command, P4UserMap):
         self.branch = ""
         self.detectBranches = False
         self.detectLabels = False
+        self.importLabels = False
         self.changesFile = ""
         self.syncWithOrigin = True
-        self.verbose = False
         self.importIntoRemotes = True
         self.maxChanges = ""
         self.isWindows = (platform.system() == "Windows")
@@ -1586,23 +1729,6 @@ class P4Sync(Command, P4UserMap):
 
         if gitConfig("git-p4.syncFromOrigin") == "false":
             self.syncWithOrigin = False
-
-    #
-    # P4 wildcards are not allowed in filenames.  P4 complains
-    # if you simply add them, but you can force it with "-f", in
-    # which case it translates them into %xx encoding internally.
-    # Search for and fix just these four characters.  Do % last so
-    # that fixing it does not inadvertently create new %-escapes.
-    #
-    def wildcard_decode(self, path):
-        # Cannot have * in a filename in windows; untested as to
-        # what p4 would do in such a case.
-        if not self.isWindows:
-            path = path.replace("%2A", "*")
-        path = path.replace("%23", "#") \
-                   .replace("%40", "@") \
-                   .replace("%25", "%")
-        return path
 
     # Force a checkpoint in fast-import and wait for it to finish
     def checkpoint(self):
@@ -1671,6 +1797,7 @@ class P4Sync(Command, P4UserMap):
             fnum = fnum + 1
 
             relPath = self.stripRepoPath(path, self.depotPaths)
+            relPath = wildcard_decode(relPath)
 
             for branch in self.knownBranches.keys():
 
@@ -1688,7 +1815,7 @@ class P4Sync(Command, P4UserMap):
 
     def streamOneP4File(self, file, contents):
         relPath = self.stripRepoPath(file['depotFile'], self.branchPrefixes)
-        relPath = self.wildcard_decode(relPath)
+        relPath = wildcard_decode(relPath)
         if verbose:
             sys.stderr.write("%s\n" % relPath)
 
@@ -1757,6 +1884,7 @@ class P4Sync(Command, P4UserMap):
 
     def streamOneP4Deletion(self, file):
         relPath = self.stripRepoPath(file['path'], self.branchPrefixes)
+        relPath = wildcard_decode(relPath)
         if verbose:
             sys.stderr.write("delete %s\n" % relPath)
         self.gitStream.write("D %s\n" % relPath)
@@ -1829,6 +1957,38 @@ class P4Sync(Command, P4UserMap):
         else:
             return "%s <a@b>" % userid
 
+    # Stream a p4 tag
+    def streamTag(self, gitStream, labelName, labelDetails, commit, epoch):
+        if verbose:
+            print "writing tag %s for commit %s" % (labelName, commit)
+        gitStream.write("tag %s\n" % labelName)
+        gitStream.write("from %s\n" % commit)
+
+        if labelDetails.has_key('Owner'):
+            owner = labelDetails["Owner"]
+        else:
+            owner = None
+
+        # Try to use the owner of the p4 label, or failing that,
+        # the current p4 user id.
+        if owner:
+            email = self.make_email(owner)
+        else:
+            email = self.make_email(self.p4UserId())
+        tagger = "%s %s %s" % (email, epoch, self.tz)
+
+        gitStream.write("tagger %s\n" % tagger)
+
+        print "labelDetails=",labelDetails
+        if labelDetails.has_key('Description'):
+            description = labelDetails['Description']
+        else:
+            description = 'Label from git p4'
+
+        gitStream.write("data %d\n" % len(description))
+        gitStream.write(description)
+        gitStream.write("\n")
+
     def commit(self, details, files, branch, branchPrefixes, parent = ""):
         epoch = details["time"]
         author = details["user"]
@@ -1893,25 +2053,7 @@ class P4Sync(Command, P4UserMap):
                     cleanedFiles[info["depotFile"]] = info["rev"]
 
                 if cleanedFiles == labelRevisions:
-                    self.gitStream.write("tag tag_%s\n" % labelDetails["label"])
-                    self.gitStream.write("from %s\n" % branch)
-
-                    owner = labelDetails["Owner"]
-
-                    # Try to use the owner of the p4 label, or failing that,
-                    # the current p4 user id.
-                    if owner:
-                        email = self.make_email(owner)
-                    else:
-                        email = self.make_email(self.p4UserId())
-                    tagger = "%s %s %s" % (email, epoch, self.tz)
-
-                    self.gitStream.write("tagger %s\n" % tagger)
-
-                    description = labelDetails["Description"]
-                    self.gitStream.write("data %d\n" % len(description))
-                    self.gitStream.write(description)
-                    self.gitStream.write("\n")
+                    self.streamTag(self.gitStream, 'tag_%s' % labelDetails['label'], labelDetails, branch, epoch)
 
                 else:
                     if not self.silent:
@@ -1923,6 +2065,7 @@ class P4Sync(Command, P4UserMap):
                     print ("Tag %s does not match with change %s: file count is different."
                            % (labelDetails["label"], change))
 
+    # Build a dictionary of changelists and labels, for "detect-labels" option.
     def getLabels(self):
         self.labels = {}
 
@@ -1948,6 +2091,69 @@ class P4Sync(Command, P4UserMap):
 
         if self.verbose:
             print "Label changes: %s" % self.labels.keys()
+
+    # Import p4 labels as git tags. A direct mapping does not
+    # exist, so assume that if all the files are at the same revision
+    # then we can use that, or it's something more complicated we should
+    # just ignore.
+    def importP4Labels(self, stream, p4Labels):
+        if verbose:
+            print "import p4 labels: " + ' '.join(p4Labels)
+
+        ignoredP4Labels = gitConfigList("git-p4.ignoredP4Labels")
+        validLabelRegexp = gitConfig("git-p4.labelImportRegexp")
+        if len(validLabelRegexp) == 0:
+            validLabelRegexp = defaultLabelRegexp
+        m = re.compile(validLabelRegexp)
+
+        for name in p4Labels:
+            commitFound = False
+
+            if not m.match(name):
+                if verbose:
+                    print "label %s does not match regexp %s" % (name,validLabelRegexp)
+                continue
+
+            if name in ignoredP4Labels:
+                continue
+
+            labelDetails = p4CmdList(['label', "-o", name])[0]
+
+            # get the most recent changelist for each file in this label
+            change = p4Cmd(["changes", "-m", "1"] + ["%s...@%s" % (p, name)
+                                for p in self.depotPaths])
+
+            if change.has_key('change'):
+                # find the corresponding git commit; take the oldest commit
+                changelist = int(change['change'])
+                gitCommit = read_pipe(["git", "rev-list", "--max-count=1",
+                     "--reverse", ":/\[git-p4:.*change = %d\]" % changelist])
+                if len(gitCommit) == 0:
+                    print "could not find git commit for changelist %d" % changelist
+                else:
+                    gitCommit = gitCommit.strip()
+                    commitFound = True
+                    # Convert from p4 time format
+                    try:
+                        tmwhen = time.strptime(labelDetails['Update'], "%Y/%m/%d %H:%M:%S")
+                    except ValueError:
+                        print "Could not convert label time %s" % labelDetail['Update']
+                        tmwhen = 1
+
+                    when = int(time.mktime(tmwhen))
+                    self.streamTag(stream, name, labelDetails, gitCommit, when)
+                    if verbose:
+                        print "p4 label %s mapped to git commit %s" % (name, gitCommit)
+            else:
+                if verbose:
+                    print "Label %s has no changelists - possibly deleted?" % name
+
+            if not commitFound:
+                # We can't import this label; don't try again as it will get very
+                # expensive repeatedly fetching all the files for labels that will
+                # never be imported. If the label is moved in the future, the
+                # ignore will need to be removed manually.
+                system(["git", "config", "--add", "git-p4.ignoredP4Labels", name])
 
     def guessProjectName(self):
         for p in self.depotPaths:
@@ -2254,7 +2460,7 @@ class P4Sync(Command, P4UserMap):
 
         details["change"] = newestRevision
 
-        # Use time from top-most change so that all git-p4 clones of
+        # Use time from top-most change so that all git p4 clones of
         # the same p4 repo have the same commit SHA1s.
         res = p4CmdList("describe -s %d" % newestRevision)
         newestTime = None
@@ -2425,7 +2631,6 @@ class P4Sync(Command, P4UserMap):
 
         self.depotPaths = newPaths
 
-
         self.loadUserMapFromCache()
         self.labels = {}
         if self.detectLabels:
@@ -2474,8 +2679,8 @@ class P4Sync(Command, P4UserMap):
 
                 changes.sort()
             else:
-                # catch "git-p4 sync" with no new branches, in a repo that
-                # does not have any existing git-p4 branches
+                # catch "git p4 sync" with no new branches, in a repo that
+                # does not have any existing p4 branches
                 if len(args) == 0 and not self.p4BranchesInGit:
                     die("No remote p4 branches.  Perhaps you never did \"git p4 clone\" in here.");
                 if self.verbose:
@@ -2489,22 +2694,31 @@ class P4Sync(Command, P4UserMap):
             if len(changes) == 0:
                 if not self.silent:
                     print "No changes to import!"
-                return True
+            else:
+                if not self.silent and not self.detectBranches:
+                    print "Import destination: %s" % self.branch
 
-            if not self.silent and not self.detectBranches:
-                print "Import destination: %s" % self.branch
+                self.updatedBranches = set()
 
-            self.updatedBranches = set()
+                self.importChanges(changes)
 
-            self.importChanges(changes)
+                if not self.silent:
+                    print ""
+                    if len(self.updatedBranches) > 0:
+                        sys.stdout.write("Updated branches: ")
+                        for b in self.updatedBranches:
+                            sys.stdout.write("%s " % b)
+                        sys.stdout.write("\n")
 
-            if not self.silent:
-                print ""
-                if len(self.updatedBranches) > 0:
-                    sys.stdout.write("Updated branches: ")
-                    for b in self.updatedBranches:
-                        sys.stdout.write("%s " % b)
-                    sys.stdout.write("\n")
+        if gitConfig("git-p4.importLabels", "--bool") == "true":
+            self.importLabels = True
+
+        if self.importLabels:
+            p4Labels = getP4Labels(self.depotPaths)
+            gitTags = getGitTags()
+
+            missingP4Labels = p4Labels - gitTags
+            self.importP4Labels(self.gitStream, missingP4Labels)
 
         self.gitStream.close()
         if importProcess.wait() != 0:
@@ -2523,13 +2737,16 @@ class P4Sync(Command, P4UserMap):
 class P4Rebase(Command):
     def __init__(self):
         Command.__init__(self)
-        self.options = [ ]
+        self.options = [
+                optparse.make_option("--import-labels", dest="importLabels", action="store_true"),
+        ]
+        self.importLabels = False
         self.description = ("Fetches the latest revision from perforce and "
                             + "rebases the current work (branch) against it")
-        self.verbose = False
 
     def run(self, args):
         sync = P4Sync()
+        sync.importLabels = self.importLabels
         sync.run([])
 
         return self.rebase()
@@ -2719,16 +2936,16 @@ def main():
 
     args = sys.argv[2:]
 
-    if len(options) > 0:
-        if cmd.needsGit:
-            options.append(optparse.make_option("--git-dir", dest="gitdir"))
+    options.append(optparse.make_option("--verbose", dest="verbose", action="store_true"))
+    if cmd.needsGit:
+        options.append(optparse.make_option("--git-dir", dest="gitdir"))
 
-        parser = optparse.OptionParser(cmd.usage.replace("%prog", "%prog " + cmdName),
-                                       options,
-                                       description = cmd.description,
-                                       formatter = HelpFormatter())
+    parser = optparse.OptionParser(cmd.usage.replace("%prog", "%prog " + cmdName),
+                                   options,
+                                   description = cmd.description,
+                                   formatter = HelpFormatter())
 
-        (cmd, args) = parser.parse_args(sys.argv[2:], cmd);
+    (cmd, args) = parser.parse_args(sys.argv[2:], cmd);
     global verbose
     verbose = cmd.verbose
     if cmd.needsGit:

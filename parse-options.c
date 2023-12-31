@@ -493,7 +493,7 @@ static int usage_argh(const struct option *opts, FILE *outfile)
 			s = literal ? "[%s]" : "[<%s>]";
 	else
 		s = literal ? " %s" : " <%s>";
-	return fprintf(outfile, s, opts->argh ? opts->argh : "...");
+	return fprintf(outfile, s, opts->argh ? _(opts->argh) : _("..."));
 }
 
 #define USAGE_OPTS_WIDTH 24
@@ -511,13 +511,16 @@ static int usage_with_options_internal(struct parse_opt_ctx_t *ctx,
 	if (!err && ctx && ctx->flags & PARSE_OPT_SHELL_EVAL)
 		fprintf(outfile, "cat <<\\EOF\n");
 
-	fprintf(outfile, "usage: %s\n", *usagestr++);
+	fprintf_ln(outfile, _("usage: %s"), _(*usagestr++));
 	while (*usagestr && **usagestr)
-		fprintf(outfile, "   or: %s\n", *usagestr++);
+		/* TRANSLATORS: the colon here should align with the
+		   one in "usage: %s" translation */
+		fprintf_ln(outfile, _("   or: %s"), _(*usagestr++));
 	while (*usagestr) {
-		fprintf(outfile, "%s%s\n",
-				**usagestr ? "    " : "",
-				*usagestr);
+		if (**usagestr)
+			fprintf_ln(outfile, _("    %s"), _(*usagestr));
+		else
+			putchar('\n');
 		usagestr++;
 	}
 
@@ -531,7 +534,7 @@ static int usage_with_options_internal(struct parse_opt_ctx_t *ctx,
 		if (opts->type == OPTION_GROUP) {
 			fputc('\n', outfile);
 			if (*opts->help)
-				fprintf(outfile, "%s\n", opts->help);
+				fprintf(outfile, "%s\n", _(opts->help));
 			continue;
 		}
 		if (!full && (opts->flags & PARSE_OPT_HIDDEN))
@@ -561,7 +564,7 @@ static int usage_with_options_internal(struct parse_opt_ctx_t *ctx,
 			fputc('\n', outfile);
 			pad = USAGE_OPTS_WIDTH;
 		}
-		fprintf(outfile, "%*s%s\n", pad + USAGE_GAP, "", opts->help);
+		fprintf(outfile, "%*s%s\n", pad + USAGE_GAP, "", _(opts->help));
 	}
 	fputc('\n', outfile);
 
