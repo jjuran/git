@@ -164,7 +164,7 @@ static void set_zip_header_data_desc(struct zip_local_header *header,
 	copy_le32(header->size, size);
 }
 
-#define STREAM_BUFFER_SIZE (1024 * 16)
+#define STREAM_BUFFER_SIZE (1024 * 4)
 
 static int write_zip_entry(struct archiver_args *args,
 			   const unsigned char *sha1,
