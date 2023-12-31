@@ -189,7 +189,7 @@ static int has_only_ascii(const char *s)
 	}
 }
 
-#define STREAM_BUFFER_SIZE (1024 * 16)
+#define STREAM_BUFFER_SIZE (1024 * 4)
 
 static int write_zip_entry(struct archiver_args *args,
 			   const unsigned char *sha1,
