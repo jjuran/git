@@ -82,7 +82,7 @@ static struct diff_filespec *noindex_filespec(const char *name, int mode)
 	if (!name)
 		name = "/dev/null";
 	s = alloc_filespec(name);
-	fill_filespec(s, null_sha1, mode);
+	fill_filespec(s, null_sha1, 0, mode);
 	if (name == file_from_standard_input)
 		populate_from_stdin(s);
 	return s;
@@ -258,8 +258,7 @@ void diff_no_index(struct rev_info *revs,
 	DIFF_OPT_SET(&revs->diffopt, NO_INDEX);
 
 	revs->max_count = -2;
-	if (diff_setup_done(&revs->diffopt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&revs->diffopt);
 
 	setup_diff_pager(&revs->diffopt);
 	DIFF_OPT_SET(&revs->diffopt, EXIT_WITH_STATUS);

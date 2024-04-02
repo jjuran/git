@@ -1409,11 +1409,9 @@ int read_index_from(struct index_state *istate, const char *path)
 	size_t mmap_size;
 	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
 
-	errno = EBUSY;
 	if (istate->initialized)
 		return istate->cache_nr;
 
-	errno = ENOENT;
 	istate->timestamp.sec = 0;
 	istate->timestamp.nsec = 0;
 	fd = open(path, O_RDONLY);
@@ -1426,15 +1424,14 @@ int read_index_from(struct index_state *istate, const char *path)
 	if (fstat(fd, &st))
 		die_errno("cannot stat the open index");
 
-	errno = EINVAL;
 	mmap_size = xsize_t(st.st_size);
 	if (mmap_size < sizeof(struct cache_header) + 20)
 		die("index file smaller than expected");
 
 	mmap = xmmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-	close(fd);
 	if (mmap == MAP_FAILED)
 		die_errno("unable to map index file");
+	close(fd);
 
 	hdr = mmap;
 	if (verify_hdr(hdr, mmap_size) < 0)
@@ -1490,7 +1487,6 @@ int read_index_from(struct index_state *istate, const char *path)
 
 unmap:
 	munmap(mmap, mmap_size);
-	errno = EINVAL;
 	die("index file corrupt");
 
 	/* Not reached */
@@ -1793,6 +1789,8 @@ int write_index(struct index_state *istate, int newfd)
 			continue;
 		if (!ce_uptodate(ce) && is_racy_timestamp(istate, ce))
 			ce_smudge_racily_clean_entry(ce);
+		if (is_null_sha1(ce->sha1))
+			return error("cache entry has null sha1: %s", ce->name);
 		if (ce_write_entry(&c, newfd, ce, previous_name) < 0)
 			return -1;
 	}
