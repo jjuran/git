@@ -19,6 +19,12 @@
 #include "streaming.h"
 #include "thread-utils.h"
 
+#ifdef __RELIX__
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 4)
+#else
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 16)
+#endif
+
 static const char *pack_usage[] = {
 	"git pack-objects --stdout [options...] [< ref-list | < object-list]",
 	"git pack-objects [options...] base-name [< ref-list | < object-list]",
@@ -155,8 +161,8 @@ static unsigned long write_large_blob_data(struct git_istream *st, struct sha1fi
 					   const unsigned char *sha1)
 {
 	git_zstream stream;
-	unsigned char ibuf[1024 * 16];
-	unsigned char obuf[1024 * 16];
+	unsigned char ibuf[LARGE_BLOB_BUFFER_SIZE];
+	unsigned char obuf[LARGE_BLOB_BUFFER_SIZE];
 	unsigned long olen = 0;
 
 	memset(&stream, 0, sizeof(stream));
