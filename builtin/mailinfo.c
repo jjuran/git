@@ -160,10 +160,9 @@ static int slurp_attr(const char *line, const char *name, struct strbuf *attr)
 	const char *ends, *ap = strcasestr(line, name);
 	size_t sz;
 
-	if (!ap) {
-		strbuf_setlen(attr, 0);
+	strbuf_setlen(attr, 0);
+	if (!ap)
 		return 0;
-	}
 	ap += strlen(name);
 	if (*ap == '"') {
 		ap++;
@@ -232,7 +231,9 @@ static void cleanup_subject(struct strbuf *subject)
 		case 'r': case 'R':
 			if (subject->len <= at + 3)
 				break;
-			if (!memcmp(subject->buf + at + 1, "e:", 2)) {
+			if ((subject->buf[at + 1] == 'e' ||
+			     subject->buf[at + 1] == 'E') &&
+			    subject->buf[at + 2] == ':') {
 				strbuf_remove(subject, at, 3);
 				continue;
 			}
