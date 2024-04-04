@@ -32,6 +32,7 @@ builtin/commit-tree.c
 builtin/commit.c
 builtin/config.c
 builtin/count-objects.c
+builtin/credential.c
 builtin/describe.c
 builtin/diff-files.c
 builtin/diff-index.c
@@ -126,6 +127,7 @@ connect.c
 connected.c
 convert.c
 copy.c
+credential.c
 csum-file.c
 ctype.c
 daemon.c
@@ -248,6 +250,7 @@ usage.c
 userdiff.c
 utf8.c
 varint.c
+version.c
 walker.c
 wrapper.c
 write_or_die.c
