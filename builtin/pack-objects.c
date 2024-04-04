@@ -21,6 +21,12 @@
 #include "thread-utils.h"
 #include "pack-bitmap.h"
 
+#ifdef __RELIX__
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 4)
+#else
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 16)
+#endif
+
 static const char *pack_usage[] = {
 	N_("git pack-objects --stdout [options...] [< ref-list | < object-list]"),
 	N_("git pack-objects [options...] base-name [< ref-list | < object-list]"),
@@ -147,8 +153,8 @@ static unsigned long write_large_blob_data(struct git_istream *st, struct sha1fi
 					   const unsigned char *sha1)
 {
 	git_zstream stream;
-	unsigned char ibuf[1024 * 16];
-	unsigned char obuf[1024 * 16];
+	unsigned char ibuf[LARGE_BLOB_BUFFER_SIZE];
+	unsigned char obuf[LARGE_BLOB_BUFFER_SIZE];
 	unsigned long olen = 0;
 
 	memset(&stream, 0, sizeof(stream));
