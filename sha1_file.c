@@ -731,6 +731,11 @@ void free_pack_by_name(const char *pack_name)
 	}
 }
 
+#ifdef __RELIX__
+#undef RLIMIT_NOFILE
+#undef _SC_OPEN_MAX
+#endif
+
 static unsigned int get_max_fd_limit(void)
 {
 #ifdef RLIMIT_NOFILE
