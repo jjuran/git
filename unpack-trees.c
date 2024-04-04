@@ -539,7 +539,8 @@ static struct cache_entry *create_ce_entry(const struct traverse_info *info, con
 	struct cache_entry *ce = xcalloc(1, cache_entry_size(len));
 
 	ce->ce_mode = create_ce_mode(n->mode);
-	ce->ce_flags = create_ce_flags(len, stage);
+	ce->ce_flags = create_ce_flags(stage);
+	ce->ce_namelen = len;
 	hashcpy(ce->sha1, n->sha1);
 	make_traverse_path(ce->name, info, n);
 
@@ -1296,7 +1297,7 @@ static int verify_clean_subdirectory(struct cache_entry *ce,
 	 * First let's make sure we do not have a local modification
 	 * in that directory.
 	 */
-	namelen = strlen(ce->name);
+	namelen = ce_namelen(ce);
 	for (i = locate_in_src_index(ce, o);
 	     i < o->src_index->cache_nr;
 	     i++) {

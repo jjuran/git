@@ -34,6 +34,26 @@ esac
 # Keep the original TERM for say_color
 ORIGINAL_TERM=$TERM
 
+# Test the binaries we have just built.  The tests are kept in
+# t/ subdirectory and are run in 'trash directory' subdirectory.
+if test -z "$TEST_DIRECTORY"
+then
+	# We allow tests to override this, in case they want to run tests
+	# outside of t/, e.g. for running tests on the test library
+	# itself.
+	TEST_DIRECTORY=$(pwd)
+fi
+if test -z "$TEST_OUTPUT_DIRECTORY"
+then
+	# Similarly, override this to store the test-results subdir
+	# elsewhere
+	TEST_OUTPUT_DIRECTORY=$TEST_DIRECTORY
+fi
+GIT_BUILD_DIR="$TEST_DIRECTORY"/..
+
+. "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
+export PERL_PATH SHELL_PATH
+
 # For repeatability, reset the environment to known value.
 LANG=C
 LC_ALL=C
@@ -46,7 +66,7 @@ EDITOR=:
 # /usr/xpg4/bin/sh and /bin/ksh to bail out.  So keep the unsets
 # deriving from the command substitution clustered with the other
 # ones.
-unset VISUAL EMAIL LANGUAGE COLUMNS $(perl -e '
+unset VISUAL EMAIL LANGUAGE COLUMNS $("$PERL_PATH" -e '
 	my @env = keys %ENV;
 	my $ok = join("|", qw(
 		TRACE
@@ -61,6 +81,7 @@ unset VISUAL EMAIL LANGUAGE COLUMNS $(perl -e '
 	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
 	print join("\n", @vars);
 ')
+unset XDG_CONFIG_HOME
 GIT_AUTHOR_EMAIL=author@example.com
 GIT_AUTHOR_NAME='A U Thor'
 GIT_COMMITTER_EMAIL=committer@example.com
@@ -229,7 +250,7 @@ trap 'die' EXIT
 
 # The user-facing functions are loaded from a separate file so that
 # test_perf subshells can have them too
-. "${TEST_DIRECTORY:-.}"/test-lib-functions.sh
+. "$TEST_DIRECTORY/test-lib-functions.sh"
 
 # You are not expected to call test_ok_ and test_failure_ directly, use
 # the text_expect_* functions instead.
@@ -380,23 +401,6 @@ test_done () {
 	esac
 }
 
-# Test the binaries we have just built.  The tests are kept in
-# t/ subdirectory and are run in 'trash directory' subdirectory.
-if test -z "$TEST_DIRECTORY"
-then
-	# We allow tests to override this, in case they want to run tests
-	# outside of t/, e.g. for running tests on the test library
-	# itself.
-	TEST_DIRECTORY=$(pwd)
-fi
-if test -z "$TEST_OUTPUT_DIRECTORY"
-then
-	# Similarly, override this to store the test-results subdir
-	# elsewhere
-	TEST_OUTPUT_DIRECTORY=$TEST_DIRECTORY
-fi
-GIT_BUILD_DIR="$TEST_DIRECTORY"/..
-
 if test -n "$valgrind"
 then
 	make_symlink () {
@@ -491,10 +495,6 @@ unset GIT_CONFIG
 GIT_CONFIG_NOSYSTEM=1
 GIT_ATTR_NOSYSTEM=1
 export PATH GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_NOSYSTEM GIT_ATTR_NOSYSTEM
-
-. "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
-
-export PERL_PATH
 
 if test -z "$GIT_TEST_CMP"
 then
@@ -659,9 +659,29 @@ test_i18ngrep () {
 	fi
 }
 
-# test whether the filesystem supports symbolic links
-ln -s x y 2>/dev/null && test -h y 2>/dev/null && test_set_prereq SYMLINKS
-rm -f y
+test_lazy_prereq SYMLINKS '
+	# test whether the filesystem supports symbolic links
+	ln -s x y && test -h y
+'
+
+test_lazy_prereq CASE_INSENSITIVE_FS '
+	echo good >CamelCase &&
+	echo bad >camelcase &&
+	test "$(cat CamelCase)" != good
+'
+
+test_lazy_prereq UTF8_NFD_TO_NFC '
+	# check whether FS converts nfd unicode to nfc
+	auml=$(printf "\303\244")
+	aumlcdiar=$(printf "\141\314\210")
+	>"$auml" &&
+	case "$(echo *)" in
+	"$aumlcdiar")
+		true ;;
+	*)
+		false ;;
+	esac
+'
 
 # When the tests are run as root, permission tests will report that
 # things are writable when they shouldn't be.

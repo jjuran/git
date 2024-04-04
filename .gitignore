@@ -2,6 +2,9 @@
 /GIT-CFLAGS
 /GIT-LDFLAGS
 /GIT-GUI-VARS
+/GIT-PREFIX
+/GIT-SCRIPT-DEFINES
+/GIT-USER-AGENT
 /GIT-VERSION-FILE
 /bin-wrappers/
 /git
@@ -31,6 +34,7 @@
 /git-commit-tree
 /git-config
 /git-count-objects
+/git-credential
 /git-credential-cache
 /git-credential-cache--daemon
 /git-credential-store
@@ -172,7 +176,6 @@
 /gitweb/static/gitweb.js
 /gitweb/static/gitweb.min.*
 /test-chmtime
-/test-credential
 /test-ctype
 /test-date
 /test-delta

@@ -120,6 +120,15 @@ def p4_read_pipe_lines(c):
     real_cmd = p4_build_cmd(c)
     return read_pipe_lines(real_cmd)
 
+def p4_has_command(cmd):
+    """Ask p4 for help on this command.  If it returns an error, the
+       command does not exist in this version of p4."""
+    real_cmd = p4_build_cmd(["help", cmd])
+    p = subprocess.Popen(real_cmd, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
 def system(cmd):
     expand = isinstance(cmd,basestring)
     if verbose:
@@ -156,6 +165,9 @@ def p4_revert(f):
 
 def p4_reopen(type, f):
     p4_system(["reopen", "-t", type, wildcard_encode(f)])
+
+def p4_move(src, dest):
+    p4_system(["move", "-k", wildcard_encode(src), wildcard_encode(dest)])
 
 #
 # Canonicalize the p4 type and return a tuple of the
@@ -844,20 +856,45 @@ class P4Submit(Command, P4UserMap):
         ]
         self.description = "Submit changes from git to the perforce depot."
         self.usage += " [name of git branch to submit into perforce depot]"
-        self.interactive = True
         self.origin = ""
         self.detectRenames = False
         self.preserveUser = gitConfig("git-p4.preserveUser").lower() == "true"
         self.isWindows = (platform.system() == "Windows")
         self.exportLabels = False
+        self.p4HasMoveCommand = p4_has_command("move")
 
     def check(self):
         if len(p4CmdList("opened ...")) > 0:
             die("You have files opened with perforce! Close them before starting the sync.")
 
-    # replaces everything between 'Description:' and the next P4 submit template field with the
-    # commit message
-    def prepareLogMessage(self, template, message):
+    def separate_jobs_from_description(self, message):
+        """Extract and return a possible Jobs field in the commit
+           message.  It goes into a separate section in the p4 change
+           specification.
+
+           A jobs line starts with "Jobs:" and looks like a new field
+           in a form.  Values are white-space separated on the same
+           line or on following lines that start with a tab.
+
+           This does not parse and extract the full git commit message
+           like a p4 form.  It just sees the Jobs: line as a marker
+           to pass everything from then on directly into the p4 form,
+           but outside the description section.
+
+           Return a tuple (stripped log message, jobs string)."""
+
+        m = re.search(r'^Jobs:', message, re.MULTILINE)
+        if m is None:
+            return (message, None)
+
+        jobtext = message[m.start():]
+        stripped_message = message[:m.start()].rstrip()
+        return (stripped_message, jobtext)
+
+    def prepareLogMessage(self, template, message, jobs):
+        """Edits the template returned from "p4 change -o" to insert
+           the message in the Description field, and the jobs text in
+           the Jobs field."""
         result = ""
 
         inDescriptionSection = False
@@ -870,6 +907,9 @@ class P4Submit(Command, P4UserMap):
             if inDescriptionSection:
                 if line.startswith("Files:") or line.startswith("Jobs:"):
                     inDescriptionSection = False
+                    # insert Jobs section
+                    if jobs:
+                        result += jobs + "\n"
                 else:
                     continue
             else:
@@ -981,7 +1021,13 @@ class P4Submit(Command, P4UserMap):
         return 0
 
     def prepareSubmitTemplate(self):
-        # remove lines in the Files section that show changes to files outside the depot path we're committing into
+        """Run "p4 change -o" to grab a change specification template.
+           This does not use "p4 -G", as it is nice to keep the submission
+           template in original order, since a human might edit it.
+
+           Remove lines in the Files section that show changes to files
+           outside the depot path we're committing into."""
+
         template = ""
         inFilesSection = False
         for line in p4_read_pipe_lines(['change', '-o']):
@@ -1046,27 +1092,7 @@ class P4Submit(Command, P4UserMap):
 
         (p4User, gitEmail) = self.p4UserForCommit(id)
 
-        if not self.detectRenames:
-            # If not explicitly set check the config variable
-            self.detectRenames = gitConfig("git-p4.detectRenames")
-
-        if self.detectRenames.lower() == "false" or self.detectRenames == "":
-            diffOpts = ""
-        elif self.detectRenames.lower() == "true":
-            diffOpts = "-M"
-        else:
-            diffOpts = "-M%s" % self.detectRenames
-
-        detectCopies = gitConfig("git-p4.detectCopies")
-        if detectCopies.lower() == "true":
-            diffOpts += " -C"
-        elif detectCopies != "" and detectCopies.lower() != "false":
-            diffOpts += " -C%s" % detectCopies
-
-        if gitConfig("git-p4.detectCopiesHarder", "--bool") == "true":
-            diffOpts += " --find-copies-harder"
-
-        diff = read_pipe_lines("git diff-tree -r %s \"%s^\" \"%s\"" % (diffOpts, id, id))
+        diff = read_pipe_lines("git diff-tree -r %s \"%s^\" \"%s\"" % (self.diffOpts, id, id))
         filesToAdd = set()
         filesToDelete = set()
         editedFiles = set()
@@ -1106,17 +1132,23 @@ class P4Submit(Command, P4UserMap):
                 editedFiles.add(dest)
             elif modifier == "R":
                 src, dest = diff['src'], diff['dst']
-                p4_integrate(src, dest)
-                if diff['src_sha1'] != diff['dst_sha1']:
-                    p4_edit(dest)
+                if self.p4HasMoveCommand:
+                    p4_edit(src)        # src must be open before move
+                    p4_move(src, dest)  # opens for (move/delete, move/add)
                 else:
-                    pureRenameCopy.add(dest)
+                    p4_integrate(src, dest)
+                    if diff['src_sha1'] != diff['dst_sha1']:
+                        p4_edit(dest)
+                    else:
+                        pureRenameCopy.add(dest)
                 if isModeExecChanged(diff['src_mode'], diff['dst_mode']):
-                    p4_edit(dest)
+                    if not self.p4HasMoveCommand:
+                        p4_edit(dest)   # with move: already open, writable
                     filesToChangeExecBit[dest] = diff['dst_mode']
-                os.unlink(dest)
+                if not self.p4HasMoveCommand:
+                    os.unlink(dest)
+                    filesToDelete.add(src)
                 editedFiles.add(dest)
-                filesToDelete.add(src)
             else:
                 die("unknown modifier %s for %s" % (modifier, path))
 
@@ -1206,89 +1238,80 @@ class P4Submit(Command, P4UserMap):
 
         logMessage = extractLogMessageFromGitCommit(id)
         logMessage = logMessage.strip()
+        (logMessage, jobs) = self.separate_jobs_from_description(logMessage)
 
         template = self.prepareSubmitTemplate()
+        submitTemplate = self.prepareLogMessage(template, logMessage, jobs)
 
-        if self.interactive:
-            submitTemplate = self.prepareLogMessage(template, logMessage)
+        if self.preserveUser:
+           submitTemplate = submitTemplate + ("\n######## Actual user %s, modified after commit\n" % p4User)
+
+        if os.environ.has_key("P4DIFF"):
+            del(os.environ["P4DIFF"])
+        diff = ""
+        for editedFile in editedFiles:
+            diff += p4_read_pipe(['diff', '-du',
+                                  wildcard_encode(editedFile)])
+
+        newdiff = ""
+        for newFile in filesToAdd:
+            newdiff += "==== new file ====\n"
+            newdiff += "--- /dev/null\n"
+            newdiff += "+++ %s\n" % newFile
+            f = open(newFile, "r")
+            for line in f.readlines():
+                newdiff += "+" + line
+            f.close()
+
+        if self.checkAuthorship and not self.p4UserIsMe(p4User):
+            submitTemplate += "######## git author %s does not match your p4 account.\n" % gitEmail
+            submitTemplate += "######## Use option --preserve-user to modify authorship.\n"
+            submitTemplate += "######## Variable git-p4.skipUserNameCheck hides this message.\n"
+
+        separatorLine = "######## everything below this line is just the diff #######\n"
+
+        (handle, fileName) = tempfile.mkstemp()
+        tmpFile = os.fdopen(handle, "w+")
+        if self.isWindows:
+            submitTemplate = submitTemplate.replace("\n", "\r\n")
+            separatorLine = separatorLine.replace("\n", "\r\n")
+            newdiff = newdiff.replace("\n", "\r\n")
+        tmpFile.write(submitTemplate + separatorLine + diff + newdiff)
+        tmpFile.close()
+
+        if self.edit_template(fileName):
+            # read the edited message and submit
+            tmpFile = open(fileName, "rb")
+            message = tmpFile.read()
+            tmpFile.close()
+            submitTemplate = message[:message.index(separatorLine)]
+            if self.isWindows:
+                submitTemplate = submitTemplate.replace("\r\n", "\n")
+            p4_write_pipe(['submit', '-i'], submitTemplate)
 
             if self.preserveUser:
-               submitTemplate = submitTemplate + ("\n######## Actual user %s, modified after commit\n" % p4User)
+                if p4User:
+                    # Get last changelist number. Cannot easily get it from
+                    # the submit command output as the output is
+                    # unmarshalled.
+                    changelist = self.lastP4Changelist()
+                    self.modifyChangelistUser(changelist, p4User)
 
-            if os.environ.has_key("P4DIFF"):
-                del(os.environ["P4DIFF"])
-            diff = ""
-            for editedFile in editedFiles:
-                diff += p4_read_pipe(['diff', '-du',
-                                      wildcard_encode(editedFile)])
+            # The rename/copy happened by applying a patch that created a
+            # new file.  This leaves it writable, which confuses p4.
+            for f in pureRenameCopy:
+                p4_sync(f, "-f")
 
-            newdiff = ""
-            for newFile in filesToAdd:
-                newdiff += "==== new file ====\n"
-                newdiff += "--- /dev/null\n"
-                newdiff += "+++ %s\n" % newFile
-                f = open(newFile, "r")
-                for line in f.readlines():
-                    newdiff += "+" + line
-                f.close()
-
-            if self.checkAuthorship and not self.p4UserIsMe(p4User):
-                submitTemplate += "######## git author %s does not match your p4 account.\n" % gitEmail
-                submitTemplate += "######## Use option --preserve-user to modify authorship.\n"
-                submitTemplate += "######## Variable git-p4.skipUserNameCheck hides this message.\n"
-
-            separatorLine = "######## everything below this line is just the diff #######\n"
-
-            (handle, fileName) = tempfile.mkstemp()
-            tmpFile = os.fdopen(handle, "w+")
-            if self.isWindows:
-                submitTemplate = submitTemplate.replace("\n", "\r\n")
-                separatorLine = separatorLine.replace("\n", "\r\n")
-                newdiff = newdiff.replace("\n", "\r\n")
-            tmpFile.write(submitTemplate + separatorLine + diff + newdiff)
-            tmpFile.close()
-
-            if self.edit_template(fileName):
-                # read the edited message and submit
-                tmpFile = open(fileName, "rb")
-                message = tmpFile.read()
-                tmpFile.close()
-                submitTemplate = message[:message.index(separatorLine)]
-                if self.isWindows:
-                    submitTemplate = submitTemplate.replace("\r\n", "\n")
-                p4_write_pipe(['submit', '-i'], submitTemplate)
-
-                if self.preserveUser:
-                    if p4User:
-                        # Get last changelist number. Cannot easily get it from
-                        # the submit command output as the output is
-                        # unmarshalled.
-                        changelist = self.lastP4Changelist()
-                        self.modifyChangelistUser(changelist, p4User)
-
-                # The rename/copy happened by applying a patch that created a
-                # new file.  This leaves it writable, which confuses p4.
-                for f in pureRenameCopy:
-                    p4_sync(f, "-f")
-
-            else:
-                # skip this patch
-                print "Submission cancelled, undoing p4 changes."
-                for f in editedFiles:
-                    p4_revert(f)
-                for f in filesToAdd:
-                    p4_revert(f)
-                    os.remove(f)
-
-            os.remove(fileName)
         else:
-            fileName = "submit.txt"
-            file = open(fileName, "w+")
-            file.write(self.prepareLogMessage(template, logMessage))
-            file.close()
-            print ("Perforce submit template written as %s. "
-                   + "Please review/edit and then use p4 submit -i < %s to submit directly!"
-                   % (fileName, fileName))
+            # skip this patch
+            print "Submission cancelled, undoing p4 changes."
+            for f in editedFiles:
+                p4_revert(f)
+            for f in filesToAdd:
+                p4_revert(f)
+                os.remove(f)
+
+        os.remove(fileName)
 
     # Export git tags as p4 labels. Create a p4 label and then tag
     # with that.
@@ -1433,12 +1456,41 @@ class P4Submit(Command, P4UserMap):
         if self.preserveUser:
             self.checkValidP4Users(commits)
 
+        #
+        # Build up a set of options to be passed to diff when
+        # submitting each commit to p4.
+        #
+        if self.detectRenames:
+            # command-line -M arg
+            self.diffOpts = "-M"
+        else:
+            # If not explicitly set check the config variable
+            detectRenames = gitConfig("git-p4.detectRenames")
+
+            if detectRenames.lower() == "false" or detectRenames == "":
+                self.diffOpts = ""
+            elif detectRenames.lower() == "true":
+                self.diffOpts = "-M"
+            else:
+                self.diffOpts = "-M%s" % detectRenames
+
+        # no command-line arg for -C or --find-copies-harder, just
+        # config variables
+        detectCopies = gitConfig("git-p4.detectCopies")
+        if detectCopies.lower() == "false" or detectCopies == "":
+            pass
+        elif detectCopies.lower() == "true":
+            self.diffOpts += " -C"
+        else:
+            self.diffOpts += " -C%s" % detectCopies
+
+        if gitConfig("git-p4.detectCopiesHarder", "--bool") == "true":
+            self.diffOpts += " --find-copies-harder"
+
         while len(commits) > 0:
             commit = commits[0]
             commits = commits[1:]
             self.applyCommit(commit)
-            if not self.interactive:
-                break
 
         if len(commits) == 0:
             print "All changes applied!"

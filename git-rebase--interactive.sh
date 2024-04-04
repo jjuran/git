@@ -9,9 +9,7 @@
 #
 # The original idea comes from Eric W. Biederman, in
 # http://article.gmane.org/gmane.comp.version-control.git/22407
-
-. git-sh-setup
-
+#
 # The file containing rebase commands, comments, and empty lines.
 # This file is created by "git rebase -i" then edited by the user.  As
 # the lines are processed, they are removed from the front of this
@@ -417,6 +415,29 @@ record_in_rewritten() {
 	esac
 }
 
+do_pick () {
+	if test "$(git rev-parse HEAD)" = "$squash_onto"
+	then
+		# Set the correct commit message and author info on the
+		# sentinel root before cherry-picking the original changes
+		# without committing (-n).  Finally, update the sentinel again
+		# to include these changes.  If the cherry-pick results in a
+		# conflict, this means our behaviour is similar to a standard
+		# failed cherry-pick during rebase, with a dirty index to
+		# resolve before manually running git commit --amend then git
+		# rebase --continue.
+		git commit --allow-empty --allow-empty-message --amend \
+			   --no-post-rewrite -n -q -C $1 &&
+			pick_one -n $1 &&
+			git commit --allow-empty --allow-empty-message \
+				   --amend --no-post-rewrite -n -q -C $1 ||
+			die_with_patch $1 "Could not apply $1... $2"
+	else
+		pick_one $1 ||
+			die_with_patch $1 "Could not apply $1... $2"
+	fi
+}
+
 do_next () {
 	rm -f "$msg" "$author_script" "$amend" || exit
 	read -r command sha1 rest < "$todo"
@@ -428,16 +449,14 @@ do_next () {
 		comment_for_reflog pick
 
 		mark_action_done
-		pick_one $sha1 ||
-			die_with_patch $sha1 "Could not apply $sha1... $rest"
+		do_pick $sha1 "$rest"
 		record_in_rewritten $sha1
 		;;
 	reword|r)
 		comment_for_reflog reword
 
 		mark_action_done
-		pick_one $sha1 ||
-			die_with_patch $sha1 "Could not apply $sha1... $rest"
+		do_pick $sha1 "$rest"
 		git commit --amend --no-post-rewrite || {
 			warn "Could not amend commit after successfully picking $sha1... $rest"
 			warn "This is most likely due to an empty commit message, or the pre-commit hook"
@@ -451,8 +470,7 @@ do_next () {
 		comment_for_reflog edit
 
 		mark_action_done
-		pick_one $sha1 ||
-			die_with_patch $sha1 "Could not apply $sha1... $rest"
+		do_pick $sha1 "$rest"
 		warn "Stopped at $sha1... $rest"
 		exit_with_patch $sha1 0
 		;;
@@ -475,25 +493,28 @@ do_next () {
 		author_script_content=$(get_author_ident_from_commit HEAD)
 		echo "$author_script_content" > "$author_script"
 		eval "$author_script_content"
-		output git reset --soft HEAD^
-		pick_one -n $sha1 || die_failed_squash $sha1 "$rest"
+		if ! pick_one -n $sha1
+		then
+			git rev-parse --verify HEAD >"$amend"
+			die_failed_squash $sha1 "$rest"
+		fi
 		case "$(peek_next_command)" in
 		squash|s|fixup|f)
 			# This is an intermediate commit; its message will only be
 			# used in case of trouble.  So use the long version:
-			do_with_author output git commit --no-verify -F "$squash_msg" ||
+			do_with_author output git commit --amend --no-verify -F "$squash_msg" ||
 				die_failed_squash $sha1 "$rest"
 			;;
 		*)
 			# This is the final command of this squash/fixup group
 			if test -f "$fixup_msg"
 			then
-				do_with_author git commit --no-verify -F "$fixup_msg" ||
+				do_with_author git commit --amend --no-verify -F "$fixup_msg" ||
 					die_failed_squash $sha1 "$rest"
 			else
 				cp "$squash_msg" "$GIT_DIR"/SQUASH_MSG || exit
 				rm -f "$GIT_DIR"/MERGE_MSG
-				do_with_author git commit --no-verify -e ||
+				do_with_author git commit --amend --no-verify -F "$GIT_DIR"/SQUASH_MSG -e ||
 					die_failed_squash $sha1 "$rest"
 			fi
 			rm -f "$squash_msg" "$fixup_msg"
@@ -683,6 +704,27 @@ rearrange_squash () {
 	rm -f "$1.sq" "$1.rearranged"
 }
 
+# Add commands after a pick or after a squash/fixup serie
+# in the todo list.
+add_exec_commands () {
+	{
+		first=t
+		while read -r insn rest
+		do
+			case $insn in
+			pick)
+				test -n "$first" ||
+				printf "%s" "$cmd"
+				;;
+			esac
+			printf "%s %s\n" "$insn" "$rest"
+			first=
+		done
+		printf "%s" "$cmd"
+	} <"$1" >"$1.new" &&
+	mv "$1.new" "$1"
+}
+
 case "$action" in
 continue)
 	# do we have anything to commit?
@@ -708,7 +750,6 @@ In both case, once you're done, continue with:
 		fi
 		. "$author_script" ||
 			die "Error trying to find the author identity to amend commit"
-		current_head=
 		if test -f "$amend"
 		then
 			current_head=$(git rev-parse --verify HEAD)
@@ -716,13 +757,12 @@ In both case, once you're done, continue with:
 			die "\
 You have uncommitted changes in your working tree. Please, commit them
 first and then run 'git rebase --continue' again."
-			git reset --soft HEAD^ ||
-			die "Cannot rewind the HEAD"
+			do_with_author git commit --amend --no-verify -F "$msg" -e ||
+				die "Could not commit staged changes."
+		else
+			do_with_author git commit --no-verify -F "$msg" -e ||
+				die "Could not commit staged changes."
 		fi
-		do_with_author git commit --no-verify -F "$msg" -e || {
-			test -n "$current_head" && git reset --soft $current_head
-			die "Could not commit staged changes."
-		}
 	fi
 
 	record_in_rewritten "$(cat "$state_dir"/stopped-sha)"
@@ -856,6 +896,8 @@ fi
 
 test -s "$todo" || echo noop >> "$todo"
 test -n "$autosquash" && rearrange_squash "$todo"
+test -n "$cmd" && add_exec_commands "$todo"
+
 cat >> "$todo" << EOF
 
 # Rebase $shortrevisions onto $shortonto

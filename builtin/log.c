@@ -21,6 +21,7 @@
 #include "parse-options.h"
 #include "branch.h"
 #include "streaming.h"
+#include "version.h"
 
 /* Set a default date-time format for git log ("log.date" config variable) */
 static const char *default_date_mode = NULL;
@@ -374,6 +375,7 @@ int cmd_whatchanged(int argc, const char **argv, const char *prefix)
 	rev.simplify_history = 0;
 	memset(&opt, 0, sizeof(opt));
 	opt.def = "HEAD";
+	opt.revarg_opt = REVARG_COMMITTISH;
 	cmd_log_init(argc, argv, prefix, &rev, &opt);
 	if (!rev.diffopt.output_format)
 		rev.diffopt.output_format = DIFF_FORMAT_RAW;
@@ -462,7 +464,7 @@ int cmd_show(int argc, const char **argv, const char *prefix)
 	init_revisions(&rev, prefix);
 	rev.diff = 1;
 	rev.always_show_header = 1;
-	rev.no_walk = 1;
+	rev.no_walk = REVISION_WALK_NO_WALK_SORTED;
 	rev.diffopt.stat_width = -1; 	/* Scale to real terminal size */
 
 	memset(&opt, 0, sizeof(opt));
@@ -564,6 +566,7 @@ int cmd_log(int argc, const char **argv, const char *prefix)
 	rev.always_show_header = 1;
 	memset(&opt, 0, sizeof(opt));
 	opt.def = "HEAD";
+	opt.revarg_opt = REVARG_COMMITTISH;
 	cmd_log_init(argc, argv, prefix, &rev, &opt);
 	return cmd_log_walk(&rev);
 }
@@ -1147,6 +1150,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	rev.subject_prefix = fmt_patch_subject_prefix;
 	memset(&s_r_opt, 0, sizeof(s_r_opt));
 	s_r_opt.def = "HEAD";
+	s_r_opt.revarg_opt = REVARG_COMMITTISH;
 
 	if (default_attach) {
 		rev.mime_boundary = default_attach;

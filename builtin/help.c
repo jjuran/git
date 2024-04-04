@@ -12,6 +12,10 @@
 #include "column.h"
 #include "help.h"
 
+#ifndef DEFAULT_HELP_FORMAT
+#define DEFAULT_HELP_FORMAT "man"
+#endif
+
 static struct man_viewer_list {
 	struct man_viewer_list *next;
 	char name[FLEX_ARRAY];
@@ -29,6 +33,8 @@ enum help_format {
 	HELP_FORMAT_INFO,
 	HELP_FORMAT_WEB
 };
+
+static const char *html_path;
 
 static int show_all = 0;
 static unsigned int colopts;
@@ -264,6 +270,12 @@ static int git_help_config(const char *var, const char *value, void *cb)
 		help_format = parse_help_format(value);
 		return 0;
 	}
+	if (!strcmp(var, "help.htmlpath")) {
+		if (!value)
+			return config_error_nonbool(var);
+		html_path = xstrdup(value);
+		return 0;
+	}
 	if (!strcmp(var, "man.viewer")) {
 		if (!value)
 			return config_error_nonbool(var);
@@ -386,12 +398,15 @@ static void show_info_page(const char *git_cmd)
 static void get_html_page_path(struct strbuf *page_path, const char *page)
 {
 	struct stat st;
-	const char *html_path = system_path(GIT_HTML_PATH);
+	if (!html_path)
+		html_path = system_path(GIT_HTML_PATH);
 
 	/* Check that we have a git documentation directory. */
-	if (stat(mkpath("%s/git.html", html_path), &st)
-	    || !S_ISREG(st.st_mode))
-		die(_("'%s': not a documentation directory."), html_path);
+	if (!strstr(html_path, "://")) {
+		if (stat(mkpath("%s/git.html", html_path), &st)
+		    || !S_ISREG(st.st_mode))
+			die("'%s': not a documentation directory.", html_path);
+	}
 
 	strbuf_init(page_path, 0);
 	strbuf_addf(page_path, "%s/%s.html", html_path, page);
@@ -450,6 +465,8 @@ int cmd_help(int argc, const char **argv, const char *prefix)
 
 	if (parsed_help_format != HELP_FORMAT_NONE)
 		help_format = parsed_help_format;
+	if (help_format == HELP_FORMAT_NONE)
+		help_format = parse_help_format(DEFAULT_HELP_FORMAT);
 
 	alias = alias_lookup(argv[0]);
 	if (alias && !is_git_command(argv[0])) {

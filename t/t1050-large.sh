@@ -130,8 +130,25 @@ test_expect_success 'git-show a large file' '
 
 '
 
+test_expect_success 'index-pack' '
+	git clone file://"`pwd`"/.git foo &&
+	GIT_DIR=non-existent git index-pack --strict --verify foo/.git/objects/pack/*.pack
+'
+
 test_expect_success 'repack' '
 	git repack -ad
+'
+
+test_expect_success 'pack-objects with large loose object' '
+	SHA1=`git hash-object huge` &&
+	test_create_repo loose &&
+	echo $SHA1 | git pack-objects --stdout |
+		GIT_ALLOC_LIMIT=0 GIT_DIR=loose/.git git unpack-objects &&
+	echo $SHA1 | GIT_DIR=loose/.git git pack-objects pack &&
+	test_create_repo packed &&
+	mv pack-* packed/.git/objects/pack &&
+	GIT_DIR=packed/.git git cat-file blob $SHA1 >actual &&
+	cmp huge actual
 '
 
 test_expect_success 'tar achiving' '

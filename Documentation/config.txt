@@ -159,9 +159,10 @@ advice.*::
 		specified a refspec that isn't your current branch) and
 		it resulted in a non-fast-forward error.
 	statusHints::
-		Directions on how to stage/unstage/add shown in the
-		output of linkgit:git-status[1] and the template shown
-		when writing commit messages.
+		Show directions on how to proceed from the current
+		state in the output of linkgit:git-status[1] and in
+		the template shown when writing commit messages in
+		linkgit:git-commit[1].
 	commitBeforeMerge::
 		Advice shown when linkgit:git-merge[1] refuses to
 		merge to avoid overwriting local changes.
@@ -212,6 +213,15 @@ core.ignorecase::
 The default is false, except linkgit:git-clone[1] or linkgit:git-init[1]
 will probe and set core.ignorecase true if appropriate when the repository
 is created.
+
+core.precomposeunicode::
+	This option is only used by Mac OS implementation of git.
+	When core.precomposeunicode=true, git reverts the unicode decomposition
+	of filenames done by Mac OS. This is useful when sharing a repository
+	between Mac OS and Linux or Windows.
+	(Git for Windows 1.7.10 or higher is needed, or git under cygwin 1.7).
+	When false, file names are handled fully transparent by git,
+	which is backward compatible with older versions of git.
 
 core.trustctime::
 	If false, the ctime differences between the index and the
@@ -486,7 +496,9 @@ core.excludesfile::
 	'.git/info/exclude', git looks into this file for patterns
 	of files which are not meant to be tracked.  "`~/`" is expanded
 	to the value of `$HOME` and "`~user/`" to the specified user's
-	home directory.  See linkgit:gitignore[5].
+	home directory. Its default value is $XDG_CONFIG_HOME/git/ignore.
+	If $XDG_CONFIG_HOME is either not set or empty, $HOME/.config/git/ignore
+	is used instead. See linkgit:gitignore[5].
 
 core.askpass::
 	Some commands (e.g. svn and http interfaces) that interactively
@@ -501,7 +513,9 @@ core.attributesfile::
 	In addition to '.gitattributes' (per-directory) and
 	'.git/info/attributes', git looks into this file for attributes
 	(see linkgit:gitattributes[5]). Path expansions are made the same
-	way as for `core.excludesfile`.
+	way as for `core.excludesfile`. Its default value is
+	$XDG_CONFIG_HOME/git/attributes. If $XDG_CONFIG_HOME is either not
+	set or empty, $HOME/.config/git/attributes is used instead.
 
 core.editor::
 	Commands such as `commit` and `tag` that lets you edit
@@ -545,8 +559,9 @@ core.whitespace::
 * `space-before-tab` treats a space character that appears immediately
   before a tab character in the initial indent part of the line as an
   error (enabled by default).
-* `indent-with-non-tab` treats a line that is indented with 8 or more
-  space characters as an error (not enabled by default).
+* `indent-with-non-tab` treats a line that is indented with space
+  characters instead of the equivalent tabs as an error (not enabled by
+  default).
 * `tab-in-indent` treats a tab character in the initial indent part of
   the line as an error (not enabled by default).
 * `blank-at-eof` treats blank lines added at the end of file as an error
@@ -883,7 +898,7 @@ column.ui::
 	make equal size columns
 --
 +
-	This option defaults to 'never'.
+This option defaults to 'never'.
 
 column.branch::
 	Specify whether to output branch listing in `git branch` in columns.
@@ -1723,6 +1738,7 @@ push.default::
 	no refspec is implied by any of the options given on the command
 	line. Possible values are:
 +
+--
 * `nothing` - do not push anything.
 * `matching` - push all branches having the same name in both ends.
   This is for those who prepare all the branches into a publishable
@@ -1742,12 +1758,13 @@ push.default::
   option and is well-suited for beginners. It will become the default
   in Git 2.0.
 * `current` - push the current branch to a branch of the same name.
-  +
-  The `simple`, `current` and `upstream` modes are for those who want to
-  push out a single branch after finishing work, even when the other
-  branches are not yet ready to be pushed out. If you are working with
-  other people to push into the same shared repository, you would want
-  to use one of these.
+--
++
+The `simple`, `current` and `upstream` modes are for those who want to
+push out a single branch after finishing work, even when the other
+branches are not yet ready to be pushed out. If you are working with
+other people to push into the same shared repository, you would want
+to use one of these.
 
 rebase.stat::
 	Whether to show a diffstat of what changed upstream since the last
