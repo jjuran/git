@@ -254,6 +254,9 @@ int parse_fetch_recurse_submodules_arg(const char *opt, const char *arg)
 			return RECURSE_SUBMODULES_ON_DEMAND;
 		die("bad %s argument: %s", opt, arg);
 	}
+	
+	/* Not reached */
+	return 0;
 }
 
 void show_submodule_summary(FILE *f, const char *path,
@@ -262,7 +265,7 @@ void show_submodule_summary(FILE *f, const char *path,
 		const char *del, const char *add, const char *reset)
 {
 	struct rev_info rev;
-	struct commit *left = left, *right = right;
+	struct commit *left, *right;
 	const char *message = NULL;
 	struct strbuf sb = STRBUF_INIT;
 	int fast_forward = 0, fast_backward = 0;

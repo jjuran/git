@@ -274,6 +274,9 @@ static int parse_pattern_type_arg(const char *opt, const char *arg)
 	else if (!strcmp(arg, "perl"))
 		return GREP_PATTERN_TYPE_PCRE;
 	die("bad %s argument: %s", opt, arg);
+
+	/* Not reached */
+	return 0;
 }
 
 static void grep_pattern_type_options(const int pattern_type, struct grep_opt *opt)
@@ -577,6 +580,9 @@ static int grep_object(struct grep_opt *opt, const struct pathspec *pathspec,
 		return hit;
 	}
 	die(_("unable to grep from object of type %s"), typename(obj->type));
+
+	/* Not reached */
+	return 0;
 }
 
 static int grep_objects(struct grep_opt *opt, const struct pathspec *pathspec,

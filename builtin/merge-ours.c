@@ -30,5 +30,5 @@ int cmd_merge_ours(int argc, const char **argv, const char *prefix)
 	 */
 	if (cmd_diff_index(NARGS, diff_index_args, prefix))
 		exit(2);
-	exit(0);
+	return 0;
 }

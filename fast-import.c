@@ -2265,7 +2265,7 @@ static void file_change_m(struct branch *b)
 	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
 	const char *endp;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	unsigned char sha1[20];
 	uint16_t mode, inline_data = 0;
 
@@ -2434,7 +2434,7 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 {
 	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	struct branch *s;
 	unsigned char sha1[20], commit_sha1[20];
 	char path[60];
@@ -2613,7 +2613,7 @@ static int parse_from(struct branch *b)
 
 static struct hash_list *parse_merge(unsigned int *count)
 {
-	struct hash_list *list = NULL, *n, *e = e;
+	struct hash_list *list = NULL, *n, *e;
 	const char *from;
 	struct branch *s;
 
@@ -2914,7 +2914,7 @@ static void cat_blob(struct object_entry *oe, unsigned char sha1[20])
 static void parse_cat_blob(void)
 {
 	const char *p;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	unsigned char sha1[20];
 
 	/* cat-blob SP <object> LF */
