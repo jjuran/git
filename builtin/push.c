@@ -11,7 +11,7 @@
 #include "submodule.h"
 
 static const char * const push_usage[] = {
-	"git push [<options>] [<repository> [<refspec>...]]",
+	N_("git push [<options>] [<repository> [<refspec>...]]"),
 	NULL,
 };
 
@@ -150,12 +150,37 @@ static void setup_push_upstream(struct remote *remote, int simple)
 	add_refspec(refspec.buf);
 }
 
+static char warn_unspecified_push_default_msg[] =
+N_("push.default is unset; its implicit value is changing in\n"
+   "Git 2.0 from 'matching' to 'simple'. To squelch this message\n"
+   "and maintain the current behavior after the default changes, use:\n"
+   "\n"
+   "  git config --global push.default matching\n"
+   "\n"
+   "To squelch this message and adopt the new behavior now, use:\n"
+   "\n"
+   "  git config --global push.default simple\n"
+   "\n"
+   "See 'git help config' and search for 'push.default' for further information.\n"
+   "(the 'simple' mode was introduced in Git 1.7.11. Use the similar mode\n"
+   "'current' instead of 'simple' if you sometimes use older versions of Git)");
+
+static void warn_unspecified_push_default_configuration(void)
+{
+	static int warn_once;
+
+	if (warn_once++)
+		return;
+	warning("%s\n", _(warn_unspecified_push_default_msg));
+}
+
 static void setup_default_push_refspecs(struct remote *remote)
 {
 	switch (push_default) {
 	default:
 	case PUSH_DEFAULT_UNSPECIFIED:
 		default_matching_used = 1;
+		warn_unspecified_push_default_configuration();
 		/* fallthru */
 	case PUSH_DEFAULT_MATCHING:
 		add_refspec(":");
@@ -189,8 +214,8 @@ static const char message_advice_pull_before_push[] =
 static const char message_advice_use_upstream[] =
 	N_("Updates were rejected because a pushed branch tip is behind its remote\n"
 	   "counterpart. If you did not intend to push that branch, you may want to\n"
-	   "specify branches to push or set the 'push.default' configuration\n"
-	   "variable to 'current' or 'upstream' to push only the current branch.");
+	   "specify branches to push or set the 'push.default' configuration variable\n"
+	   "to 'simple', 'current' or 'upstream' to push only the current branch.");
 
 static const char message_advice_checkout_pull_push[] =
 	N_("Updates were rejected because a pushed branch tip is behind its remote\n"
@@ -361,25 +386,25 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 	const char *repo = NULL;	/* default repository */
 	struct option options[] = {
 		OPT__VERBOSITY(&verbosity),
-		OPT_STRING( 0 , "repo", &repo, "repository", "repository"),
-		OPT_BIT( 0 , "all", &flags, "push all refs", TRANSPORT_PUSH_ALL),
-		OPT_BIT( 0 , "mirror", &flags, "mirror all refs",
+		OPT_STRING( 0 , "repo", &repo, N_("repository"), N_("repository")),
+		OPT_BIT( 0 , "all", &flags, N_("push all refs"), TRANSPORT_PUSH_ALL),
+		OPT_BIT( 0 , "mirror", &flags, N_("mirror all refs"),
 			    (TRANSPORT_PUSH_MIRROR|TRANSPORT_PUSH_FORCE)),
-		OPT_BOOLEAN( 0, "delete", &deleterefs, "delete refs"),
-		OPT_BOOLEAN( 0 , "tags", &tags, "push tags (can't be used with --all or --mirror)"),
-		OPT_BIT('n' , "dry-run", &flags, "dry run", TRANSPORT_PUSH_DRY_RUN),
-		OPT_BIT( 0,  "porcelain", &flags, "machine-readable output", TRANSPORT_PUSH_PORCELAIN),
-		OPT_BIT('f', "force", &flags, "force updates", TRANSPORT_PUSH_FORCE),
-		{ OPTION_CALLBACK, 0, "recurse-submodules", &flags, "check",
-			"controls recursive pushing of submodules",
+		OPT_BOOLEAN( 0, "delete", &deleterefs, N_("delete refs")),
+		OPT_BOOLEAN( 0 , "tags", &tags, N_("push tags (can't be used with --all or --mirror)")),
+		OPT_BIT('n' , "dry-run", &flags, N_("dry run"), TRANSPORT_PUSH_DRY_RUN),
+		OPT_BIT( 0,  "porcelain", &flags, N_("machine-readable output"), TRANSPORT_PUSH_PORCELAIN),
+		OPT_BIT('f', "force", &flags, N_("force updates"), TRANSPORT_PUSH_FORCE),
+		{ OPTION_CALLBACK, 0, "recurse-submodules", &flags, N_("check"),
+			N_("control recursive pushing of submodules"),
 			PARSE_OPT_OPTARG, option_parse_recurse_submodules },
-		OPT_BOOLEAN( 0 , "thin", &thin, "use thin pack"),
-		OPT_STRING( 0 , "receive-pack", &receivepack, "receive-pack", "receive pack program"),
-		OPT_STRING( 0 , "exec", &receivepack, "receive-pack", "receive pack program"),
-		OPT_BIT('u', "set-upstream", &flags, "set upstream for git pull/status",
+		OPT_BOOLEAN( 0 , "thin", &thin, N_("use thin pack")),
+		OPT_STRING( 0 , "receive-pack", &receivepack, "receive-pack", N_("receive pack program")),
+		OPT_STRING( 0 , "exec", &receivepack, "receive-pack", N_("receive pack program")),
+		OPT_BIT('u', "set-upstream", &flags, N_("set upstream for git pull/status"),
 			TRANSPORT_PUSH_SET_UPSTREAM),
-		OPT_BOOL(0, "progress", &progress, "force progress reporting"),
-		OPT_BIT(0, "prune", &flags, "prune locally removed refs",
+		OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
+		OPT_BIT(0, "prune", &flags, N_("prune locally removed refs"),
 			TRANSPORT_PUSH_PRUNE),
 		OPT_END()
 	};

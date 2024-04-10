@@ -30,6 +30,7 @@ struct replay_opts {
 	int allow_ff;
 	int allow_rerere_auto;
 	int allow_empty;
+	int allow_empty_message;
 	int keep_redundant_commits;
 
 	int mainline;
@@ -43,9 +44,10 @@ struct replay_opts {
 	struct rev_info *revs;
 };
 
-/* Removes SEQ_DIR. */
-extern void remove_sequencer_state(void);
-
 int sequencer_pick_revisions(struct replay_opts *opts);
+
+extern const char sign_off_header[];
+
+void append_signoff(struct strbuf *msgbuf, int ignore_footer);
 
 #endif

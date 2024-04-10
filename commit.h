@@ -171,7 +171,7 @@ extern struct commit_list *get_shallow_commits(struct object_array *heads,
 		int depth, int shallow_flag, int not_shallow_flag);
 
 int is_descendant_of(struct commit *, struct commit_list *);
-int in_merge_bases(struct commit *, struct commit **, int);
+int in_merge_bases(struct commit *, struct commit *);
 
 extern int interactive_add(int argc, const char **argv, const char *prefix, int patch);
 extern int run_add_interactive(const char *revision, const char *patch_mode,
@@ -204,7 +204,6 @@ extern int commit_tree_extended(const struct strbuf *msg, unsigned char *tree,
 				struct commit_extra_header *);
 
 extern struct commit_extra_header *read_commit_extra_headers(struct commit *, const char **);
-extern struct commit_extra_header *read_commit_extra_header_lines(const char *buf, size_t len, const char **);
 
 extern void free_commit_extra_headers(struct commit_extra_header *extra);
 

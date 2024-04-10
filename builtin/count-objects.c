@@ -66,7 +66,7 @@ static void count_objects(DIR *d, char *path, int len, int verbose,
 }
 
 static char const * const count_objects_usage[] = {
-	"git count-objects [-v]",
+	N_("git count-objects [-v]"),
 	NULL
 };
 
@@ -84,7 +84,7 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option opts[] = {
-		OPT__VERBOSE(&verbose, "be verbose"),
+		OPT__VERBOSE(&verbose, N_("be verbose")),
 		OPT_END(),
 	};
 

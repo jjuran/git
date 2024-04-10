@@ -3,7 +3,7 @@
 #include "parse-options.h"
 
 static const char * const update_server_info_usage[] = {
-	"git update-server-info [--force]",
+	N_("git update-server-info [--force]"),
 	NULL
 };
 
@@ -16,7 +16,7 @@ int cmd_update_server_info(int argc, const char **argv, const char *prefix)
 #endif
 
 	struct option options[] = {
-		OPT__FORCE(&force, "update the info files from scratch"),
+		OPT__FORCE(&force, N_("update the info files from scratch")),
 		OPT_END()
 	};
 

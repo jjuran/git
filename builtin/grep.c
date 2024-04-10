@@ -19,7 +19,7 @@
 #include "dir.h"
 
 static char const * const grep_usage[] = {
-	"git grep [options] [-e] <pattern> [<rev>...] [[--] <path>...]",
+	N_("git grep [options] [-e] <pattern> [<rev>...] [[--] <path>...]"),
 	NULL
 };
 
@@ -261,6 +261,56 @@ static int wait_all(void)
 }
 #endif
 
+static int parse_pattern_type_arg(const char *opt, const char *arg)
+{
+	if (!strcmp(arg, "default"))
+		return GREP_PATTERN_TYPE_UNSPECIFIED;
+	else if (!strcmp(arg, "basic"))
+		return GREP_PATTERN_TYPE_BRE;
+	else if (!strcmp(arg, "extended"))
+		return GREP_PATTERN_TYPE_ERE;
+	else if (!strcmp(arg, "fixed"))
+		return GREP_PATTERN_TYPE_FIXED;
+	else if (!strcmp(arg, "perl"))
+		return GREP_PATTERN_TYPE_PCRE;
+	die("bad %s argument: %s", opt, arg);
+
+	/* Not reached */
+	return 0;
+}
+
+static void grep_pattern_type_options(const int pattern_type, struct grep_opt *opt)
+{
+	switch (pattern_type) {
+	case GREP_PATTERN_TYPE_UNSPECIFIED:
+		/* fall through */
+
+	case GREP_PATTERN_TYPE_BRE:
+		opt->fixed = 0;
+		opt->pcre = 0;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_ERE:
+		opt->fixed = 0;
+		opt->pcre = 0;
+		opt->regflags |= REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_FIXED:
+		opt->fixed = 1;
+		opt->pcre = 0;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_PCRE:
+		opt->fixed = 0;
+		opt->pcre = 1;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+	}
+}
+
 static int grep_config(const char *var, const char *value, void *cb)
 {
 	struct grep_opt *opt = cb;
@@ -271,11 +321,16 @@ static int grep_config(const char *var, const char *value, void *cb)
 
 	if (!strcmp(var, "grep.extendedregexp")) {
 		if (git_config_bool(var, value))
-			opt->regflags |= REG_EXTENDED;
+			opt->extended_regexp_option = 1;
 		else
-			opt->regflags &= ~REG_EXTENDED;
+			opt->extended_regexp_option = 0;
 		return 0;
 	}
+
+	if (!strcmp(var, "grep.patterntype")) {
+		opt->pattern_type_option = parse_pattern_type_arg(var, value);
+		return 0;
+  }
 
 	if (!strcmp(var, "grep.linenumber")) {
 		opt->linenum = git_config_bool(var, value);
@@ -673,14 +728,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	int i;
 	int dummy;
 	int use_index = 1;
-	enum {
-		pattern_type_unspecified = 0,
-		pattern_type_bre,
-		pattern_type_ere,
-		pattern_type_fixed,
-		pattern_type_pcre,
-	};
-	int pattern_type = pattern_type_unspecified;
+	int pattern_type_arg = GREP_PATTERN_TYPE_UNSPECIFIED;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -688,84 +736,84 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 
 	struct option options[] = {
 		OPT_BOOLEAN(0, "cached", &cached,
-			"search in index instead of in the work tree"),
+			N_("search in index instead of in the work tree")),
 		OPT_NEGBIT(0, "no-index", &use_index,
-			 "finds in contents not managed by git", 1),
+			 N_("find in contents not managed by git"), 1),
 		OPT_BOOLEAN(0, "untracked", &untracked,
-			"search in both tracked and untracked files"),
+			N_("search in both tracked and untracked files")),
 		OPT_SET_INT(0, "exclude-standard", &opt_exclude,
-			    "search also in ignored files", 1),
+			    N_("search also in ignored files"), 1),
 		OPT_GROUP(""),
 		OPT_BOOLEAN('v', "invert-match", &opt.invert,
-			"show non-matching lines"),
+			N_("show non-matching lines")),
 		OPT_BOOLEAN('i', "ignore-case", &opt.ignore_case,
-			"case insensitive matching"),
+			N_("case insensitive matching")),
 		OPT_BOOLEAN('w', "word-regexp", &opt.word_regexp,
-			"match patterns only at word boundaries"),
+			N_("match patterns only at word boundaries")),
 		OPT_SET_INT('a', "text", &opt.binary,
-			"process binary files as text", GREP_BINARY_TEXT),
+			N_("process binary files as text"), GREP_BINARY_TEXT),
 		OPT_SET_INT('I', NULL, &opt.binary,
-			"don't match patterns in binary files",
+			N_("don't match patterns in binary files"),
 			GREP_BINARY_NOMATCH),
-		{ OPTION_INTEGER, 0, "max-depth", &opt.max_depth, "depth",
-			"descend at most <depth> levels", PARSE_OPT_NONEG,
+		{ OPTION_INTEGER, 0, "max-depth", &opt.max_depth, N_("depth"),
+			N_("descend at most <depth> levels"), PARSE_OPT_NONEG,
 			NULL, 1 },
 		OPT_GROUP(""),
-		OPT_SET_INT('E', "extended-regexp", &pattern_type,
-			    "use extended POSIX regular expressions",
-			    pattern_type_ere),
-		OPT_SET_INT('G', "basic-regexp", &pattern_type,
-			    "use basic POSIX regular expressions (default)",
-			    pattern_type_bre),
-		OPT_SET_INT('F', "fixed-strings", &pattern_type,
-			    "interpret patterns as fixed strings",
-			    pattern_type_fixed),
-		OPT_SET_INT('P', "perl-regexp", &pattern_type,
-			    "use Perl-compatible regular expressions",
-			    pattern_type_pcre),
+		OPT_SET_INT('E', "extended-regexp", &pattern_type_arg,
+			    N_("use extended POSIX regular expressions"),
+			    GREP_PATTERN_TYPE_ERE),
+		OPT_SET_INT('G', "basic-regexp", &pattern_type_arg,
+			    N_("use basic POSIX regular expressions (default)"),
+			    GREP_PATTERN_TYPE_BRE),
+		OPT_SET_INT('F', "fixed-strings", &pattern_type_arg,
+			    N_("interpret patterns as fixed strings"),
+			    GREP_PATTERN_TYPE_FIXED),
+		OPT_SET_INT('P', "perl-regexp", &pattern_type_arg,
+			    N_("use Perl-compatible regular expressions"),
+			    GREP_PATTERN_TYPE_PCRE),
 		OPT_GROUP(""),
-		OPT_BOOLEAN('n', "line-number", &opt.linenum, "show line numbers"),
-		OPT_NEGBIT('h', NULL, &opt.pathname, "don't show filenames", 1),
-		OPT_BIT('H', NULL, &opt.pathname, "show filenames", 1),
+		OPT_BOOLEAN('n', "line-number", &opt.linenum, N_("show line numbers")),
+		OPT_NEGBIT('h', NULL, &opt.pathname, N_("don't show filenames"), 1),
+		OPT_BIT('H', NULL, &opt.pathname, N_("show filenames"), 1),
 		OPT_NEGBIT(0, "full-name", &opt.relative,
-			"show filenames relative to top directory", 1),
+			N_("show filenames relative to top directory"), 1),
 		OPT_BOOLEAN('l', "files-with-matches", &opt.name_only,
-			"show only filenames instead of matching lines"),
+			N_("show only filenames instead of matching lines")),
 		OPT_BOOLEAN(0, "name-only", &opt.name_only,
-			"synonym for --files-with-matches"),
+			N_("synonym for --files-with-matches")),
 		OPT_BOOLEAN('L', "files-without-match",
 			&opt.unmatch_name_only,
-			"show only the names of files without match"),
+			N_("show only the names of files without match")),
 		OPT_BOOLEAN('z', "null", &opt.null_following_name,
-			"print NUL after filenames"),
+			N_("print NUL after filenames")),
 		OPT_BOOLEAN('c', "count", &opt.count,
-			"show the number of matches instead of matching lines"),
-		OPT__COLOR(&opt.color, "highlight matches"),
+			N_("show the number of matches instead of matching lines")),
+		OPT__COLOR(&opt.color, N_("highlight matches")),
 		OPT_BOOLEAN(0, "break", &opt.file_break,
-			"print empty line between matches from different files"),
+			N_("print empty line between matches from different files")),
 		OPT_BOOLEAN(0, "heading", &opt.heading,
-			"show filename only once above matches from same file"),
+			N_("show filename only once above matches from same file")),
 		OPT_GROUP(""),
-		OPT_CALLBACK('C', "context", &opt, "n",
-			"show <n> context lines before and after matches",
+		OPT_CALLBACK('C', "context", &opt, N_("n"),
+			N_("show <n> context lines before and after matches"),
 			context_callback),
 		OPT_INTEGER('B', "before-context", &opt.pre_context,
-			"show <n> context lines before matches"),
+			N_("show <n> context lines before matches")),
 		OPT_INTEGER('A', "after-context", &opt.post_context,
-			"show <n> context lines after matches"),
-		OPT_NUMBER_CALLBACK(&opt, "shortcut for -C NUM",
+			N_("show <n> context lines after matches")),
+		OPT_NUMBER_CALLBACK(&opt, N_("shortcut for -C NUM"),
 			context_callback),
 		OPT_BOOLEAN('p', "show-function", &opt.funcname,
-			"show a line with the function name before matches"),
+			N_("show a line with the function name before matches")),
 		OPT_BOOLEAN('W', "function-context", &opt.funcbody,
-			"show the surrounding function"),
+			N_("show the surrounding function")),
 		OPT_GROUP(""),
-		OPT_CALLBACK('f', NULL, &opt, "file",
-			"read patterns from file", file_callback),
-		{ OPTION_CALLBACK, 'e', NULL, &opt, "pattern",
-			"match <pattern>", PARSE_OPT_NONEG, pattern_callback },
+		OPT_CALLBACK('f', NULL, &opt, N_("file"),
+			N_("read patterns from file"), file_callback),
+		{ OPTION_CALLBACK, 'e', NULL, &opt, N_("pattern"),
+			N_("match <pattern>"), PARSE_OPT_NONEG, pattern_callback },
 		{ OPTION_CALLBACK, 0, "and", &opt, NULL,
-		  "combine patterns specified with -e",
+		  N_("combine patterns specified with -e"),
 		  PARSE_OPT_NOARG | PARSE_OPT_NONEG, and_callback },
 		OPT_BOOLEAN(0, "or", &dummy, ""),
 		{ OPTION_CALLBACK, 0, "not", &opt, NULL, "",
@@ -777,19 +825,19 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 		  PARSE_OPT_NOARG | PARSE_OPT_NONEG | PARSE_OPT_NODASH,
 		  close_callback },
 		OPT__QUIET(&opt.status_only,
-			   "indicate hit with exit status without output"),
+			   N_("indicate hit with exit status without output")),
 		OPT_BOOLEAN(0, "all-match", &opt.all_match,
-			"show only matches from files that match all patterns"),
+			N_("show only matches from files that match all patterns")),
 		{ OPTION_SET_INT, 0, "debug", &opt.debug, NULL,
-		  "show parse tree for grep expression",
+		  N_("show parse tree for grep expression"),
 		  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN, NULL, 1 },
 		OPT_GROUP(""),
 		{ OPTION_STRING, 'O', "open-files-in-pager", &show_in_pager,
-			"pager", "show matching files in the pager",
+			N_("pager"), N_("show matching files in the pager"),
 			PARSE_OPT_OPTARG, NULL, (intptr_t)(char*)default_pager },
 		OPT_BOOLEAN(0, "ext-grep", &external_grep_allowed__ignored,
-			    "allow calling of grep(1) (ignored by this build)"),
-		{ OPTION_CALLBACK, 0, "help-all", &options, NULL, "show usage",
+			    N_("allow calling of grep(1) (ignored by this build)")),
+		{ OPTION_CALLBACK, 0, "help-all", &options, NULL, N_("show usage"),
 		  PARSE_OPT_HIDDEN | PARSE_OPT_NOARG, help_callback },
 		OPT_END()
 	};
@@ -814,6 +862,8 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	opt.header_tail = &opt.header_list;
 	opt.regflags = REG_NEWLINE;
 	opt.max_depth = -1;
+	opt.pattern_type_option = GREP_PATTERN_TYPE_UNSPECIFIED;
+	opt.extended_regexp_option = 0;
 
 	strcpy(opt.color_context, "");
 	strcpy(opt.color_filename, "");
@@ -839,28 +889,13 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			     PARSE_OPT_KEEP_DASHDASH |
 			     PARSE_OPT_STOP_AT_NON_OPTION |
 			     PARSE_OPT_NO_INTERNAL_HELP);
-	switch (pattern_type) {
-	case pattern_type_fixed:
-		opt.fixed = 1;
-		opt.pcre = 0;
-		break;
-	case pattern_type_bre:
-		opt.fixed = 0;
-		opt.pcre = 0;
-		opt.regflags &= ~REG_EXTENDED;
-		break;
-	case pattern_type_ere:
-		opt.fixed = 0;
-		opt.pcre = 0;
-		opt.regflags |= REG_EXTENDED;
-		break;
-	case pattern_type_pcre:
-		opt.fixed = 0;
-		opt.pcre = 1;
-		break;
-	default:
-		break; /* nothing */
-	}
+
+	if (pattern_type_arg != GREP_PATTERN_TYPE_UNSPECIFIED)
+		grep_pattern_type_options(pattern_type_arg, &opt);
+	else if (opt.pattern_type_option != GREP_PATTERN_TYPE_UNSPECIFIED)
+		grep_pattern_type_options(opt.pattern_type_option, &opt);
+	else if (opt.extended_regexp_option)
+		grep_pattern_type_options(GREP_PATTERN_TYPE_ERE, &opt);
 
 	if (use_index && !startup_info->have_repository)
 		/* die the same way as if we did it at the beginning */

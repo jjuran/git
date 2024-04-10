@@ -102,6 +102,27 @@ export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
 export GIT_COMMITTER_EMAIL GIT_COMMITTER_NAME
 export EDITOR
 
+# Add libc MALLOC and MALLOC_PERTURB test
+# only if we are not executing the test with valgrind
+if expr " $GIT_TEST_OPTS " : ".* --valgrind " >/dev/null ||
+   test -n "$TEST_NO_MALLOC_CHECK"
+then
+	setup_malloc_check () {
+		: nothing
+	}
+	teardown_malloc_check () {
+		: nothing
+	}
+else
+	setup_malloc_check () {
+		MALLOC_CHECK_=3	MALLOC_PERTURB_=165
+		export MALLOC_CHECK_ MALLOC_PERTURB_
+	}
+	teardown_malloc_check () {
+		unset MALLOC_CHECK_ MALLOC_PERTURB_
+	}
+fi
+
 # Protect ourselves from common misconfiguration to export
 # CDPATH into the environment
 unset CDPATH
@@ -109,12 +130,12 @@ unset CDPATH
 unset GREP_OPTIONS
 
 case $(echo $GIT_TRACE |tr "[A-Z]" "[a-z]") in
-	1|2|true)
-		echo "* warning: Some tests will not work if GIT_TRACE" \
-			"is set as to trace on STDERR ! *"
-		echo "* warning: Please set GIT_TRACE to something" \
-			"other than 1, 2 or true ! *"
-		;;
+1|2|true)
+	echo "* warning: Some tests will not work if GIT_TRACE" \
+		"is set as to trace on STDERR ! *"
+	echo "* warning: Please set GIT_TRACE to something" \
+		"other than 1, 2 or true ! *"
+	;;
 esac
 
 # Convenience
@@ -181,17 +202,23 @@ do
 	esac
 done
 
-if test -n "$color"; then
+if test -n "$color"
+then
 	say_color () {
 		(
 		TERM=$ORIGINAL_TERM
 		export TERM
 		case "$1" in
-			error) tput bold; tput setaf 1;; # bold red
-			skip)  tput bold; tput setaf 2;; # bold green
-			pass)  tput setaf 2;;            # green
-			info)  tput setaf 3;;            # brown
-			*) test -n "$quiet" && return;;
+		error)
+			tput bold; tput setaf 1;; # bold red
+		skip)
+			tput bold; tput setaf 2;; # bold green
+		pass)
+			tput setaf 2;;            # green
+		info)
+			tput setaf 3;;            # brown
+		*)
+			test -n "$quiet" && return;;
 		esac
 		shift
 		printf "%s" "$*"
@@ -305,9 +332,12 @@ test_run_ () {
 
 	if test -z "$immediate" || test $eval_ret = 0 || test -n "$expecting_failure"
 	then
+		setup_malloc_check
 		test_eval_ "$test_cleanup"
+		teardown_malloc_check
 	fi
-	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"; then
+	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"
+	then
 		echo ""
 	fi
 	return "$eval_ret"
@@ -355,7 +385,8 @@ test_at_end_hook_ () {
 test_done () {
 	GIT_EXIT_OK=t
 
-	if test -z "$HARNESS_ACTIVE"; then
+	if test -z "$HARNESS_ACTIVE"
+	then
 		test_results_dir="$TEST_OUTPUT_DIRECTORY/test-results"
 		mkdir -p "$test_results_dir"
 		test_results_path="$test_results_dir/${0%.sh}-$$.counts"
@@ -384,10 +415,18 @@ test_done () {
 	case "$test_failure" in
 	0)
 		# Maybe print SKIP message
+		if test -n "$skip_all" && test $test_count -gt 0
+		then
+			error "Can't use skip_all after running some tests"
+		fi
 		[ -z "$skip_all" ] || skip_all=" # SKIP $skip_all"
 
-		if test $test_external_has_tap -eq 0; then
-			say_color pass "# passed all $msg"
+		if test $test_external_has_tap -eq 0
+		then
+			if test $test_count -gt 0
+			then
+				say_color pass "# passed all $msg"
+			fi
 			say "1..$test_count$skip_all"
 		fi
 
@@ -400,7 +439,8 @@ test_done () {
 		exit 0 ;;
 
 	*)
-		if test $test_external_has_tap -eq 0; then
+		if test $test_external_has_tap -eq 0
+		then
 			say_color error "# failed $test_failure among $msg"
 			say "1..$test_count"
 		fi
@@ -480,22 +520,26 @@ then
 	PATH=$GIT_VALGRIND/bin:$PATH
 	GIT_EXEC_PATH=$GIT_VALGRIND/bin
 	export GIT_VALGRIND
-elif test -n "$GIT_TEST_INSTALLED" ; then
+elif test -n "$GIT_TEST_INSTALLED"
+then
 	GIT_EXEC_PATH=$($GIT_TEST_INSTALLED/git --exec-path)  ||
 	error "Cannot run git from $GIT_TEST_INSTALLED."
 	PATH=$GIT_TEST_INSTALLED:$GIT_BUILD_DIR:$PATH
 	GIT_EXEC_PATH=${GIT_TEST_EXEC_PATH:-$GIT_EXEC_PATH}
 else # normal case, use ../bin-wrappers only unless $with_dashes:
 	git_bin_dir="$GIT_BUILD_DIR/bin-wrappers"
-	if ! test -x "$git_bin_dir/git" ; then
-		if test -z "$with_dashes" ; then
+	if ! test -x "$git_bin_dir/git"
+	then
+		if test -z "$with_dashes"
+		then
 			say "$git_bin_dir/git is not executable; using GIT_EXEC_PATH"
 		fi
 		with_dashes=t
 	fi
 	PATH="$git_bin_dir:$PATH"
 	GIT_EXEC_PATH=$GIT_BUILD_DIR
-	if test -n "$with_dashes" ; then
+	if test -n "$with_dashes"
+	then
 		PATH="$GIT_BUILD_DIR:$PATH"
 	fi
 fi
@@ -530,7 +574,8 @@ then
 	}
 fi
 
-if ! test -x "$GIT_BUILD_DIR"/test-chmtime; then
+if ! test -x "$GIT_BUILD_DIR"/test-chmtime
+then
 	echo >&2 'You need to build test-chmtime:'
 	echo >&2 'Run "make test-chmtime" in the source (toplevel) directory'
 	exit 1
@@ -553,7 +598,8 @@ rm -fr "$test" || {
 HOME="$TRASH_DIRECTORY"
 export HOME
 
-if test -z "$TEST_NO_CREATE_REPO"; then
+if test -z "$TEST_NO_CREATE_REPO"
+then
 	test_create_repo "$test"
 else
 	mkdir -p "$test"

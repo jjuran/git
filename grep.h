@@ -29,9 +29,12 @@ enum grep_context {
 
 enum grep_header_field {
 	GREP_HEADER_AUTHOR = 0,
-	GREP_HEADER_COMMITTER
+	GREP_HEADER_COMMITTER,
+	GREP_HEADER_REFLOG,
+
+	/* Must be at the end of the enum */
+	GREP_HEADER_FIELD_MAX
 };
-#define GREP_HEADER_FIELD_MAX (GREP_HEADER_COMMITTER + 1)
 
 struct grep_pat {
 	struct grep_pat *next;
@@ -56,6 +59,14 @@ enum grep_expr_node {
 	GREP_NODE_AND,
 	GREP_NODE_TRUE,
 	GREP_NODE_OR
+};
+
+enum grep_pattern_type {
+	GREP_PATTERN_TYPE_UNSPECIFIED = 0,
+	GREP_PATTERN_TYPE_BRE,
+	GREP_PATTERN_TYPE_ERE,
+	GREP_PATTERN_TYPE_FIXED,
+	GREP_PATTERN_TYPE_PCRE
 };
 
 struct grep_expr {
@@ -96,6 +107,7 @@ struct grep_opt {
 #define GREP_BINARY_TEXT	2
 	int binary;
 	int extended;
+	int use_reflog_filter;
 	int pcre;
 	int relative;
 	int pathname;
@@ -104,6 +116,8 @@ struct grep_opt {
 	int max_depth;
 	int funcname;
 	int funcbody;
+	int extended_regexp_option;
+	int pattern_type_option;
 	char color_context[COLOR_MAXLEN];
 	char color_filename[COLOR_MAXLEN];
 	char color_function[COLOR_MAXLEN];

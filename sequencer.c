@@ -17,7 +17,9 @@
 
 #define GIT_REFLOG_ACTION "GIT_REFLOG_ACTION"
 
-void remove_sequencer_state(void)
+const char sign_off_header[] = "Signed-off-by: ";
+
+static void remove_sequencer_state(void)
 {
 	struct strbuf seq_dir = STRBUF_INIT;
 
@@ -233,6 +235,9 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 		die(_("%s: Unable to write new index file"), action_name(opts));
 	rollback_lock_file(&index_lock);
 
+	if (opts->signoff)
+		append_signoff(msgbuf, 0);
+
 	if (!clean) {
 		int i;
 		strbuf_addstr(msgbuf, "\nConflicts:\n");
@@ -310,6 +315,9 @@ static int run_git_commit(const char *defmsg, struct replay_opts *opts,
 
 	if (allow_empty)
 		argv_array_push(&array, "--allow-empty");
+
+	if (opts->allow_empty_message)
+		argv_array_push(&array, "--allow-empty-message");
 
 	rc = run_command_v_opt(array.argv, RUN_GIT_CMD);
 	argv_array_clear(&array);
@@ -1007,4 +1015,64 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 	save_head(sha1_to_hex(sha1));
 	save_opts(opts);
 	return pick_commits(todo_list, opts);
+}
+
+static int ends_rfc2822_footer(struct strbuf *sb, int ignore_footer)
+{
+	int ch;
+	int hit = 0;
+	int i, j, k;
+	int len = sb->len - ignore_footer;
+	int first = 1;
+	const char *buf = sb->buf;
+
+	for (i = len - 1; i > 0; i--) {
+		if (hit && buf[i] == '\n')
+			break;
+		hit = (buf[i] == '\n');
+	}
+
+	while (i < len - 1 && buf[i] == '\n')
+		i++;
+
+	for (; i < len; i = k) {
+		for (k = i; k < len && buf[k] != '\n'; k++)
+			; /* do nothing */
+		k++;
+
+		if ((buf[k] == ' ' || buf[k] == '\t') && !first)
+			continue;
+
+		first = 0;
+
+		for (j = 0; i + j < len; j++) {
+			ch = buf[i + j];
+			if (ch == ':')
+				break;
+			if (isalnum(ch) ||
+			    (ch == '-'))
+				continue;
+			return 0;
+		}
+	}
+	return 1;
+}
+
+void append_signoff(struct strbuf *msgbuf, int ignore_footer)
+{
+	struct strbuf sob = STRBUF_INIT;
+	int i;
+
+	strbuf_addstr(&sob, sign_off_header);
+	strbuf_addstr(&sob, fmt_name(getenv("GIT_COMMITTER_NAME"),
+				getenv("GIT_COMMITTER_EMAIL")));
+	strbuf_addch(&sob, '\n');
+	for (i = msgbuf->len - 1 - ignore_footer; i > 0 && msgbuf->buf[i - 1] != '\n'; i--)
+		; /* do nothing */
+	if (prefixcmp(msgbuf->buf + i, sob.buf)) {
+		if (!i || !ends_rfc2822_footer(msgbuf, ignore_footer))
+			strbuf_splice(msgbuf, msgbuf->len - ignore_footer, 0, "\n", 1);
+		strbuf_splice(msgbuf, msgbuf->len - ignore_footer, 0, sob.buf, sob.len);
+	}
+	strbuf_release(&sob);
 }

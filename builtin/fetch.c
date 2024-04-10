@@ -17,10 +17,10 @@
 #include "argv-array.h"
 
 static const char * const builtin_fetch_usage[] = {
-	"git fetch [<options>] [<repository> [<refspec>...]]",
-	"git fetch [<options>] <group>",
-	"git fetch --multiple [<options>] [(<repository> | <group>)...]",
-	"git fetch --all [<options>]",
+	N_("git fetch [<options>] [<repository> [<refspec>...]]"),
+	N_("git fetch [<options>] <group>"),
+	N_("git fetch --multiple [<options>] [(<repository> | <group>)...]"),
+	N_("git fetch --all [<options>]"),
 	NULL
 };
 
@@ -57,36 +57,36 @@ static int option_parse_recurse_submodules(const struct option *opt,
 static struct option builtin_fetch_options[] = {
 	OPT__VERBOSITY(&verbosity),
 	OPT_BOOLEAN(0, "all", &all,
-		    "fetch from all remotes"),
+		    N_("fetch from all remotes")),
 	OPT_BOOLEAN('a', "append", &append,
-		    "append to .git/FETCH_HEAD instead of overwriting"),
-	OPT_STRING(0, "upload-pack", &upload_pack, "path",
-		   "path to upload pack on remote end"),
-	OPT__FORCE(&force, "force overwrite of local branch"),
+		    N_("append to .git/FETCH_HEAD instead of overwriting")),
+	OPT_STRING(0, "upload-pack", &upload_pack, N_("path"),
+		   N_("path to upload pack on remote end")),
+	OPT__FORCE(&force, N_("force overwrite of local branch")),
 	OPT_BOOLEAN('m', "multiple", &multiple,
-		    "fetch from multiple remotes"),
+		    N_("fetch from multiple remotes")),
 	OPT_SET_INT('t', "tags", &tags,
-		    "fetch all tags and associated objects", TAGS_SET),
+		    N_("fetch all tags and associated objects"), TAGS_SET),
 	OPT_SET_INT('n', NULL, &tags,
-		    "do not fetch all tags (--no-tags)", TAGS_UNSET),
+		    N_("do not fetch all tags (--no-tags)"), TAGS_UNSET),
 	OPT_BOOLEAN('p', "prune", &prune,
-		    "prune remote-tracking branches no longer on remote"),
-	{ OPTION_CALLBACK, 0, "recurse-submodules", NULL, "on-demand",
-		    "control recursive fetching of submodules",
+		    N_("prune remote-tracking branches no longer on remote")),
+	{ OPTION_CALLBACK, 0, "recurse-submodules", NULL, N_("on-demand"),
+		    N_("control recursive fetching of submodules"),
 		    PARSE_OPT_OPTARG, option_parse_recurse_submodules },
 	OPT_BOOLEAN(0, "dry-run", &dry_run,
-		    "dry run"),
-	OPT_BOOLEAN('k', "keep", &keep, "keep downloaded pack"),
+		    N_("dry run")),
+	OPT_BOOLEAN('k', "keep", &keep, N_("keep downloaded pack")),
 	OPT_BOOLEAN('u', "update-head-ok", &update_head_ok,
-		    "allow updating of HEAD ref"),
-	OPT_BOOL(0, "progress", &progress, "force progress reporting"),
-	OPT_STRING(0, "depth", &depth, "depth",
-		   "deepen history of shallow clone"),
-	{ OPTION_STRING, 0, "submodule-prefix", &submodule_prefix, "dir",
-		   "prepend this to submodule path output", PARSE_OPT_HIDDEN },
+		    N_("allow updating of HEAD ref")),
+	OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
+	OPT_STRING(0, "depth", &depth, N_("depth"),
+		   N_("deepen history of shallow clone")),
+	{ OPTION_STRING, 0, "submodule-prefix", &submodule_prefix, N_("dir"),
+		   N_("prepend this to submodule path output"), PARSE_OPT_HIDDEN },
 	{ OPTION_STRING, 0, "recurse-submodules-default",
 		   &recurse_submodules_default, NULL,
-		   "default mode for recursion", PARSE_OPT_HIDDEN },
+		   N_("default mode for recursion"), PARSE_OPT_HIDDEN },
 	OPT_END()
 };
 
@@ -256,9 +256,8 @@ static int update_local_ref(struct ref *ref,
 	if (!hashcmp(ref->old_sha1, ref->new_sha1)) {
 		if (verbosity > 0)
 			strbuf_addf(display, "= %-*s %-*s -> %s",
-				    TRANSPORT_SUMMARY_WIDTH,
-				    _("[up to date]"), REFCOL_WIDTH,
-				    remote, pretty_ref);
+				    TRANSPORT_SUMMARY(_("[up to date]")),
+				    REFCOL_WIDTH, remote, pretty_ref);
 		return 0;
 	}
 
@@ -272,7 +271,7 @@ static int update_local_ref(struct ref *ref,
 		 */
 		strbuf_addf(display,
 			    _("! %-*s %-*s -> %s  (can't fetch in current branch)"),
-			    TRANSPORT_SUMMARY_WIDTH, _("[rejected]"),
+			    TRANSPORT_SUMMARY(_("[rejected]")),
 			    REFCOL_WIDTH, remote, pretty_ref);
 		return 1;
 	}
@@ -283,7 +282,7 @@ static int update_local_ref(struct ref *ref,
 		r = s_update_ref("updating tag", ref, 0);
 		strbuf_addf(display, "%c %-*s %-*s -> %s%s",
 			    r ? '!' : '-',
-			    TRANSPORT_SUMMARY_WIDTH, _("[tag update]"),
+			    TRANSPORT_SUMMARY(_("[tag update]")),
 			    REFCOL_WIDTH, remote, pretty_ref,
 			    r ? _("  (unable to update local ref)") : "");
 		return r;
@@ -318,13 +317,13 @@ static int update_local_ref(struct ref *ref,
 		r = s_update_ref(msg, ref, 0);
 		strbuf_addf(display, "%c %-*s %-*s -> %s%s",
 			    r ? '!' : '*',
-			    TRANSPORT_SUMMARY_WIDTH, what,
+			    TRANSPORT_SUMMARY(what),
 			    REFCOL_WIDTH, remote, pretty_ref,
 			    r ? _("  (unable to update local ref)") : "");
 		return r;
 	}
 
-	if (in_merge_bases(current, &updated, 1)) {
+	if (in_merge_bases(current, updated)) {
 		char quickref[83];
 		int r;
 		strcpy(quickref, find_unique_abbrev(current->object.sha1, DEFAULT_ABBREV));
@@ -358,7 +357,7 @@ static int update_local_ref(struct ref *ref,
 		return r;
 	} else {
 		strbuf_addf(display, "! %-*s %-*s -> %s  %s",
-			    TRANSPORT_SUMMARY_WIDTH, _("[rejected]"),
+			    TRANSPORT_SUMMARY(_("[rejected]")),
 			    REFCOL_WIDTH, remote, pretty_ref,
 			    _("(non-fast-forward)"));
 		return 1;
@@ -555,7 +554,7 @@ static int prune_refs(struct refspec *refs, int ref_count, struct ref *ref_map)
 			result |= delete_ref(ref->name, NULL, 0);
 		if (verbosity >= 0) {
 			fprintf(stderr, " x %-*s %-*s -> %s\n",
-				TRANSPORT_SUMMARY_WIDTH, _("[deleted]"),
+				TRANSPORT_SUMMARY(_("[deleted]")),
 				REFCOL_WIDTH, _("(none)"), prettify_refname(ref->name));
 			warn_dangling_symref(stderr, dangling_msg, ref->name);
 		}

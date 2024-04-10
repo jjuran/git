@@ -8,7 +8,7 @@
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
-#define GIT_VERSION "1.7.12.4"
+#define GIT_VERSION "1.8.0"
 
 // MacRelix has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)
@@ -16,14 +16,13 @@
 // Enable #pragma cplusplus over dynamic aggregate initializers.
 #define USE_CPLUSPLUS_FOR_INIT 1
 
-// MacRelix has mmap(), but we want the small window size
-#define NO_MMAP  1
-
 #define NO_CURL  1
 #define NO_EXPAT 1
 #define NO_GETTEXT 1
 #define NO_ICONV 1
 #define NO_IPV6  1
+// MacRelix has mmap(), but we want the small window size
+#define NO_MMAP  1
 #define NO_NSEC  1
 #define NO_OPENSSL 1
 #define NO_PTHREADS 1
@@ -42,6 +41,8 @@
 #define GIT_MAN_PATH  "man"
 #define GIT_INFO_PATH "info"
 #define GIT_HTML_PATH "html"
+
+#define GIT_USER_AGENT "git/" GIT_VERSION
 
 #define PREFIX "/usr"
 

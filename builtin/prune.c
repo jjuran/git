@@ -9,7 +9,7 @@
 #include "dir.h"
 
 static const char * const prune_usage[] = {
-	"git prune [-n] [-v] [--expire <time>] [--] [<head>...]",
+	N_("git prune [-n] [-v] [--expire <time>] [--] [<head>...]"),
 	NULL
 };
 static int show_only;
@@ -129,11 +129,11 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 	struct rev_info revs;
 	struct progress *progress = NULL;
 	const struct option options[] = {
-		OPT__DRY_RUN(&show_only, "do not remove, show only"),
-		OPT__VERBOSE(&verbose, "report pruned objects"),
-		OPT_BOOL(0, "progress", &show_progress, "show progress"),
+		OPT__DRY_RUN(&show_only, N_("do not remove, show only")),
+		OPT__VERBOSE(&verbose, N_("report pruned objects")),
+		OPT_BOOL(0, "progress", &show_progress, N_("show progress")),
 		OPT_DATE(0, "expire", &expire,
-			 "expire objects older than <time>"),
+			 N_("expire objects older than <time>")),
 		OPT_END()
 	};
 	char *s;
@@ -169,7 +169,7 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 
 	prune_packed_objects(show_only);
 	remove_temporary_files(get_object_directory());
-	s = xstrdup(mkpath("%s/pack", get_object_directory()));
+	s = mkpathdup("%s/pack", get_object_directory());
 	remove_temporary_files(s);
 	free(s);
 	return 0;
