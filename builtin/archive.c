@@ -87,6 +87,11 @@ int cmd_archive(int argc, const char **argv, const char *prefix)
 	const char *exec = "git-upload-archive";
 	const char *output = NULL;
 	const char *remote = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option local_opts[] = {
 		OPT_STRING('o', "output", &output, N_("file"),
 			N_("write the archive to this file")),
@@ -96,6 +101,10 @@ int cmd_archive(int argc, const char **argv, const char *prefix)
 			N_("path to the remote git-upload-archive command")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, local_opts, NULL,
 			     PARSE_OPT_KEEP_ALL);

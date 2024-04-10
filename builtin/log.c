@@ -96,6 +96,10 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 	struct userformat_want w;
 	int quiet = 0, source = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option builtin_log_options[] = {
 		OPT_BOOLEAN(0, "quiet", &quiet, N_("suppress diff output")),
 		OPT_BOOLEAN(0, "source", &source, N_("show source")),
@@ -103,6 +107,10 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 		  PARSE_OPT_OPTARG, decorate_callback},
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_log_options, builtin_log_usage,
@@ -1038,6 +1046,10 @@ static char *find_branch_name(struct rev_info *rev)
 
 int cmd_format_patch(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct commit *commit;
 	struct commit **list = NULL;
 	struct rev_info rev;
@@ -1117,6 +1129,10 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    N_("don't print the patch filenames")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	extra_hdr.strdup_strings = 1;
 	extra_to.strdup_strings = 1;
@@ -1472,11 +1488,19 @@ int cmd_cherry(int argc, const char **argv, const char *prefix)
 	const char *limit = NULL;
 	int verbose = 0, abbrev = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT__ABBREV(&abbrev),
 		OPT__VERBOSE(&verbose, N_("be verbose")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options, cherry_usage, 0);
 

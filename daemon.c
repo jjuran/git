@@ -742,9 +742,17 @@ static void check_dead_children(void)
 static char **cld_argv;
 static void handle(int incoming, struct sockaddr *addr, socklen_t addrlen)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct child_process cld = { NULL };
 	char addrbuf[300] = "REMOTE_ADDR=", portbuf[300];
 	char *env[] = { addrbuf, portbuf, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (max_connections && live_children >= max_connections) {
 		kill_some_child();

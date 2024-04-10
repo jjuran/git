@@ -96,11 +96,14 @@ static int stream_to_pack(struct bulk_checkin_state *state,
 			  const char *path, unsigned flags)
 {
 	git_zstream s;
-	unsigned char obuf[16384];
+	unsigned char* obuf = malloc(16384 * 2);
 	unsigned hdrlen;
 	int status = Z_OK;
 	int write_object = (flags & HASH_WRITE_OBJECT);
 	off_t offset = 0;
+
+	if (!obuf)
+		die("*** out of memory ***");
 
 	memset(&s, 0, sizeof(s));
 	git_deflate_init(&s, pack_compression_level);
@@ -110,7 +113,7 @@ static int stream_to_pack(struct bulk_checkin_state *state,
 	s.avail_out = sizeof(obuf) - hdrlen;
 
 	while (status != Z_STREAM_END) {
-		unsigned char ibuf[16384];
+		unsigned char* ibuf = obuf + 16384;
 
 		if (size && !s.avail_in) {
 			ssize_t rsize = size < sizeof(ibuf) ? size : sizeof(ibuf);
@@ -162,6 +165,7 @@ static int stream_to_pack(struct bulk_checkin_state *state,
 		}
 	}
 	git_deflate_end(&s);
+	free(obuf);
 	return 0;
 }
 

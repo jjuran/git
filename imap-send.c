@@ -1045,8 +1045,17 @@ static struct store *imap_open_store(struct imap_server_conf *srvc)
 	/* open connection to IMAP server */
 
 	if (srvc->tunnel) {
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		const char *argv[] = { srvc->tunnel, NULL };
 		struct child_process tunnel = {NULL};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 		imap_info("Starting tunnel '%s'... ", srvc->tunnel);
 

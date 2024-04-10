@@ -455,6 +455,11 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 	int require_work_tree = 0, show_tag = 0;
 	const char *max_prefix;
 	struct dir_struct dir;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_ls_files_options[] = {
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
 			N_("paths are separated with NUL character"),
@@ -510,6 +515,10 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		OPT_BOOLEAN(0, "debug", &debug_mode, N_("show debugging data")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(ls_files_usage, builtin_ls_files_options);
