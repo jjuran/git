@@ -72,9 +72,9 @@ cat > expect << EOF
   commit.
 EOF
 
-test_expect_success 'format %w(12,1,2)' '
+test_expect_success 'format %w(11,1,2)' '
 
-	git log -2 --format="%w(12,1,2)This is the %s commit." > actual &&
+	git log -2 --format="%w(11,1,2)This is the %s commit." > actual &&
 	test_cmp expect actual
 '
 
@@ -227,6 +227,12 @@ test_expect_success 'log -i --grep' '
 test_expect_success 'log --grep -i' '
 	echo Second >expect &&
 	git log -1 --pretty="tformat:%s" --grep=sec -i >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log -F -E --grep=<ere> uses ere' '
+	echo second >expect &&
+	git log -1 --pretty="tformat:%s" -F -E --grep=s.c.nd >actual &&
 	test_cmp expect actual
 '
 
