@@ -71,6 +71,9 @@ int check_filename(const char *prefix, const char *arg)
 	if (errno == ENOENT || errno == ENOTDIR)
 		return 0; /* file does not exist */
 	die_errno("failed to stat '%s'", arg);
+
+	/* Not reached */
+	return 0;
 }
 
 static void NORETURN die_verify_filename(const char *prefix,
@@ -695,7 +698,8 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 			return setup_bare_git_dir(cwd, offset, len, nongit_ok);
 
 		offset_parent = offset;
-		while (--offset_parent > ceil_offset && cwd[offset_parent] != '/');
+		while (--offset_parent > ceil_offset && cwd[offset_parent] != '/')
+			continue;
 		if (offset_parent <= ceil_offset)
 			return setup_nongit(cwd, nongit_ok);
 		if (one_filesystem) {

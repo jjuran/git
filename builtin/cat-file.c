@@ -193,7 +193,7 @@ static int batch_one_object(const char *obj_name, int print_contents)
 	unsigned char sha1[20];
 	enum object_type type = 0;
 	unsigned long size;
-	void *contents = contents;
+	void *contents;
 
 	if (!obj_name)
 	   return 1;
@@ -262,6 +262,10 @@ int cmd_cat_file(int argc, const char **argv, const char *prefix)
 	int opt = 0, batch = 0;
 	const char *exp_type = NULL, *obj_name = NULL;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option options[] = {
 		OPT_GROUP(N_("<type> can be one of: blob, tree, commit, tag")),
 		OPT_SET_INT('t', NULL, &opt, N_("show object type"), 't'),
@@ -279,6 +283,10 @@ int cmd_cat_file(int argc, const char **argv, const char *prefix)
 			    BATCH_CHECK),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_cat_file_config, NULL);
 

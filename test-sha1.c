@@ -43,5 +43,5 @@ int main(int ac, char **av)
 	}
 	git_SHA1_Final(sha1, &ctx);
 	puts(sha1_to_hex(sha1));
-	exit(0);
+	return 0;
 }

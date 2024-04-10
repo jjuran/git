@@ -1493,6 +1493,9 @@ int read_index_from(struct index_state *istate, const char *path)
 unmap:
 	munmap(mmap, mmap_size);
 	die("index file corrupt");
+
+	/* Not reached */
+	return 0;
 }
 
 int is_index_unborn(struct index_state *istate)

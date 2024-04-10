@@ -225,6 +225,11 @@ int cmd_name_rev(int argc, const char **argv, const char *prefix)
 	struct object_array revs = OBJECT_ARRAY_INIT;
 	int all = 0, transform_stdin = 0, allow_undefined = 1, always = 0;
 	struct name_ref_data data = { 0, 0, NULL };
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option opts[] = {
 		OPT_BOOLEAN(0, "name-only", &data.name_only, N_("print only names (no SHA-1)")),
 		OPT_BOOLEAN(0, "tags", &data.tags_only, N_("only use tags to name the commits")),
@@ -238,6 +243,10 @@ int cmd_name_rev(int argc, const char **argv, const char *prefix)
 			   N_("show abbreviated commit object as fallback")),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, opts, name_rev_usage, 0);
