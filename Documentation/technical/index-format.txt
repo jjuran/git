@@ -1,7 +1,7 @@
 GIT index format
 ================
 
-= The git index file has the following format
+== The git index file has the following format
 
   All binary numbers are in network byte order. Version 2 is described
   here unless stated otherwise.
@@ -161,8 +161,9 @@ GIT index format
     this span of index as a tree.
 
   An entry can be in an invalidated state and is represented by having
-  -1 in the entry_count field. In this case, there is no object name
-  and the next entry starts immediately after the newline.
+  a negative number in the entry_count field. In this case, there is no
+  object name and the next entry starts immediately after the newline.
+  When writing an invalid entry, -1 should always be used as entry_count.
 
   The entries are written out in the top-down, depth-first order.  The
   first entry represents the root level of the repository, followed by the
