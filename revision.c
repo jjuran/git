@@ -1606,6 +1606,8 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 		return argcount;
 	} else if (!strcmp(arg, "--grep-debug")) {
 		revs->grep_filter.debug = 1;
+	} else if (!strcmp(arg, "--basic-regexp")) {
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_BRE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--extended-regexp") || !strcmp(arg, "-E")) {
 		grep_set_pattern_type_option(GREP_PATTERN_TYPE_ERE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--regexp-ignore-case") || !strcmp(arg, "-i")) {
@@ -1613,6 +1615,8 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 		DIFF_OPT_SET(&revs->diffopt, PICKAXE_IGNORE_CASE);
 	} else if (!strcmp(arg, "--fixed-strings") || !strcmp(arg, "-F")) {
 		grep_set_pattern_type_option(GREP_PATTERN_TYPE_FIXED, &revs->grep_filter);
+	} else if (!strcmp(arg, "--perl-regexp")) {
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_PCRE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--all-match")) {
 		revs->grep_filter.all_match = 1;
 	} else if ((argcount = parse_long_opt("encoding", argv, &optarg))) {
@@ -2241,7 +2245,7 @@ static int commit_match(struct commit *commit, struct rev_info *opt)
 		if (!buf.len)
 			strbuf_addstr(&buf, commit->buffer);
 		format_display_notes(commit->object.sha1, &buf,
-				     get_log_output_encoding(), 0);
+				     get_log_output_encoding(), 1);
 	}
 
 	/* Find either in the commit object, or in the temporary */

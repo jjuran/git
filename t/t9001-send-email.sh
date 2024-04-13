@@ -191,15 +191,42 @@ test_expect_success $PREREQ 'Show all headers' '
 
 test_expect_success $PREREQ 'Prompting works' '
 	clean_fake_sendmail &&
-	(echo "Example <from@example.com>"
-	 echo "to@example.com"
+	(echo "to@example.com"
 	 echo ""
 	) | GIT_SEND_EMAIL_NOTTY=1 git send-email \
 		--smtp-server="$(pwd)/fake.sendmail" \
 		$patches \
 		2>errors &&
-		grep "^From: Example <from@example.com>\$" msgtxt1 &&
+		grep "^From: A U Thor <author@example.com>\$" msgtxt1 &&
 		grep "^To: to@example.com\$" msgtxt1
+'
+
+test_expect_success $PREREQ,AUTOIDENT 'implicit ident is allowed' '
+	clean_fake_sendmail &&
+	(sane_unset GIT_AUTHOR_NAME &&
+	sane_unset GIT_AUTHOR_EMAIL &&
+	sane_unset GIT_COMMITTER_NAME &&
+	sane_unset GIT_COMMITTER_EMAIL &&
+	GIT_SEND_EMAIL_NOTTY=1 git send-email \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		--to=to@example.com \
+		$patches </dev/null 2>errors
+	)
+'
+
+test_expect_success $PREREQ,!AUTOIDENT 'broken implicit ident aborts send-email' '
+	clean_fake_sendmail &&
+	(sane_unset GIT_AUTHOR_NAME &&
+	sane_unset GIT_AUTHOR_EMAIL &&
+	sane_unset GIT_COMMITTER_NAME &&
+	sane_unset GIT_COMMITTER_EMAIL &&
+	GIT_SEND_EMAIL_NOTTY=1 && export GIT_SEND_EMAIL_NOTTY &&
+	test_must_fail git send-email \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		--to=to@example.com \
+		$patches </dev/null 2>errors &&
+	test_i18ngrep "tell me who you are" errors
+	)
 '
 
 test_expect_success $PREREQ 'tocmd works' '
@@ -854,6 +881,75 @@ test_expect_success $PREREQ 'utf8 author is correctly passed on' '
 	grep "^From: Füñný Nâmé <odd_?=mail@example.com>" msgtxt1
 '
 
+test_expect_success $PREREQ 'sendemail.composeencoding works' '
+	clean_fake_sendmail &&
+	git config sendemail.composeencoding iso-8859-1 &&
+	(echo "#!$SHELL_PATH" &&
+	 echo "echo utf8 body: àéìöú >>\"\$1\""
+	) >fake-editor-utf8 &&
+	chmod +x fake-editor-utf8 &&
+	  GIT_EDITOR="\"$(pwd)/fake-editor-utf8\"" \
+	  git send-email \
+	  --compose --subject foo \
+	  --from="Example <nobody@example.com>" \
+	  --to=nobody@example.com \
+	  --smtp-server="$(pwd)/fake.sendmail" \
+	  $patches &&
+	grep "^utf8 body" msgtxt1 &&
+	grep "^Content-Type: text/plain; charset=iso-8859-1" msgtxt1
+'
+
+test_expect_success $PREREQ '--compose-encoding works' '
+	clean_fake_sendmail &&
+	(echo "#!$SHELL_PATH" &&
+	 echo "echo utf8 body: àéìöú >>\"\$1\""
+	) >fake-editor-utf8 &&
+	chmod +x fake-editor-utf8 &&
+	  GIT_EDITOR="\"$(pwd)/fake-editor-utf8\"" \
+	  git send-email \
+	  --compose-encoding iso-8859-1 \
+	  --compose --subject foo \
+	  --from="Example <nobody@example.com>" \
+	  --to=nobody@example.com \
+	  --smtp-server="$(pwd)/fake.sendmail" \
+	  $patches &&
+	grep "^utf8 body" msgtxt1 &&
+	grep "^Content-Type: text/plain; charset=iso-8859-1" msgtxt1
+'
+
+test_expect_success $PREREQ '--compose-encoding overrides sendemail.composeencoding' '
+	clean_fake_sendmail &&
+	git config sendemail.composeencoding iso-8859-1 &&
+	(echo "#!$SHELL_PATH" &&
+	 echo "echo utf8 body: àéìöú >>\"\$1\""
+	) >fake-editor-utf8 &&
+	chmod +x fake-editor-utf8 &&
+	  GIT_EDITOR="\"$(pwd)/fake-editor-utf8\"" \
+	  git send-email \
+	  --compose-encoding iso-8859-2 \
+	  --compose --subject foo \
+	  --from="Example <nobody@example.com>" \
+	  --to=nobody@example.com \
+	  --smtp-server="$(pwd)/fake.sendmail" \
+	  $patches &&
+	grep "^utf8 body" msgtxt1 &&
+	grep "^Content-Type: text/plain; charset=iso-8859-2" msgtxt1
+'
+
+test_expect_success $PREREQ '--compose-encoding adds correct MIME for subject' '
+	clean_fake_sendmail &&
+	  GIT_EDITOR="\"$(pwd)/fake-editor\"" \
+	  git send-email \
+	  --compose-encoding iso-8859-2 \
+	  --compose --subject utf8-sübjëct \
+	  --from="Example <nobody@example.com>" \
+	  --to=nobody@example.com \
+	  --smtp-server="$(pwd)/fake.sendmail" \
+	  $patches &&
+	grep "^fake edit" msgtxt1 &&
+	grep "^Subject: =?iso-8859-2?q?utf8-s=C3=BCbj=C3=ABct?=" msgtxt1
+'
+
 test_expect_success $PREREQ 'detects ambiguous reference/file conflict' '
 	echo master > master &&
 	git add master &&
@@ -1071,6 +1167,23 @@ Subject: subject goes here
 
 Dieser deutsche Text enthält einen Umlaut!
 EOF
+'
+
+test_expect_success $PREREQ 'setup expect' '
+cat >expected <<EOF
+Subject: subject goes here
+EOF
+'
+
+test_expect_success $PREREQ 'ASCII subject is not RFC2047 quoted' '
+	clean_fake_sendmail &&
+	echo bogus |
+	git send-email --from=author@example.com --to=nobody@example.com \
+			--smtp-server="$(pwd)/fake.sendmail" \
+			--8bit-encoding=UTF-8 \
+			email-using-8bit >stdout &&
+	grep "Subject" msgtxt1 >actual &&
+	test_cmp expected actual
 '
 
 test_expect_success $PREREQ 'setup expect' '
