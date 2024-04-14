@@ -1556,7 +1556,7 @@ sub sanitize {
 	return undef unless defined $str;
 
 	$str = to_utf8($str);
-	$str =~ s|([[:cntrl:]])|($1 =~ /[\t\n\r]/ ? $1 : quot_cec($1))|eg;
+	$str =~ s|([[:cntrl:]])|(index("\t\n\r", $1) != -1 ? $1 : quot_cec($1))|eg;
 	return $str;
 }
 
@@ -5528,23 +5528,30 @@ sub fill_project_list_info {
 
 sub sort_projects_list {
 	my ($projlist, $order) = @_;
-	my @projects;
 
-	my %order_info = (
-		project => { key => 'path', type => 'str' },
-		descr => { key => 'descr_long', type => 'str' },
-		owner => { key => 'owner', type => 'str' },
-		age => { key => 'age', type => 'num' }
-	);
-	my $oi = $order_info{$order};
-	return @$projlist unless defined $oi;
-	if ($oi->{'type'} eq 'str') {
-		@projects = sort {$a->{$oi->{'key'}} cmp $b->{$oi->{'key'}}} @$projlist;
-	} else {
-		@projects = sort {$a->{$oi->{'key'}} <=> $b->{$oi->{'key'}}} @$projlist;
+	sub order_str {
+		my $key = shift;
+		return sub { $a->{$key} cmp $b->{$key} };
 	}
 
-	return @projects;
+	sub order_num_then_undef {
+		my $key = shift;
+		return sub {
+			defined $a->{$key} ?
+				(defined $b->{$key} ? $a->{$key} <=> $b->{$key} : -1) :
+				(defined $b->{$key} ? 1 : 0)
+		};
+	}
+
+	my %orderings = (
+		project => order_str('path'),
+		descr => order_str('descr_long'),
+		owner => order_str('owner'),
+		age => order_num_then_undef('age'),
+	);
+
+	my $ordering = $orderings{$order};
+	return defined $ordering ? sort $ordering @$projlist : @$projlist;
 }
 
 # returns a hash of categories, containing the list of project
