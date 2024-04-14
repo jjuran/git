@@ -15,6 +15,7 @@
 #include "sigchain.h"
 #include "submodule.h"
 #include "ll-merge.h"
+#include "string-list.h"
 
 #ifdef NO_FAST_WORKING_DIRECTORY
 #define FAST_WORKING_DIRECTORY 0
@@ -26,6 +27,7 @@ static int diff_detect_rename_default;
 static int diff_rename_limit_default = 400;
 static int diff_suppress_blank_empty;
 static int diff_use_color_default = -1;
+static int diff_context_default = 3;
 static const char *diff_word_regex_cfg;
 static const char *external_diff_cmd_cfg;
 int diff_auto_refresh_index = 1;
@@ -68,26 +70,30 @@ static int parse_diff_color_slot(const char *var, int ofs)
 	return -1;
 }
 
-static int parse_dirstat_params(struct diff_options *options, const char *params,
+static int parse_dirstat_params(struct diff_options *options, const char *params_string,
 				struct strbuf *errmsg)
 {
-	const char *p = params;
-	int p_len, ret = 0;
+	char *params_copy = xstrdup(params_string);
+	struct string_list params = STRING_LIST_INIT_NODUP;
+	int ret = 0;
+	int i;
 
-	while (*p) {
-		p_len = strchrnul(p, ',') - p;
-		if (!memcmp(p, "changes", p_len)) {
+	if (*params_copy)
+		string_list_split_in_place(&params, params_copy, ',', -1);
+	for (i = 0; i < params.nr; i++) {
+		const char *p = params.items[i].string;
+		if (!strcmp(p, "changes")) {
 			DIFF_OPT_CLR(options, DIRSTAT_BY_LINE);
 			DIFF_OPT_CLR(options, DIRSTAT_BY_FILE);
-		} else if (!memcmp(p, "lines", p_len)) {
+		} else if (!strcmp(p, "lines")) {
 			DIFF_OPT_SET(options, DIRSTAT_BY_LINE);
 			DIFF_OPT_CLR(options, DIRSTAT_BY_FILE);
-		} else if (!memcmp(p, "files", p_len)) {
+		} else if (!strcmp(p, "files")) {
 			DIFF_OPT_CLR(options, DIRSTAT_BY_LINE);
 			DIFF_OPT_SET(options, DIRSTAT_BY_FILE);
-		} else if (!memcmp(p, "noncumulative", p_len)) {
+		} else if (!strcmp(p, "noncumulative")) {
 			DIFF_OPT_CLR(options, DIRSTAT_CUMULATIVE);
-		} else if (!memcmp(p, "cumulative", p_len)) {
+		} else if (!strcmp(p, "cumulative")) {
 			DIFF_OPT_SET(options, DIRSTAT_CUMULATIVE);
 		} else if (isdigit(*p)) {
 			char *end;
@@ -99,25 +105,33 @@ static int parse_dirstat_params(struct diff_options *options, const char *params
 				while (isdigit(*++end))
 					; /* nothing */
 			}
-			if (end - p == p_len)
+			if (!*end)
 				options->dirstat_permille = permille;
 			else {
-				strbuf_addf(errmsg, _("  Failed to parse dirstat cut-off percentage '%.*s'\n"),
-					    p_len, p);
+				strbuf_addf(errmsg, _("  Failed to parse dirstat cut-off percentage '%s'\n"),
+					    p);
 				ret++;
 			}
 		} else {
-			strbuf_addf(errmsg, _("  Unknown dirstat parameter '%.*s'\n"),
-				    p_len, p);
+			strbuf_addf(errmsg, _("  Unknown dirstat parameter '%s'\n"), p);
 			ret++;
 		}
 
-		p += p_len;
-
-		if (*p)
-			p++; /* more parameters, swallow separator */
 	}
+	string_list_clear(&params, 0);
+	free(params_copy);
 	return ret;
+}
+
+static int parse_submodule_params(struct diff_options *options, const char *value)
+{
+	if (!strcmp(value, "log"))
+		DIFF_OPT_SET(options, SUBMODULE_LOG);
+	else if (!strcmp(value, "short"))
+		DIFF_OPT_CLR(options, SUBMODULE_LOG);
+	else
+		return -1;
+	return 0;
 }
 
 static int git_config_rename(const char *var, const char *value)
@@ -139,6 +153,12 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 {
 	if (!strcmp(var, "diff.color") || !strcmp(var, "color.diff")) {
 		diff_use_color_default = git_config_colorbool(var, value);
+		return 0;
+	}
+	if (!strcmp(var, "diff.context")) {
+		diff_context_default = git_config_int(var, value);
+		if (diff_context_default < 0)
+			return -1;
 		return 0;
 	}
 	if (!strcmp(var, "diff.renames")) {
@@ -168,6 +188,13 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 
 	if (!strcmp(var, "diff.ignoresubmodules"))
 		handle_ignore_submodules_arg(&default_diff_options, value);
+
+	if (!strcmp(var, "diff.submodule")) {
+		if (parse_submodule_params(&default_diff_options, value))
+			warning(_("Unknown value for 'diff.submodule' config variable: '%s'"),
+				value);
+		return 0;
+	}
 
 	if (git_color_config(var, value, cb) < 0)
 		return -1;
@@ -2221,7 +2248,7 @@ static void builtin_diff(const char *name_a,
 	mmfile_t mf1, mf2;
 	const char *lbl[2];
 	char *a_one, *b_two;
-	const char *set = diff_get_color_opt(o, DIFF_METAINFO);
+	const char *meta = diff_get_color_opt(o, DIFF_METAINFO);
 	const char *reset = diff_get_color_opt(o, DIFF_RESET);
 	const char *a_prefix, *b_prefix;
 	struct userdiff_driver *textconv_one = NULL;
@@ -2242,7 +2269,7 @@ static void builtin_diff(const char *name_a,
 		const char *add = diff_get_color_opt(o, DIFF_FILE_NEW);
 		show_submodule_summary(o->file, one ? one->path : two->path,
 				one->sha1, two->sha1, two->dirty_submodule,
-				del, add, reset);
+				meta, del, add, reset);
 		return;
 	}
 
@@ -2268,24 +2295,24 @@ static void builtin_diff(const char *name_a,
 	b_two = quote_two(b_prefix, name_b + (*name_b == '/'));
 	lbl[0] = DIFF_FILE_VALID(one) ? a_one : "/dev/null";
 	lbl[1] = DIFF_FILE_VALID(two) ? b_two : "/dev/null";
-	strbuf_addf(&header, "%s%sdiff --git %s %s%s\n", line_prefix, set, a_one, b_two, reset);
+	strbuf_addf(&header, "%s%sdiff --git %s %s%s\n", line_prefix, meta, a_one, b_two, reset);
 	if (lbl[0][0] == '/') {
 		/* /dev/null */
-		strbuf_addf(&header, "%s%snew file mode %06o%s\n", line_prefix, set, two->mode, reset);
+		strbuf_addf(&header, "%s%snew file mode %06o%s\n", line_prefix, meta, two->mode, reset);
 		if (xfrm_msg)
 			strbuf_addstr(&header, xfrm_msg);
 		must_show_header = 1;
 	}
 	else if (lbl[1][0] == '/') {
-		strbuf_addf(&header, "%s%sdeleted file mode %06o%s\n", line_prefix, set, one->mode, reset);
+		strbuf_addf(&header, "%s%sdeleted file mode %06o%s\n", line_prefix, meta, one->mode, reset);
 		if (xfrm_msg)
 			strbuf_addstr(&header, xfrm_msg);
 		must_show_header = 1;
 	}
 	else {
 		if (one->mode != two->mode) {
-			strbuf_addf(&header, "%s%sold mode %06o%s\n", line_prefix, set, one->mode, reset);
-			strbuf_addf(&header, "%s%snew mode %06o%s\n", line_prefix, set, two->mode, reset);
+			strbuf_addf(&header, "%s%sold mode %06o%s\n", line_prefix, meta, one->mode, reset);
+			strbuf_addf(&header, "%s%snew mode %06o%s\n", line_prefix, meta, two->mode, reset);
 			must_show_header = 1;
 		}
 		if (xfrm_msg)
@@ -3182,7 +3209,7 @@ void diff_setup(struct diff_options *options)
 	options->break_opt = -1;
 	options->rename_limit = -1;
 	options->dirstat_permille = diff_dirstat_permille_default;
-	options->context = 3;
+	options->context = diff_context_default;
 	DIFF_OPT_SET(options, RENAME_EMPTY);
 
 	options->change = diff_change;
@@ -3478,6 +3505,14 @@ static int parse_dirstat_opt(struct diff_options *options, const char *params)
 	return 1;
 }
 
+static int parse_submodule_opt(struct diff_options *options, const char *value)
+{
+	if (parse_submodule_params(options, value))
+		die(_("Failed to parse --submodule option parameter: '%s'"),
+			value);
+	return 1;
+}
+
 int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 {
 	const char *arg = av[0];
@@ -3658,10 +3693,8 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		handle_ignore_submodules_arg(options, arg + 20);
 	} else if (!strcmp(arg, "--submodule"))
 		DIFF_OPT_SET(options, SUBMODULE_LOG);
-	else if (!prefixcmp(arg, "--submodule=")) {
-		if (!strcmp(arg + 12, "log"))
-			DIFF_OPT_SET(options, SUBMODULE_LOG);
-	}
+	else if (!prefixcmp(arg, "--submodule="))
+		return parse_submodule_opt(options, arg + 12);
 
 	/* misc options */
 	else if (!strcmp(arg, "-z"))
@@ -4882,4 +4915,20 @@ size_t fill_textconv(struct userdiff_driver *driver,
 	}
 
 	return size;
+}
+
+void setup_diff_pager(struct diff_options *opt)
+{
+	/*
+	 * If the user asked for our exit code, then either they want --quiet
+	 * or --exit-code. We should definitely not bother with a pager in the
+	 * former case, as we will generate no output. Since we still properly
+	 * report our exit code even when a pager is run, we _could_ run a
+	 * pager with --exit-code. But since we have not done so historically,
+	 * and because it is easy to find people oneline advising "git diff
+	 * --exit-code" in hooks and other scripts, we do not do so.
+	 */
+	if (!DIFF_OPT_TST(opt, EXIT_WITH_STATUS) &&
+	    check_pager_config("diff") != 0)
+		setup_pager();
 }

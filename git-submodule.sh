@@ -5,13 +5,13 @@
 # Copyright (c) 2007 Lars Hjemli
 
 dashless=$(basename "$0" | sed -e 's/-/ /')
-USAGE="[--quiet] add [-b <branch>] [-f|--force] [--reference <repository>] [--] <repository> [<path>]
+USAGE="[--quiet] add [-b <branch>] [-f|--force] [--name <name>] [--reference <repository>] [--] <repository> [<path>]
    or: $dashless [--quiet] status [--cached] [--recursive] [--] [<path>...]
    or: $dashless [--quiet] init [--] [<path>...]
    or: $dashless [--quiet] update [--init] [-N|--no-fetch] [-f|--force] [--rebase] [--reference <repository>] [--merge] [--recursive] [--] [<path>...]
    or: $dashless [--quiet] summary [--cached|--files] [--summary-limit <n>] [commit] [--] [<path>...]
    or: $dashless [--quiet] foreach [--recursive] <command>
-   or: $dashless [--quiet] sync [--] [<path>...]"
+   or: $dashless [--quiet] sync [--recursive] [--] [<path>...]"
 OPTIONS_SPEC=
 . git-sh-setup
 . git-sh-i18n
@@ -29,6 +29,7 @@ files=
 nofetch=
 update=
 prefix=
+custom_name=
 
 # The function takes at most 2 arguments. The first argument is the
 # URL that navigates to the submodule origin repo. When relative, this URL
@@ -179,8 +180,9 @@ module_name()
 module_clone()
 {
 	sm_path=$1
-	url=$2
-	reference="$3"
+	name=$2
+	url=$3
+	reference="$4"
 	quiet=
 	if test -n "$GIT_QUIET"
 	then
@@ -189,8 +191,6 @@ module_clone()
 
 	gitdir=
 	gitdir_base=
-	name=$(module_name "$sm_path" 2>/dev/null)
-	test -n "$name" || name="$sm_path"
 	base_name=$(dirname "$name")
 
 	gitdir=$(git rev-parse --git-dir)
@@ -270,6 +270,10 @@ cmd_add()
 			;;
 		--reference=*)
 			reference="$1"
+			;;
+		--name)
+			case "$2" in '') usage ;; esac
+			custom_name=$2
 			shift
 			;;
 		--)
@@ -336,6 +340,13 @@ Use -f if you really want to add it." >&2
 		exit 1
 	fi
 
+	if test -n "$custom_name"
+	then
+		sm_name="$custom_name"
+	else
+		sm_name="$sm_path"
+	fi
+
 	# perhaps the path exists and is already a git repo, else clone it
 	if test -e "$sm_path"
 	then
@@ -347,8 +358,21 @@ Use -f if you really want to add it." >&2
 		fi
 
 	else
-
-		module_clone "$sm_path" "$realrepo" "$reference" || exit
+		if test -d ".git/modules/$sm_name"
+		then
+			if test -z "$force"
+			then
+				echo >&2 "$(eval_gettext "A git directory for '\$sm_name' is found locally with remote(s):")"
+				GIT_DIR=".git/modules/$sm_name" GIT_WORK_TREE=. git remote -v | grep '(fetch)' | sed -e s,^,"  ", -e s,' (fetch)',, >&2
+				echo >&2 "$(eval_gettext "If you want to reuse this local git directory instead of cloning again from")"
+				echo >&2 "  $realrepo"
+				echo >&2 "$(eval_gettext "use the '--force' option. If the local git directory is not the correct repo")"
+				die "$(eval_gettext "or you are unsure what this means choose another name with the '--name' option.")"
+			else
+				echo "$(eval_gettext "Reactivating local git directory for submodule '\$sm_name'.")"
+			fi
+		fi
+		module_clone "$sm_path" "$sm_name" "$realrepo" "$reference" || exit
 		(
 			clear_local_git_env
 			cd "$sm_path" &&
@@ -359,13 +383,13 @@ Use -f if you really want to add it." >&2
 			esac
 		) || die "$(eval_gettext "Unable to checkout submodule '\$sm_path'")"
 	fi
-	git config submodule."$sm_path".url "$realrepo"
+	git config submodule."$sm_name".url "$realrepo"
 
 	git add $force "$sm_path" ||
 	die "$(eval_gettext "Failed to add submodule '\$sm_path'")"
 
-	git config -f .gitmodules submodule."$sm_path".path "$sm_path" &&
-	git config -f .gitmodules submodule."$sm_path".url "$repo" &&
+	git config -f .gitmodules submodule."$sm_name".path "$sm_path" &&
+	git config -f .gitmodules submodule."$sm_name".url "$repo" &&
 	git add --force .gitmodules ||
 	die "$(eval_gettext "Failed to register submodule '\$sm_path'")"
 }
@@ -594,7 +618,7 @@ Maybe you want to use 'update --init'?")"
 
 		if ! test -d "$sm_path"/.git -o -f "$sm_path"/.git
 		then
-			module_clone "$sm_path" "$url" "$reference"|| exit
+			module_clone "$sm_path" "$name" "$url" "$reference" || exit
 			cloned_modules="$cloned_modules;$name"
 			subsha1=
 		else
@@ -926,7 +950,6 @@ cmd_summary() {
 cmd_status()
 {
 	# parse $args after "submodule ... status".
-	orig_flags=
 	while test $# -ne 0
 	do
 		case "$1" in
@@ -950,7 +973,6 @@ cmd_status()
 			break
 			;;
 		esac
-		orig_flags="$orig_flags $(git rev-parse --sq-quote "$1")"
 		shift
 	done
 
@@ -990,7 +1012,7 @@ cmd_status()
 				prefix="$displaypath/"
 				clear_local_git_env
 				cd "$sm_path" &&
-				eval cmd_status "$orig_args"
+				eval cmd_status
 			) ||
 			die "$(eval_gettext "Failed to recurse into submodule path '\$sm_path'")"
 		fi
@@ -1008,6 +1030,10 @@ cmd_sync()
 		case "$1" in
 		-q|--quiet)
 			GIT_QUIET=1
+			shift
+			;;
+		--recursive)
+			recursive=1
 			shift
 			;;
 		--)
@@ -1051,7 +1077,7 @@ cmd_sync()
 
 		if git config "submodule.$name.url" >/dev/null 2>/dev/null
 		then
-			say "$(eval_gettext "Synchronizing submodule url for '\$name'")"
+			say "$(eval_gettext "Synchronizing submodule url for '\$prefix\$sm_path'")"
 			git config submodule."$name".url "$super_config_url"
 
 			if test -e "$sm_path"/.git
@@ -1061,6 +1087,12 @@ cmd_sync()
 				cd "$sm_path"
 				remote=$(get_default_remote)
 				git config remote."$remote".url "$sub_origin_url"
+
+				if test -n "$recursive"
+				then
+					prefix="$prefix$sm_path/"
+					eval cmd_sync
+				fi
 			)
 			fi
 		fi
