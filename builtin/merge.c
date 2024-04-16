@@ -800,8 +800,9 @@ static void prepare_to_commit(struct commit_list *remoteheads)
 	if (0 < option_edit)
 		strbuf_add_lines(&msg, "# ", comment, strlen(comment));
 	write_merge_msg(&msg);
-	run_hook(get_index_file(), "prepare-commit-msg",
-		 git_path("MERGE_MSG"), "merge", NULL, NULL);
+	if (run_hook(get_index_file(), "prepare-commit-msg",
+		     git_path("MERGE_MSG"), "merge", NULL, NULL))
+		abort_commit(remoteheads, NULL);
 	if (0 < option_edit) {
 		if (launch_editor(git_path("MERGE_MSG"), NULL, NULL))
 			abort_commit(remoteheads, NULL);
@@ -1229,6 +1230,7 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 			memset(&opts, 0, sizeof(opts));
 			opts.add_title = !have_message;
 			opts.shortlog_len = shortlog_len;
+			opts.credit_people = (0 < option_edit);
 
 			fmt_merge_msg(&merge_names, &merge_msg, &opts);
 			if (merge_msg.len)

@@ -229,7 +229,7 @@ int xmkstemp(char *template)
 		int saved_errno = errno;
 		const char *nonrelative_template;
 
-		if (!template[0])
+		if (strlen(template) != strlen(origtemplate))
 			template = origtemplate;
 
 		nonrelative_template = absolute_path(template);
@@ -415,8 +415,16 @@ void warn_on_inaccessible(const char *path)
 int access_or_warn(const char *path, int mode)
 {
 	int ret = access(path, mode);
-	if (ret && errno != ENOENT)
+	if (ret && errno != ENOENT && errno != ENOTDIR)
 		warn_on_inaccessible(path);
+	return ret;
+}
+
+int access_or_die(const char *path, int mode)
+{
+	int ret = access(path, mode);
+	if (ret && errno != ENOENT && errno != ENOTDIR)
+		die_errno(_("unable to access '%s'"), path);
 	return ret;
 }
 
