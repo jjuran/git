@@ -653,7 +653,7 @@ LIB_H += list-objects.h
 LIB_H += ll-merge.h
 LIB_H += log-tree.h
 LIB_H += mailmap.h
-LIB_H += merge-file.h
+LIB_H += merge-blobs.h
 LIB_H += merge-recursive.h
 LIB_H += mergesort.h
 LIB_H += notes-cache.h
@@ -769,7 +769,7 @@ LIB_OBJS += log-tree.o
 LIB_OBJS += mailmap.o
 LIB_OBJS += match-trees.o
 LIB_OBJS += merge.o
-LIB_OBJS += merge-file.o
+LIB_OBJS += merge-blobs.o
 LIB_OBJS += merge-recursive.o
 LIB_OBJS += mergesort.o
 LIB_OBJS += name-hash.o
@@ -1475,7 +1475,8 @@ endif
 
 ifeq ($(COMPUTE_HEADER_DEPENDENCIES),auto)
 dep_check = $(shell $(CC) $(ALL_CFLAGS) \
-	-c -MF /dev/null -MMD -MP -x c /dev/null -o /dev/null 2>&1; \
+	-c -MF /dev/null -MQ /dev/null -MMD -MP \
+	-x c /dev/null -o /dev/null 2>&1; \
 	echo $$?)
 ifeq ($(dep_check),0)
 override COMPUTE_HEADER_DEPENDENCIES = yes
@@ -2329,7 +2330,7 @@ $(dep_dirs):
 
 missing_dep_dirs := $(filter-out $(wildcard $(dep_dirs)),$(dep_dirs))
 dep_file = $(dir $@).depend/$(notdir $@).d
-dep_args = -MF $(dep_file) -MMD -MP
+dep_args = -MF $(dep_file) -MQ $@ -MMD -MP
 ifdef CHECK_HEADER_DEPENDENCIES
 $(error cannot compute header dependencies outside a normal build. \
 Please unset CHECK_HEADER_DEPENDENCIES and try again)
