@@ -168,7 +168,7 @@ advice.*::
 		Advice shown when linkgit:git-merge[1] refuses to
 		merge to avoid overwriting local changes.
 	resolveConflict::
-		Advices shown by various commands when conflicts
+		Advice shown by various commands when conflicts
 		prevent the operation from being performed.
 	implicitIdentity::
 		Advice on how to set your identity configuration when
@@ -1758,7 +1758,8 @@ push.default::
   +
   This is currently the default, but Git 2.0 will change the default
   to `simple`.
-* `upstream` - push the current branch to its upstream branch.
+* `upstream` - push the current branch to its upstream branch
+  (`tracking` is a deprecated synonym for this).
   With this, `git push` will update the same remote ref as the one which
   is merged by `git pull`, making `push` and `pull` symmetrical.
   See "branch.<name>.merge" for how to configure the upstream branch.
