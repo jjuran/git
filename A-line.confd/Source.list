@@ -173,7 +173,7 @@ log-tree.c
 mailmap.c
 match-trees.c
 merge.c
-merge-file.c
+merge-blobs.c
 merge-recursive.c
 mergesort.c
 name-hash.c
