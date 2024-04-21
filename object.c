@@ -196,6 +196,8 @@ struct object *parse_object_or_die(const unsigned char *sha1,
 		return o;
 
 	die(_("unable to parse object: %s"), name ? name : sha1_to_hex(sha1));
+
+	return o;
 }
 
 struct object *parse_object(const unsigned char *sha1)
