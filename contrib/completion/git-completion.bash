@@ -1820,6 +1820,10 @@ _git_config ()
 		__gitcomp_nl "$(__git_refs)"
 		return
 		;;
+	branch.*.rebase)
+		__gitcomp "false true"
+		return
+		;;
 	remote.*.fetch)
 		local remote="${prev#remote.}"
 		remote="${remote%.fetch}"
@@ -1857,6 +1861,10 @@ _git_config ()
 			normal black red green yellow blue magenta cyan white
 			bold dim ul blink reverse
 			"
+		return
+		;;
+	diff.submodule)
+		__gitcomp "log short"
 		return
 		;;
 	help.format)
@@ -2054,13 +2062,14 @@ _git_config ()
 		core.whitespace
 		core.worktree
 		diff.autorefreshindex
-		diff.statGraphWidth
 		diff.external
 		diff.ignoreSubmodules
 		diff.mnemonicprefix
 		diff.noprefix
 		diff.renameLimit
 		diff.renames
+		diff.statGraphWidth
+		diff.submodule
 		diff.suppressBlankEmpty
 		diff.tool
 		diff.wordRegex
