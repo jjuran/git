@@ -1026,7 +1026,7 @@ my (%TEMP_FILEMAP, %TEMP_FILES);
 
 =item temp_acquire ( NAME )
 
-Attempts to retreive the temporary file mapped to the string C<NAME>. If an
+Attempts to retrieve the temporary file mapped to the string C<NAME>. If an
 associated temp file has not been created this session or was closed, it is
 created, cached, and set for autoflush and binmode.
 
@@ -1335,12 +1335,12 @@ sub _command_common_pipe {
 		if (not defined $pid) {
 			throw Error::Simple("open failed: $!");
 		} elsif ($pid == 0) {
-			if (defined $opts{STDERR}) {
-				close STDERR;
-			}
 			if ($opts{STDERR}) {
 				open (STDERR, '>&', $opts{STDERR})
 					or die "dup failed: $!";
+			} elsif (defined $opts{STDERR}) {
+				open (STDERR, '>', '/dev/null')
+					or die "opening /dev/null failed: $!";
 			}
 			_cmd_exec($self, $cmd, @args);
 		}
