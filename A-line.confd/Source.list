@@ -22,6 +22,7 @@ builtin/branch.c
 builtin/bundle.c
 builtin/cat-file.c
 builtin/check-attr.c
+builtin/check-ignore.c
 builtin/check-ref-format.c
 builtin/checkout-index.c
 builtin/checkout.c
@@ -191,6 +192,7 @@ parse-options-cb.c
 patch-delta.c
 patch-ids.c
 path.c
+pathspec.c
 pkt-line.c
 preload-index.c
 pretty.c
@@ -255,6 +257,7 @@ utf8.c
 varint.c
 version.c
 walker.c
+wildmatch.c
 wrapper.c
 write_or_die.c
 ws.c
