@@ -8,7 +8,7 @@
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
-#define GIT_VERSION "1.8.1.6"
+#define GIT_VERSION "1.8.2.1"
 
 // MacRelix has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)

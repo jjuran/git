@@ -368,7 +368,7 @@ test_expect_success 'push with colon-less refspec (2)' '
 		git branch -D frotz
 	fi &&
 	git tag -f frotz &&
-	git push testrepo frotz &&
+	git push -f testrepo frotz &&
 	check_push_result $the_commit tags/frotz &&
 	check_push_result $the_first_commit heads/frotz
 
@@ -929,6 +929,27 @@ test_expect_success 'push into aliased refs (inconsistent)' '
 	)
 '
 
+test_expect_success 'push requires --force to update lightweight tag' '
+	mk_test heads/master &&
+	mk_child child1 &&
+	mk_child child2 &&
+	(
+		cd child1 &&
+		git tag Tag &&
+		git push ../child2 Tag &&
+		git push ../child2 Tag &&
+		>file1 &&
+		git add file1 &&
+		git commit -m "file1" &&
+		git tag -f Tag &&
+		test_must_fail git push ../child2 Tag &&
+		git push --force ../child2 Tag &&
+		git tag -f Tag &&
+		test_must_fail git push ../child2 Tag HEAD~ &&
+		git push --force ../child2 Tag
+	)
+'
+
 test_expect_success 'push --porcelain' '
 	mk_empty &&
 	echo >.git/foo  "To testrepo" &&
@@ -994,5 +1015,32 @@ test_expect_success 'push --prune refspec' '
 	check_push_result $the_first_commit tmp/second &&
 	! check_push_result $the_first_commit tmp/foo tmp/bar
 '
+
+for configsection in transfer receive
+do
+	test_expect_success "push to update a ref hidden by $configsection.hiderefs" '
+		mk_test heads/master hidden/one hidden/two hidden/three &&
+		(
+			cd testrepo &&
+			git config $configsection.hiderefs refs/hidden
+		) &&
+
+		# push to unhidden ref succeeds normally
+		git push testrepo master:refs/heads/master &&
+		check_push_result $the_commit heads/master &&
+
+		# push to update a hidden ref should fail
+		test_must_fail git push testrepo master:refs/hidden/one &&
+		check_push_result $the_first_commit hidden/one &&
+
+		# push to delete a hidden ref should fail
+		test_must_fail git push testrepo :refs/hidden/two &&
+		check_push_result $the_first_commit hidden/two &&
+
+		# idempotent push to update a hidden ref should fail
+		test_must_fail git push testrepo $the_first_commit:refs/hidden/three &&
+		check_push_result $the_first_commit hidden/three
+	'
+done
 
 test_done

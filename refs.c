@@ -3,6 +3,7 @@
 #include "object.h"
 #include "tag.h"
 #include "dir.h"
+#include "string-list.h"
 
 /*
  * Make sure "ref" is something reasonable to have under ".git/refs/";
@@ -333,14 +334,12 @@ struct string_slice {
 
 static int ref_entry_cmp_sslice(const void *key_, const void *ent_)
 {
-	struct string_slice *key = (struct string_slice *)key_;
-	struct ref_entry *ent = *(struct ref_entry **)ent_;
-	int entlen = strlen(ent->name);
-	int cmplen = key->len < entlen ? key->len : entlen;
-	int cmp = memcmp(key->str, ent->name, cmplen);
+	const struct string_slice *key = key_;
+	const struct ref_entry *ent = *(const struct ref_entry * const *)ent_;
+	int cmp = strncmp(key->str, ent->name, key->len);
 	if (cmp)
 		return cmp;
-	return key->len - entlen;
+	return '\0' - (unsigned char)ent->name[key->len];
 }
 
 /*
@@ -2594,4 +2593,47 @@ char *shorten_unambiguous_ref(const char *refname, int strict)
 
 	free(short_name);
 	return xstrdup(refname);
+}
+
+static struct string_list *hide_refs;
+
+int parse_hide_refs_config(const char *var, const char *value, const char *section)
+{
+	if (!strcmp("transfer.hiderefs", var) ||
+	    /* NEEDSWORK: use parse_config_key() once both are merged */
+	    (!prefixcmp(var, section) && var[strlen(section)] == '.' &&
+	     !strcmp(var + strlen(section), ".hiderefs"))) {
+		char *ref;
+		int len;
+
+		if (!value)
+			return config_error_nonbool(var);
+		ref = xstrdup(value);
+		len = strlen(ref);
+		while (len && ref[len - 1] == '/')
+			ref[--len] = '\0';
+		if (!hide_refs) {
+			hide_refs = xcalloc(1, sizeof(*hide_refs));
+			hide_refs->strdup_strings = 1;
+		}
+		string_list_append(hide_refs, ref);
+	}
+	return 0;
+}
+
+int ref_is_hidden(const char *refname)
+{
+	struct string_list_item *item;
+
+	if (!hide_refs)
+		return 0;
+	for_each_string_list_item(item, hide_refs) {
+		int len;
+		if (prefixcmp(refname, item->string))
+			continue;
+		len = strlen(item->string);
+		if (!refname[len] || refname[len] == '/')
+			return 1;
+	}
+	return 0;
 }

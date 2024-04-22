@@ -271,6 +271,22 @@ test_expect_success 'multiple files' '
 	ls patches/0001-Side-changes-1.patch patches/0002-Side-changes-2.patch patches/0003-Side-changes-3-with-n-backslash-n-in-it.patch
 '
 
+test_expect_success 'reroll count' '
+	rm -fr patches &&
+	git format-patch -o patches --cover-letter --reroll-count 4 master..side >list &&
+	! grep -v "^patches/v4-000[0-3]-" list &&
+	sed -n -e "/^Subject: /p" $(cat list) >subjects &&
+	! grep -v "^Subject: \[PATCH v4 [0-3]/3\] " subjects
+'
+
+test_expect_success 'reroll count (-v)' '
+	rm -fr patches &&
+	git format-patch -o patches --cover-letter -v4 master..side >list &&
+	! grep -v "^patches/v4-000[0-3]-" list &&
+	sed -n -e "/^Subject: /p" $(cat list) >subjects &&
+	! grep -v "^Subject: \[PATCH v4 [0-3]/3\] " subjects
+'
+
 check_threading () {
 	expect="$1" &&
 	shift &&
@@ -821,25 +837,26 @@ Subject: [PATCH] =?UTF-8?q?f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
  =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
  =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
  =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
- =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3?=
- =?UTF-8?q?=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3?=
- =?UTF-8?q?=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
  =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
  =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
  =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
- =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3?=
- =?UTF-8?q?=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3?=
- =?UTF-8?q?=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
  =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
  =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
  =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
- =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3?=
- =?UTF-8?q?=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3?=
- =?UTF-8?q?=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
- =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar?=
 EOF
 test_expect_success 'format-patch wraps extremely long subject (rfc2047)' '
 	rm -rf patches/ &&
@@ -961,6 +978,48 @@ test_expect_success 'format patch ignores color.ui' '
 	test_config color.ui always &&
 	git format-patch --stdout -1 >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success 'cover letter using branch description (1)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter master >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (2)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter rebuild-1~2..rebuild-1 >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (3)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter ^master rebuild-1 >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (4)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter master.. >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (5)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter -2 HEAD >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (6)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter -2 >actual &&
+	grep hello actual >/dev/null
 '
 
 test_done

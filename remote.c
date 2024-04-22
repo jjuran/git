@@ -1288,6 +1288,8 @@ void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
 	struct ref *ref;
 
 	for (ref = remote_refs; ref; ref = ref->next) {
+		int force_ref_update = ref->force || force_update;
+
 		if (ref->peer_ref)
 			hashcpy(ref->new_sha1, ref->peer_ref->new_sha1);
 		else if (!send_mirror)
@@ -1300,34 +1302,41 @@ void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
 			continue;
 		}
 
-		/* This part determines what can overwrite what.
-		 * The rules are:
+		/*
+		 * Decide whether an individual refspec A:B can be
+		 * pushed.  The push will succeed if any of the
+		 * following are true:
 		 *
-		 * (0) you can always use --force or +A:B notation to
-		 *     selectively force individual ref pairs.
+		 * (1) the remote reference B does not exist
 		 *
-		 * (1) if the old thing does not exist, it is OK.
+		 * (2) the remote reference B is being removed (i.e.,
+		 *     pushing :B where no source is specified)
 		 *
-		 * (2) if you do not have the old thing, you are not allowed
-		 *     to overwrite it; you would not know what you are losing
-		 *     otherwise.
+		 * (3) the destination is not under refs/tags/, and
+		 *     if the old and new value is a commit, the new
+		 *     is a descendant of the old.
 		 *
-		 * (3) if both new and old are commit-ish, and new is a
-		 *     descendant of old, it is OK.
-		 *
-		 * (4) regardless of all of the above, removing :B is
-		 *     always allowed.
+		 * (4) it is forced using the +A:B notation, or by
+		 *     passing the --force argument
 		 */
 
-		ref->nonfastforward =
-			!ref->deletion &&
-			!is_null_sha1(ref->old_sha1) &&
-			(!has_sha1_file(ref->old_sha1)
-			  || !ref_newer(ref->new_sha1, ref->old_sha1));
+		if (!ref->deletion && !is_null_sha1(ref->old_sha1)) {
+			int why = 0; /* why would this push require --force? */
 
-		if (ref->nonfastforward && !ref->force && !force_update) {
-			ref->status = REF_STATUS_REJECT_NONFASTFORWARD;
-			continue;
+			if (!prefixcmp(ref->name, "refs/tags/"))
+				why = REF_STATUS_REJECT_ALREADY_EXISTS;
+			else if (!has_sha1_file(ref->old_sha1))
+				why = REF_STATUS_REJECT_FETCH_FIRST;
+			else if (!lookup_commit_reference_gently(ref->old_sha1, 1) ||
+				 !lookup_commit_reference_gently(ref->new_sha1, 1))
+				why = REF_STATUS_REJECT_NEEDS_FORCE;
+			else if (!ref_newer(ref->new_sha1, ref->old_sha1))
+				why = REF_STATUS_REJECT_NONFASTFORWARD;
+
+			if (!force_ref_update)
+				ref->status = why;
+			else if (why)
+				ref->forced_update = 1;
 		}
 	}
 }
@@ -1521,7 +1530,8 @@ int ref_newer(const unsigned char *new_sha1, const unsigned char *old_sha1)
 	struct commit_list *list, *used;
 	int found = 0;
 
-	/* Both new and old must be commit-ish and new is descendant of
+	/*
+	 * Both new and old must be commit-ish and new is descendant of
 	 * old.  Otherwise we require --force.
 	 */
 	o = deref_tag(parse_object(old_sha1), NULL, 0);

@@ -345,7 +345,7 @@ static int needs_rfc2047_encoding(const char *line, int len,
 	return 0;
 }
 
-static void add_rfc2047(struct strbuf *sb, const char *line, int len,
+static void add_rfc2047(struct strbuf *sb, const char *line, size_t len,
 		       const char *encoding, enum rfc2047_type type)
 {
 	static const int max_encoded_length = 76; /* per rfc2047 */
@@ -355,9 +355,22 @@ static void add_rfc2047(struct strbuf *sb, const char *line, int len,
 	strbuf_grow(sb, len * 3 + strlen(encoding) + 100);
 	strbuf_addf(sb, "=?%s?q?", encoding);
 	line_len += strlen(encoding) + 5; /* 5 for =??q? */
-	for (i = 0; i < len; i++) {
-		unsigned ch = line[i] & 0xFF;
-		int is_special = is_rfc2047_special(ch, type);
+
+	while (len) {
+		/*
+		 * RFC 2047, section 5 (3):
+		 *
+		 * Each 'encoded-word' MUST represent an integral number of
+		 * characters.  A multi-octet character may not be split across
+		 * adjacent 'encoded- word's.
+		 */
+		const unsigned char *p = (const unsigned char *)line;
+		int chrlen = mbs_chrlen(&line, &len, encoding);
+		int is_special = (chrlen > 1) || is_rfc2047_special(*p, type);
+
+		/* "=%02X" * chrlen, or the byte itself */
+		const char *encoded_fmt = is_special ? "=%02X"    : "%c";
+		int	    encoded_len = is_special ? 3 * chrlen : 1;
 
 		/*
 		 * According to RFC 2047, we could encode the special character
@@ -367,18 +380,15 @@ static void add_rfc2047(struct strbuf *sb, const char *line, int len,
 		 * causes ' ' to be encoded as '=20', avoiding this problem.
 		 */
 
-		if (line_len + 2 + (is_special ? 3 : 1) > max_encoded_length) {
+		if (line_len + encoded_len + 2 > max_encoded_length) {
+			/* It won't fit with trailing "?=" --- break the line */
 			strbuf_addf(sb, "?=\n =?%s?q?", encoding);
 			line_len = strlen(encoding) + 5 + 1; /* =??q? plus SP */
 		}
 
-		if (is_special) {
-			strbuf_addf(sb, "=%02X", ch);
-			line_len += 3;
-		} else {
-			strbuf_addch(sb, ch);
-			line_len++;
-		}
+		for (i = 0; i < chrlen; i++)
+			strbuf_addf(sb, encoded_fmt, p[i]);
+		line_len += encoded_len;
 	}
 	strbuf_addstr(sb, "?=");
 }
@@ -387,56 +397,79 @@ void pp_user_info(const struct pretty_print_context *pp,
 		  const char *what, struct strbuf *sb,
 		  const char *line, const char *encoding)
 {
+	struct strbuf name;
+	struct strbuf mail;
+	struct ident_split ident;
+	int linelen;
+	char *line_end, *date;
+	const char *mailbuf, *namebuf;
+	size_t namelen, maillen;
 	int max_length = 78; /* per rfc2822 */
-	char *date;
-	int namelen;
 	unsigned long time;
 	int tz;
 
 	if (pp->fmt == CMIT_FMT_ONELINE)
 		return;
-	date = strchr(line, '>');
-	if (!date)
+
+	line_end = strchr(line, '\n');
+	if (!line_end) {
+		line_end = strchr(line, '\0');
+		if (!line_end)
+			return;
+	}
+
+	linelen = ++line_end - line;
+	if (split_ident_line(&ident, line, linelen))
 		return;
-	namelen = ++date - line;
-	time = strtoul(date, &date, 10);
+
+
+	mailbuf = ident.mail_begin;
+	maillen = ident.mail_end - ident.mail_begin;
+	namebuf = ident.name_begin;
+	namelen = ident.name_end - ident.name_begin;
+
+	if (pp->mailmap)
+		map_user(pp->mailmap, &mailbuf, &maillen, &namebuf, &namelen);
+
+	strbuf_init(&mail, 0);
+	strbuf_init(&name, 0);
+
+	strbuf_add(&mail, mailbuf, maillen);
+	strbuf_add(&name, namebuf, namelen);
+
+	namelen = name.len + mail.len + 3; /* ' ' + '<' + '>' */
+	time = strtoul(ident.date_begin, &date, 10);
 	tz = strtol(date, NULL, 10);
 
 	if (pp->fmt == CMIT_FMT_EMAIL) {
-		char *name_tail = strchr(line, '<');
-		int display_name_length;
-		if (!name_tail)
-			return;
-		while (line < name_tail && isspace(name_tail[-1]))
-			name_tail--;
-		display_name_length = name_tail - line;
 		strbuf_addstr(sb, "From: ");
-		if (needs_rfc2047_encoding(line, display_name_length, RFC2047_ADDRESS)) {
-			add_rfc2047(sb, line, display_name_length,
-						encoding, RFC2047_ADDRESS);
+		if (needs_rfc2047_encoding(name.buf, name.len, RFC2047_ADDRESS)) {
+			add_rfc2047(sb, name.buf, name.len,
+				    encoding, RFC2047_ADDRESS);
 			max_length = 76; /* per rfc2047 */
-		} else if (needs_rfc822_quoting(line, display_name_length)) {
+		} else if (needs_rfc822_quoting(name.buf, name.len)) {
 			struct strbuf quoted = STRBUF_INIT;
-			add_rfc822_quoted(&quoted, line, display_name_length);
+			add_rfc822_quoted(&quoted, name.buf, name.len);
 			strbuf_add_wrapped_bytes(sb, quoted.buf, quoted.len,
 							-6, 1, max_length);
 			strbuf_release(&quoted);
 		} else {
-			strbuf_add_wrapped_bytes(sb, line, display_name_length,
-							-6, 1, max_length);
+			strbuf_add_wrapped_bytes(sb, name.buf, name.len,
+						 -6, 1, max_length);
 		}
-		if (namelen - display_name_length + last_line_length(sb) > max_length) {
+		if (namelen - name.len + last_line_length(sb) > max_length)
 			strbuf_addch(sb, '\n');
-			if (!isspace(name_tail[0]))
-				strbuf_addch(sb, ' ');
-		}
-		strbuf_add(sb, name_tail, namelen - display_name_length);
-		strbuf_addch(sb, '\n');
+
+		strbuf_addf(sb, " <%s>\n", mail.buf);
 	} else {
-		strbuf_addf(sb, "%s: %.*s%.*s\n", what,
+		strbuf_addf(sb, "%s: %.*s%s <%s>\n", what,
 			      (pp->fmt == CMIT_FMT_FULLER) ? 4 : 0,
-			      "    ", namelen, line);
+			      "    ", name.buf, mail.buf);
 	}
+
+	strbuf_release(&mail);
+	strbuf_release(&name);
+
 	switch (pp->fmt) {
 	case CMIT_FMT_MEDIUM:
 		strbuf_addf(sb, "Date:   %s\n", show_date(time, tz, pp->date_mode));
@@ -501,10 +534,11 @@ static void add_merge_info(const struct pretty_print_context *pp,
 	strbuf_addch(sb, '\n');
 }
 
-static char *get_header(const struct commit *commit, const char *key)
+static char *get_header(const struct commit *commit, const char *msg,
+			const char *key)
 {
 	int key_len = strlen(key);
-	const char *line = commit->buffer;
+	const char *line = msg;
 
 	while (line) {
 		const char *eol = strchr(line, '\n'), *next;
@@ -565,28 +599,81 @@ char *logmsg_reencode(const struct commit *commit,
 	static const char *utf8 = "UTF-8";
 	const char *use_encoding;
 	char *encoding;
+	char *msg = commit->buffer;
 	char *out;
 
+	if (!msg) {
+		enum object_type type;
+		unsigned long size;
+
+		msg = read_sha1_file(commit->object.sha1, &type, &size);
+		if (!msg)
+			die("Cannot read commit object %s",
+			    sha1_to_hex(commit->object.sha1));
+		if (type != OBJ_COMMIT)
+			die("Expected commit for '%s', got %s",
+			    sha1_to_hex(commit->object.sha1), typename(type));
+	}
+
 	if (!output_encoding || !*output_encoding)
-		return NULL;
-	encoding = get_header(commit, "encoding");
+		return msg;
+	encoding = get_header(commit, msg, "encoding");
 	use_encoding = encoding ? encoding : utf8;
-	if (same_encoding(use_encoding, output_encoding))
-		if (encoding) /* we'll strip encoding header later */
-			out = xstrdup(commit->buffer);
-		else
-			return NULL; /* nothing to do */
-	else
-		out = reencode_string(commit->buffer,
-				      output_encoding, use_encoding);
+	if (same_encoding(use_encoding, output_encoding)) {
+		/*
+		 * No encoding work to be done. If we have no encoding header
+		 * at all, then there's nothing to do, and we can return the
+		 * message verbatim (whether newly allocated or not).
+		 */
+		if (!encoding)
+			return msg;
+
+		/*
+		 * Otherwise, we still want to munge the encoding header in the
+		 * result, which will be done by modifying the buffer. If we
+		 * are using a fresh copy, we can reuse it. But if we are using
+		 * the cached copy from commit->buffer, we need to duplicate it
+		 * to avoid munging commit->buffer.
+		 */
+		out = msg;
+		if (out == commit->buffer)
+			out = xstrdup(out);
+	}
+	else {
+		/*
+		 * There's actual encoding work to do. Do the reencoding, which
+		 * still leaves the header to be replaced in the next step. At
+		 * this point, we are done with msg. If we allocated a fresh
+		 * copy, we can free it.
+		 */
+		out = reencode_string(msg, output_encoding, use_encoding);
+		if (out && msg != commit->buffer)
+			free(msg);
+	}
+
+	/*
+	 * This replacement actually consumes the buffer we hand it, so we do
+	 * not have to worry about freeing the old "out" here.
+	 */
 	if (out)
 		out = replace_encoding_header(out, output_encoding);
 
 	free(encoding);
-	return out;
+	/*
+	 * If the re-encoding failed, out might be NULL here; in that
+	 * case we just return the commit message verbatim.
+	 */
+	return out ? out : msg;
 }
 
-static int mailmap_name(char *email, int email_len, char *name, int name_len)
+void logmsg_free(char *msg, const struct commit *commit)
+{
+	if (msg != commit->buffer)
+		free(msg);
+}
+
+static int mailmap_name(const char **email, size_t *email_len,
+			const char **name, size_t *name_len)
 {
 	static struct string_list *mail_map;
 	if (!mail_map) {
@@ -603,36 +690,26 @@ static size_t format_person_part(struct strbuf *sb, char part,
 	const int placeholder_len = 2;
 	int tz;
 	unsigned long date = 0;
-	char person_name[1024];
-	char person_mail[1024];
 	struct ident_split s;
-	const char *name_start, *name_end, *mail_start, *mail_end;
+	const char *name, *mail;
+	size_t maillen, namelen;
 
 	if (split_ident_line(&s, msg, len) < 0)
 		goto skip;
 
-	name_start = s.name_begin;
-	name_end = s.name_end;
-	mail_start = s.mail_begin;
-	mail_end = s.mail_end;
+	name = s.name_begin;
+	namelen = s.name_end - s.name_begin;
+	mail = s.mail_begin;
+	maillen = s.mail_end - s.mail_begin;
 
-	if (part == 'N' || part == 'E') { /* mailmap lookup */
-		snprintf(person_name, sizeof(person_name), "%.*s",
-			 (int)(name_end - name_start), name_start);
-		snprintf(person_mail, sizeof(person_mail), "%.*s",
-			 (int)(mail_end - mail_start), mail_start);
-		mailmap_name(person_mail, sizeof(person_mail), person_name, sizeof(person_name));
-		name_start = person_name;
-		name_end = name_start + strlen(person_name);
-		mail_start = person_mail;
-		mail_end = mail_start +  strlen(person_mail);
-	}
+	if (part == 'N' || part == 'E') /* mailmap lookup */
+		mailmap_name(&mail, &maillen, &name, &namelen);
 	if (part == 'n' || part == 'N') {	/* name */
-		strbuf_add(sb, name_start, name_end-name_start);
+		strbuf_add(sb, name, namelen);
 		return placeholder_len;
 	}
 	if (part == 'e' || part == 'E') {	/* email */
-		strbuf_add(sb, mail_start, mail_end-mail_start);
+		strbuf_add(sb, mail, maillen);
 		return placeholder_len;
 	}
 
@@ -692,8 +769,10 @@ struct format_commit_context {
 	unsigned commit_signature_parsed:1;
 	struct {
 		char *gpg_output;
+		char *gpg_status;
 		char good_bad;
 		char *signer;
+		char *key;
 	} signature;
 	char *message;
 	size_t width, indent1, indent2;
@@ -881,13 +960,13 @@ static struct {
 	char result;
 	const char *check;
 } signature_check[] = {
-	{ 'G', ": Good signature from " },
-	{ 'B', ": BAD signature from " },
+	{ 'G', "\n[GNUPG:] GOODSIG " },
+	{ 'B', "\n[GNUPG:] BADSIG " },
 };
 
 static void parse_signature_lines(struct format_commit_context *ctx)
 {
-	const char *buf = ctx->signature.gpg_output;
+	const char *buf = ctx->signature.gpg_status;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(signature_check); i++) {
@@ -897,6 +976,8 @@ static void parse_signature_lines(struct format_commit_context *ctx)
 			continue;
 		ctx->signature.good_bad = signature_check[i].result;
 		found += strlen(signature_check[i].check);
+		ctx->signature.key = xmemdupz(found, 16);
+		found += 17;
 		next = strchrnul(found, '\n');
 		ctx->signature.signer = xmemdupz(found, next - found);
 		break;
@@ -908,6 +989,7 @@ static void parse_commit_signature(struct format_commit_context *ctx)
 	struct strbuf payload = STRBUF_INIT;
 	struct strbuf signature = STRBUF_INIT;
 	struct strbuf gpg_output = STRBUF_INIT;
+	struct strbuf gpg_status = STRBUF_INIT;
 	int status;
 
 	ctx->commit_signature_parsed = 1;
@@ -917,13 +999,15 @@ static void parse_commit_signature(struct format_commit_context *ctx)
 		goto out;
 	status = verify_signed_buffer(payload.buf, payload.len,
 				      signature.buf, signature.len,
-				      &gpg_output);
+				      &gpg_output, &gpg_status);
 	if (status && !gpg_output.len)
 		goto out;
 	ctx->signature.gpg_output = strbuf_detach(&gpg_output, NULL);
+	ctx->signature.gpg_status = strbuf_detach(&gpg_status, NULL);
 	parse_signature_lines(ctx);
 
  out:
+	strbuf_release(&gpg_status);
 	strbuf_release(&gpg_output);
 	strbuf_release(&payload);
 	strbuf_release(&signature);
@@ -960,12 +1044,19 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 	switch (placeholder[0]) {
 	case 'C':
 		if (placeholder[1] == '(') {
-			const char *end = strchr(placeholder + 2, ')');
+			const char *begin = placeholder + 2;
+			const char *end = strchr(begin, ')');
 			char color[COLOR_MAXLEN];
+
 			if (!end)
 				return 0;
-			color_parse_mem(placeholder + 2,
-					end - (placeholder + 2),
+			if (!prefixcmp(begin, "auto,")) {
+				if (!want_color(c->pretty_ctx->color))
+					return end - placeholder + 1;
+				begin += 5;
+			}
+			color_parse_mem(begin,
+					end - begin,
 					"--pretty format", color);
 			strbuf_addstr(sb, color);
 			return end - placeholder + 1;
@@ -1126,6 +1217,10 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 			if (c->signature.signer)
 				strbuf_addstr(sb, c->signature.signer);
 			break;
+		case 'K':
+			if (c->signature.key)
+				strbuf_addstr(sb, c->signature.key);
+			break;
 		}
 		return 2;
 	}
@@ -1257,14 +1352,11 @@ void format_commit_message(const struct commit *commit,
 	context.pretty_ctx = pretty_ctx;
 	context.wrap_start = sb->len;
 	context.message = logmsg_reencode(commit, output_enc);
-	if (!context.message)
-		context.message = commit->buffer;
 
 	strbuf_expand(sb, format, format_commit_item, &context);
 	rewrap_message_tail(sb, &context, 0, 0, 0);
 
-	if (context.message != commit->buffer)
-		free(context.message);
+	logmsg_free(context.message, commit);
 	free(context.signature.gpg_output);
 	free(context.signature.signer);
 }
@@ -1294,7 +1386,7 @@ static void pp_header(const struct pretty_print_context *pp,
 			continue;
 		}
 
-		if (!memcmp(line, "parent ", 7)) {
+		if (!prefixcmp(line, "parent ")) {
 			if (linelen != 48)
 				die("bad parent line in commit");
 			continue;
@@ -1318,11 +1410,11 @@ static void pp_header(const struct pretty_print_context *pp,
 		 * FULL shows both authors but not dates.
 		 * FULLER shows both authors and dates.
 		 */
-		if (!memcmp(line, "author ", 7)) {
+		if (!prefixcmp(line, "author ")) {
 			strbuf_grow(sb, linelen + 80);
 			pp_user_info(pp, "Author", sb, line + 7, encoding);
 		}
-		if (!memcmp(line, "committer ", 10) &&
+		if (!prefixcmp(line, "committer ") &&
 		    (pp->fmt == CMIT_FMT_FULL || pp->fmt == CMIT_FMT_FULLER)) {
 			strbuf_grow(sb, linelen + 80);
 			pp_user_info(pp, "Commit", sb, line + 10, encoding);
@@ -1411,7 +1503,7 @@ void pretty_print_commit(const struct pretty_print_context *pp,
 {
 	unsigned long beginning_of_body;
 	int indent = 4;
-	const char *msg = commit->buffer;
+	const char *msg;
 	char *reencoded;
 	const char *encoding;
 	int need_8bit_cte = pp->need_8bit_cte;
@@ -1422,10 +1514,7 @@ void pretty_print_commit(const struct pretty_print_context *pp,
 	}
 
 	encoding = get_log_output_encoding();
-	reencoded = logmsg_reencode(commit, encoding);
-	if (reencoded) {
-		msg = reencoded;
-	}
+	msg = reencoded = logmsg_reencode(commit, encoding);
 
 	if (pp->fmt == CMIT_FMT_ONELINE || pp->fmt == CMIT_FMT_EMAIL)
 		indent = 0;
@@ -1482,7 +1571,7 @@ void pretty_print_commit(const struct pretty_print_context *pp,
 	if (pp->fmt == CMIT_FMT_EMAIL && sb->len <= beginning_of_body)
 		strbuf_addch(sb, '\n');
 
-	free(reencoded);
+	logmsg_free(reencoded, commit);
 }
 
 void pp_commit_easy(enum cmit_fmt fmt, const struct commit *commit,

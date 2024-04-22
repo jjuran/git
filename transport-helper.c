@@ -670,6 +670,21 @@ static void push_update_ref_status(struct strbuf *buf,
 			free(msg);
 			msg = NULL;
 		}
+		else if (!strcmp(msg, "already exists")) {
+			status = REF_STATUS_REJECT_ALREADY_EXISTS;
+			free(msg);
+			msg = NULL;
+		}
+		else if (!strcmp(msg, "fetch first")) {
+			status = REF_STATUS_REJECT_FETCH_FIRST;
+			free(msg);
+			msg = NULL;
+		}
+		else if (!strcmp(msg, "needs force")) {
+			status = REF_STATUS_REJECT_NEEDS_FORCE;
+			free(msg);
+			msg = NULL;
+		}
 	}
 
 	if (*ref)
@@ -729,6 +744,7 @@ static int push_refs_with_push(struct transport *transport,
 		/* Check for statuses set by set_ref_status_for_push() */
 		switch (ref->status) {
 		case REF_STATUS_REJECT_NONFASTFORWARD:
+		case REF_STATUS_REJECT_ALREADY_EXISTS:
 		case REF_STATUS_UPTODATE:
 			continue;
 		default:

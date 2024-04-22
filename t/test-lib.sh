@@ -214,11 +214,13 @@ then
 		error)
 			tput bold; tput setaf 1;; # bold red
 		skip)
-			tput bold; tput setaf 2;; # bold green
+			tput setaf 4;; # blue
+		warn)
+			tput setaf 3;; # brown/yellow
 		pass)
-			tput setaf 2;;            # green
+			tput setaf 2;; # green
 		info)
-			tput setaf 3;;            # brown
+			tput setaf 6;; # cyan
 		*)
 			test -n "$quiet" && return;;
 		esac
@@ -300,7 +302,7 @@ test_ok_ () {
 
 test_failure_ () {
 	test_failure=$(($test_failure + 1))
-	say_color error "not ok - $test_count $1"
+	say_color error "not ok $test_count - $1"
 	shift
 	echo "$@" | sed -e 's/^/#	/'
 	test "$immediate" = "" || { GIT_EXIT_OK=t; exit 1; }
@@ -308,12 +310,12 @@ test_failure_ () {
 
 test_known_broken_ok_ () {
 	test_fixed=$(($test_fixed+1))
-	say_color "" "ok $test_count - $@ # TODO known breakage"
+	say_color error "ok $test_count - $@ # TODO known breakage vanished"
 }
 
 test_known_broken_failure_ () {
 	test_broken=$(($test_broken+1))
-	say_color skip "not ok $test_count - $@ # TODO known breakage"
+	say_color warn "not ok $test_count - $@ # TODO known breakage"
 }
 
 test_debug () {
@@ -406,13 +408,18 @@ test_done () {
 
 	if test "$test_fixed" != 0
 	then
-		say_color pass "# fixed $test_fixed known breakage(s)"
+		say_color error "# $test_fixed known breakage(s) vanished; please update test(s)"
 	fi
 	if test "$test_broken" != 0
 	then
-		say_color error "# still have $test_broken known breakage(s)"
-		msg="remaining $(($test_count-$test_broken)) test(s)"
+		say_color warn "# still have $test_broken known breakage(s)"
+	fi
+	if test "$test_broken" != 0 || test "$test_fixed" != 0
+	then
+		test_remaining=$(( $test_count - $test_broken - $test_fixed ))
+		msg="remaining $test_remaining test(s)"
 	else
+		test_remaining=$test_count
 		msg="$test_count test(s)"
 	fi
 	case "$test_failure" in
@@ -426,7 +433,7 @@ test_done () {
 
 		if test $test_external_has_tap -eq 0
 		then
-			if test $test_count -gt 0
+			if test $test_remaining -gt 0
 			then
 				say_color pass "# passed all $msg"
 			fi
@@ -617,7 +624,7 @@ for skp in $GIT_SKIP_TESTS
 do
 	case "$this_test" in
 	$skp)
-		say_color skip >&3 "skipping test $this_test altogether"
+		say_color info >&3 "skipping test $this_test altogether"
 		skip_all="skip all tests in $this_test"
 		test_done
 	esac
@@ -659,12 +666,14 @@ case $(uname -s) in
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
 	test_set_prereq MINGW
+	test_set_prereq NOT_CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *CYGWIN*)
 	test_set_prereq POSIXPERM
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *)
@@ -672,6 +681,7 @@ case $(uname -s) in
 	test_set_prereq BSLASHPSPEC
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq NOT_CYGWIN
 	;;
 esac
 
@@ -750,3 +760,9 @@ test_lazy_prereq AUTOIDENT '
 # When the tests are run as root, permission tests will report that
 # things are writable when they shouldn't be.
 test -w / || test_set_prereq SANITY
+
+GIT_UNZIP=${GIT_UNZIP:-unzip}
+test_lazy_prereq UNZIP '
+	"$GIT_UNZIP" -v
+	test $? -ne 127
+'

@@ -61,8 +61,6 @@ my $cmd_dir_prefix = eval {
 	command_oneline([qw/rev-parse --show-prefix/], STDERR => 0)
 } || '';
 
-my $git_dir_user_set = 1 if defined $ENV{GIT_DIR};
-$ENV{GIT_DIR} ||= '.git';
 $Git::SVN::Ra::_log_window_size = 100;
 
 if (! exists $ENV{SVN_SSH} && exists $ENV{GIT_SSH}) {
@@ -114,6 +112,7 @@ my ($_stdin, $_help, $_edit,
 	$_message, $_file, $_branch_dest,
 	$_template, $_shared,
 	$_version, $_fetch_all, $_no_rebase, $_fetch_parent,
+	$_before, $_after,
 	$_merge, $_strategy, $_preserve_merges, $_dry_run, $_local,
 	$_prefix, $_no_checkout, $_url, $_verbose,
 	$_commit_url, $_tag, $_merge_info, $_interactive);
@@ -258,7 +257,8 @@ my %cmd = (
 			} ],
 	'find-rev' => [ \&cmd_find_rev,
 	                "Translate between SVN revision numbers and tree-ish",
-			{} ],
+			{ 'before' => \$_before,
+			  'after' => \$_after } ],
 	'rebase' => [ \&cmd_rebase, "Fetch and rebase your working directory",
 			{ 'merge|m|M' => \$_merge,
 			  'verbose|v' => \$_verbose,
@@ -325,27 +325,20 @@ for (my $i = 0; $i < @ARGV; $i++) {
 };
 
 # make sure we're always running at the top-level working directory
-unless ($cmd && $cmd =~ /(?:clone|init|multi-init)$/) {
-	unless (-d $ENV{GIT_DIR}) {
-		if ($git_dir_user_set) {
-			die "GIT_DIR=$ENV{GIT_DIR} explicitly set, ",
-			    "but it is not a directory\n";
-		}
-		my $git_dir = delete $ENV{GIT_DIR};
-		my $cdup = undef;
-		git_cmd_try {
-			$cdup = command_oneline(qw/rev-parse --show-cdup/);
-			$git_dir = '.' unless ($cdup);
-			chomp $cdup if ($cdup);
-			$cdup = "." unless ($cdup && length $cdup);
-		} "Already at toplevel, but $git_dir not found\n";
-		chdir $cdup or die "Unable to chdir up to '$cdup'\n";
-		unless (-d $git_dir) {
-			die "$git_dir still not found after going to ",
-			    "'$cdup'\n";
-		}
-		$ENV{GIT_DIR} = $git_dir;
-	}
+if ($cmd && $cmd =~ /(?:clone|init|multi-init)$/) {
+	$ENV{GIT_DIR} ||= ".git";
+} else {
+	my ($git_dir, $cdup);
+	git_cmd_try {
+		$git_dir = command_oneline([qw/rev-parse --git-dir/]);
+	} "Unable to find .git directory\n";
+	git_cmd_try {
+		$cdup = command_oneline(qw/rev-parse --show-cdup/);
+		chomp $cdup if ($cdup);
+		$cdup = "." unless ($cdup && length $cdup);
+	} "Already at toplevel, but $git_dir not found\n";
+	$ENV{GIT_DIR} = $git_dir;
+	chdir $cdup or die "Unable to chdir up to '$cdup'\n";
 	$_repository = Git->repository(Repository => $ENV{GIT_DIR});
 }
 
@@ -389,7 +382,7 @@ sub usage {
 	my $fd = $exit ? \*STDERR : \*STDOUT;
 	print $fd <<"";
 git-svn - bidirectional operations between a single Subversion tree and git
-Usage: git svn <command> [options] [arguments]\n
+usage: git svn <command> [options] [arguments]\n
 
 	print $fd "Available commands:\n" unless $cmd;
 
@@ -541,7 +534,7 @@ sub cmd_fetch {
 	}
 	my ($remote) = @_;
 	if (@_ > 1) {
-		die "Usage: $0 fetch [--all] [--parent] [svn-remote]\n";
+		die "usage: $0 fetch [--all] [--parent] [svn-remote]\n";
 	}
 	$Git::SVN::no_reuse_existing = undef;
 	if ($_fetch_parent) {
@@ -1191,7 +1184,13 @@ sub cmd_find_rev {
 			    "$head history\n";
 		}
 		my $desired_revision = substr($revision_or_hash, 1);
-		$result = $gs->rev_map_get($desired_revision, $uuid);
+		if ($_before) {
+			$result = $gs->find_rev_before($desired_revision, 1);
+		} elsif ($_after) {
+			$result = $gs->find_rev_after($desired_revision, 1);
+		} else {
+			$result = $gs->rev_map_get($desired_revision, $uuid);
+		}
 	} else {
 		my (undef, $rev, undef) = cmt_metadata($revision_or_hash);
 		$result = $rev;
@@ -1405,7 +1404,7 @@ sub cmd_multi_fetch {
 # this command is special because it requires no metadata
 sub cmd_commit_diff {
 	my ($ta, $tb, $url) = @_;
-	my $usage = "Usage: $0 commit-diff -r<revision> ".
+	my $usage = "usage: $0 commit-diff -r<revision> ".
 	            "<tree-ish> <tree-ish> [<URL>]";
 	fatal($usage) if (!defined $ta || !defined $tb);
 	my $svn_path = '';

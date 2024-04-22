@@ -2292,6 +2292,7 @@ static void file_change_m(struct branch *b)
 		hashcpy(sha1, oe->idx.sha1);
 	} else if (!prefixcmp(p, "inline ")) {
 		inline_data = 1;
+		oe = NULL; /* not used with inline_data, but makes gcc happy */
 		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
@@ -2464,6 +2465,7 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 		hashcpy(sha1, oe->idx.sha1);
 	} else if (!prefixcmp(p, "inline ")) {
 		inline_data = 1;
+		oe = NULL; /* not used with inline_data, but makes gcc happy */
 		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
@@ -2613,7 +2615,7 @@ static int parse_from(struct branch *b)
 
 static struct hash_list *parse_merge(unsigned int *count)
 {
-	struct hash_list *list = NULL, *n, *e;
+	struct hash_list *list = NULL, **tail = &list, *n;
 	const char *from;
 	struct branch *s;
 
@@ -2641,11 +2643,9 @@ static struct hash_list *parse_merge(unsigned int *count)
 			die("Invalid ref name or SHA1 expression: %s", from);
 
 		n->next = NULL;
-		if (list)
-			e->next = n;
-		else
-			list = n;
-		e = n;
+		*tail = n;
+		tail = &n->next;
+
 		(*count)++;
 		read_next_command();
 	}
