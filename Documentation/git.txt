@@ -43,9 +43,10 @@ unreleased) version of git, that is available from 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
 
-* link:v1.8.1.5/git.html[documentation for release 1.8.1.5]
+* link:v1.8.1.6/git.html[documentation for release 1.8.1.6]
 
 * release notes for
+  link:RelNotes/1.8.1.6.txt[1.8.1.6],
   link:RelNotes/1.8.1.5.txt[1.8.1.5],
   link:RelNotes/1.8.1.4.txt[1.8.1.4],
   link:RelNotes/1.8.1.3.txt[1.8.1.3],
@@ -674,12 +675,19 @@ git so take care if using Cogito etc.
 	The '--namespace' command-line option also sets this value.
 
 'GIT_CEILING_DIRECTORIES'::
-	This should be a colon-separated list of absolute paths.
-	If set, it is a list of directories that git should not chdir
-	up into while looking for a repository directory.
-	It will not exclude the current working directory or
-	a GIT_DIR set on the command line or in the environment.
-	(Useful for excluding slow-loading network directories.)
+	This should be a colon-separated list of absolute paths.  If
+	set, it is a list of directories that git should not chdir up
+	into while looking for a repository directory (useful for
+	excluding slow-loading network directories).  It will not
+	exclude the current working directory or a GIT_DIR set on the
+	command line or in the environment.  Normally, Git has to read
+	the entries in this list and resolve any symlink that
+	might be present in order to compare them with the current
+	directory.  However, if even this access is slow, you
+	can add an empty entry to the list to tell Git that the
+	subsequent entries are not symlinks and needn't be resolved;
+	e.g.,
+	'GIT_CEILING_DIRECTORIES=/maybe/symlink::/very/slow/non/symlink'.
 
 'GIT_DISCOVERY_ACROSS_FILESYSTEM'::
 	When run in a directory that does not have ".git" repository
@@ -757,9 +765,12 @@ other
 	If this environment variable is set then 'git fetch'
 	and 'git push' will use this command instead
 	of 'ssh' when they need to connect to a remote system.
-	The '$GIT_SSH' command will be given exactly two arguments:
-	the 'username@host' (or just 'host') from the URL and the
-	shell command to execute on that remote system.
+	The '$GIT_SSH' command will be given exactly two or
+	four arguments: the 'username@host' (or just 'host')
+	from the URL and the shell command to execute on that
+	remote system, optionally preceded by '-p' (literally) and
+	the 'port' from the URL when it specifies something other
+	than the default SSH port.
 +
 To pass options to the program that you want to list in GIT_SSH
 you will need to wrap the program and options into a shell script,
