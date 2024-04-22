@@ -139,12 +139,12 @@ test_pause () {
 	fi
 }
 
-# Call test_commit with the arguments "<message> [<file> [<contents>]]"
+# Call test_commit with the arguments "<message> [<file> [<contents> [<tag>]]]"
 #
 # This will commit a file with the given contents and the given commit
-# message.  It will also add a tag with <message> as name.
+# message, and tag the resulting commit with the given tag name.
 #
-# Both <file> and <contents> default to <message>.
+# <file>, <contents>, and <tag> all default to <message>.
 
 test_commit () {
 	notick= &&
@@ -172,7 +172,7 @@ test_commit () {
 		test_tick
 	fi &&
 	git commit $signoff -m "$1" &&
-	git tag "$1"
+	git tag "${4:-$1}"
 }
 
 # Call test_merge with the arguments "<message> <commit>", where <commit>
@@ -539,6 +539,9 @@ test_must_fail () {
 		return 1
 	elif test $exit_code = 127; then
 		echo >&2 "test_must_fail: command not found: $*"
+		return 1
+	elif test $exit_code = 126; then
+		echo >&2 "test_must_fail: valgrind error: $*"
 		return 1
 	fi
 	return 0

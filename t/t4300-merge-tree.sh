@@ -26,8 +26,6 @@ EXPECTED
 
 test_expect_success 'file add !A, B' '
 	cat >expected <<\EXPECTED &&
-added in local
-  our    100644 43d5a8ed6ef6c00ff775008633f95787d088285d ONE
 EXPECTED
 
 	git reset --hard initial &&
@@ -38,9 +36,6 @@ EXPECTED
 
 test_expect_success 'file add A, B (same)' '
 	cat >expected <<\EXPECTED &&
-added in both
-  our    100644 43d5a8ed6ef6c00ff775008633f95787d088285d ONE
-  their  100644 43d5a8ed6ef6c00ff775008633f95787d088285d ONE
 EXPECTED
 
 	git reset --hard initial &&
@@ -181,9 +176,6 @@ AAA" &&
 
 test_expect_success 'file remove A, !B' '
 	cat >expected <<\EXPECTED &&
-removed in local
-  base   100644 43d5a8ed6ef6c00ff775008633f95787d088285d ONE
-  their  100644 43d5a8ed6ef6c00ff775008633f95787d088285d ONE
 EXPECTED
 
 	git reset --hard initial &&
@@ -210,6 +202,19 @@ EXPECTED
 	git commit -m "rm-not-a-b" &&
 	git tag "rm-not-a-b" &&
 	git merge-tree rm-a-not-b-base rm-a-not-b-base rm-a-not-b >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'file remove A, B (same)' '
+	cat >expected <<\EXPECTED &&
+EXPECTED
+
+	git reset --hard initial &&
+	test_commit "rm-a-b-base" "ONE" "AAA" &&
+	git rm ONE &&
+	git commit -m "rm-a-b" &&
+	git tag "rm-a-b" &&
+	git merge-tree rm-a-b-base rm-a-b rm-a-b >actual &&
 	test_cmp expected actual
 '
 
@@ -254,6 +259,57 @@ EXPECTED
 	test_cmp expected actual
 '
 
+test_expect_success 'tree add A, B (same)' '
+	cat >expect <<-\EOF &&
+	EOF
+	git reset --hard initial &&
+	mkdir sub &&
+	test_commit "add sub/file" "sub/file" "file" add-tree-A &&
+	git merge-tree initial add-tree-A add-tree-A >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'tree add A, B (different)' '
+	cat >expect <<-\EOF &&
+	added in both
+	  our    100644 43d5a8ed6ef6c00ff775008633f95787d088285d sub/file
+	  their  100644 ba629238ca89489f2b350e196ca445e09d8bb834 sub/file
+	@@ -1 +1,5 @@
+	+<<<<<<< .our
+	 AAA
+	+=======
+	+BBB
+	+>>>>>>> .their
+	EOF
+	git reset --hard initial &&
+	mkdir sub &&
+	test_commit "add sub/file" "sub/file" "AAA" add-tree-a-b-A &&
+	git reset --hard initial &&
+	mkdir sub &&
+	test_commit "add sub/file" "sub/file" "BBB" add-tree-a-b-B &&
+	git merge-tree initial add-tree-a-b-A add-tree-a-b-B >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'tree unchanged A, removed B' '
+	cat >expect <<-\EOF &&
+	removed in remote
+	  base   100644 43d5a8ed6ef6c00ff775008633f95787d088285d sub/file
+	  our    100644 43d5a8ed6ef6c00ff775008633f95787d088285d sub/file
+	@@ -1 +0,0 @@
+	-AAA
+	EOF
+	git reset --hard initial &&
+	mkdir sub &&
+	test_commit "add sub/file" "sub/file" "AAA" tree-remove-b-initial &&
+	git rm sub/file &&
+	test_tick &&
+	git commit -m "remove sub/file" &&
+	git tag tree-remove-b-B &&
+	git merge-tree tree-remove-b-initial tree-remove-b-initial tree-remove-b-B >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'turn file to tree' '
 	git reset --hard initial &&
 	rm initial-file &&
@@ -283,8 +339,6 @@ test_expect_success 'turn tree to file' '
 	test_commit "make-file" "dir" "CCC" &&
 	git merge-tree add-tree add-another-tree make-file >actual &&
 	cat >expect <<-\EOF &&
-	added in local
-	  our    100644 ba629238ca89489f2b350e196ca445e09d8bb834 dir/another
 	removed in remote
 	  base   100644 43d5a8ed6ef6c00ff775008633f95787d088285d dir/path
 	  our    100644 43d5a8ed6ef6c00ff775008633f95787d088285d dir/path

@@ -174,8 +174,8 @@ ref.
 This capability can be advertised multiple times.  The first
 applicable refspec takes precedence.  The left-hand of refspecs
 advertised with this capability must cover all refs reported by
-the list command.  If no 'refspec' capability is advertised,
-there is an implied `refspec *:*`.
+the list command.  If a helper does not need a specific 'refspec'
+capability then it should advertise `refspec *:*`.
 
 'bidi-import'::
 	This modifies the 'import' capability.
@@ -202,6 +202,10 @@ there is an implied `refspec *:*`.
 	marks specified in <file> before processing any input. For details,
 	read up on '--import-marks=<file>' in linkgit:git-fast-export[1].
 
+'signed-tags'::
+	This modifies the 'export' capability, instructing Git to pass
+	'--signed-tags=verbatim' to linkgit:git-fast-export[1].  In the
+	absence of this capability, Git will use '--signed-tags=warn-strip'.
 
 
 

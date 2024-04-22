@@ -18,6 +18,7 @@
 #include "string-list.h"
 #include "column.h"
 #include "utf8.h"
+#include "wt-status.h"
 
 static const char * const builtin_branch_usage[] = {
 	N_("git branch [options] [-r | -a] [--merged | --no-merged]"),
@@ -40,13 +41,15 @@ static char branch_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_RED,		/* REMOTE */
 	GIT_COLOR_NORMAL,	/* LOCAL */
 	GIT_COLOR_GREEN,	/* CURRENT */
+	GIT_COLOR_BLUE,		/* UPSTREAM */
 };
 enum color_branch {
 	BRANCH_COLOR_RESET = 0,
 	BRANCH_COLOR_PLAIN = 1,
 	BRANCH_COLOR_REMOTE = 2,
 	BRANCH_COLOR_LOCAL = 3,
-	BRANCH_COLOR_CURRENT = 4
+	BRANCH_COLOR_CURRENT = 4,
+	BRANCH_COLOR_UPSTREAM = 5
 };
 
 static enum merge_filter {
@@ -71,6 +74,8 @@ static int parse_branch_color_slot(const char *var, int ofs)
 		return BRANCH_COLOR_LOCAL;
 	if (!strcasecmp(var+ofs, "current"))
 		return BRANCH_COLOR_CURRENT;
+	if (!strcasecmp(var+ofs, "upstream"))
+		return BRANCH_COLOR_UPSTREAM;
 	return -1;
 }
 
@@ -417,36 +422,52 @@ static void fill_tracking_info(struct strbuf *stat, const char *branch_name,
 	int ours, theirs;
 	char *ref = NULL;
 	struct branch *branch = branch_get(branch_name);
+	struct strbuf fancy = STRBUF_INIT;
 
 	if (!stat_tracking_info(branch, &ours, &theirs)) {
 		if (branch && branch->merge && branch->merge[0]->dst &&
-		    show_upstream_ref)
-			strbuf_addf(stat, "[%s] ",
-			    shorten_unambiguous_ref(branch->merge[0]->dst, 0));
+		    show_upstream_ref) {
+			ref = shorten_unambiguous_ref(branch->merge[0]->dst, 0);
+			if (want_color(branch_use_color))
+				strbuf_addf(stat, "[%s%s%s] ",
+						branch_get_color(BRANCH_COLOR_UPSTREAM),
+						ref, branch_get_color(BRANCH_COLOR_RESET));
+			else
+				strbuf_addf(stat, "[%s] ", ref);
+		}
 		return;
 	}
 
-	if (show_upstream_ref)
+	if (show_upstream_ref) {
 		ref = shorten_unambiguous_ref(branch->merge[0]->dst, 0);
+		if (want_color(branch_use_color))
+			strbuf_addf(&fancy, "%s%s%s",
+					branch_get_color(BRANCH_COLOR_UPSTREAM),
+					ref, branch_get_color(BRANCH_COLOR_RESET));
+		else
+			strbuf_addstr(&fancy, ref);
+	}
+
 	if (!ours) {
 		if (ref)
-			strbuf_addf(stat, _("[%s: behind %d]"), ref, theirs);
+			strbuf_addf(stat, _("[%s: behind %d]"), fancy.buf, theirs);
 		else
 			strbuf_addf(stat, _("[behind %d]"), theirs);
 
 	} else if (!theirs) {
 		if (ref)
-			strbuf_addf(stat, _("[%s: ahead %d]"), ref, ours);
+			strbuf_addf(stat, _("[%s: ahead %d]"), fancy.buf, ours);
 		else
 			strbuf_addf(stat, _("[ahead %d]"), ours);
 	} else {
 		if (ref)
 			strbuf_addf(stat, _("[%s: ahead %d, behind %d]"),
-				    ref, ours, theirs);
+				    fancy.buf, ours, theirs);
 		else
 			strbuf_addf(stat, _("[ahead %d, behind %d]"),
 				    ours, theirs);
 	}
+	strbuf_release(&fancy);
 	strbuf_addch(stat, ' ');
 	free(ref);
 }
@@ -550,6 +571,29 @@ static int calc_maxwidth(struct ref_list *refs)
 	return w;
 }
 
+static char *get_head_description(void)
+{
+	struct strbuf desc = STRBUF_INIT;
+	struct wt_status_state state;
+	memset(&state, 0, sizeof(state));
+	wt_status_get_state(&state, 1);
+	if (state.rebase_in_progress ||
+	    state.rebase_interactive_in_progress)
+		strbuf_addf(&desc, _("(no branch, rebasing %s)"),
+			    state.branch);
+	else if (state.bisect_in_progress)
+		strbuf_addf(&desc, _("(no branch, bisect started on %s)"),
+			    state.branch);
+	else if (state.detached_from)
+		strbuf_addf(&desc, _("(detached from %s)"),
+			    state.detached_from);
+	else
+		strbuf_addstr(&desc, _("(no branch)"));
+	free(state.branch);
+	free(state.onto);
+	free(state.detached_from);
+	return strbuf_detach(&desc, NULL);
+}
 
 static void show_detached(struct ref_list *ref_list)
 {
@@ -557,7 +601,7 @@ static void show_detached(struct ref_list *ref_list)
 
 	if (head_commit && is_descendant_of(head_commit, ref_list->with_commit)) {
 		struct ref_item item;
-		item.name = xstrdup(_("(no branch)"));
+		item.name = get_head_description();
 		item.width = utf8_strwidth(item.name);
 		item.kind = REF_LOCAL_BRANCH;
 		item.dest = NULL;
@@ -889,7 +933,9 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		if (edit_branch_description(branch_name))
 			return 1;
 	} else if (rename) {
-		if (argc == 1)
+		if (!argc)
+			die(_("branch name required"));
+		else if (argc == 1)
 			rename_branch(head, argv[0], rename > 1);
 		else if (argc == 2)
 			rename_branch(argv[0], argv[1], rename > 1);

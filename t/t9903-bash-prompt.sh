@@ -28,6 +28,10 @@ test_expect_success 'setup for prompt tests' '
 	git checkout -b b2 master &&
 	echo 0 > file &&
 	git commit -m "second b2" file &&
+	echo 00 > file &&
+	git commit -m "another b2" file &&
+	echo 000 > file &&
+	git commit -m "yet another b2" file &&
 	git checkout master
 '
 
@@ -59,7 +63,7 @@ test_expect_success 'gitdir - .git directory in cwd' '
 '
 
 test_expect_success 'gitdir - .git directory in parent' '
-	echo "$TRASH_DIRECTORY/.git" > expected &&
+	echo "$(pwd -P)/.git" > expected &&
 	(
 		cd subdir/subsubdir &&
 		__gitdir > "$actual"
@@ -77,7 +81,7 @@ test_expect_success 'gitdir - cwd is a .git directory' '
 '
 
 test_expect_success 'gitdir - parent is a .git directory' '
-	echo "$TRASH_DIRECTORY/.git" > expected &&
+	echo "$(pwd -P)/.git" > expected &&
 	(
 		cd .git/refs/heads &&
 		__gitdir > "$actual"
@@ -115,7 +119,7 @@ test_expect_success 'gitdir - non-existing $GIT_DIR' '
 '
 
 test_expect_success 'gitdir - gitfile in cwd' '
-	echo "$TRASH_DIRECTORY/otherrepo/.git" > expected &&
+	echo "$(pwd -P)/otherrepo/.git" > expected &&
 	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" > subdir/.git &&
 	test_when_finished "rm -f subdir/.git" &&
 	(
@@ -126,7 +130,7 @@ test_expect_success 'gitdir - gitfile in cwd' '
 '
 
 test_expect_success 'gitdir - gitfile in parent' '
-	echo "$TRASH_DIRECTORY/otherrepo/.git" > expected &&
+	echo "$(pwd -P)/otherrepo/.git" > expected &&
 	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" > subdir/.git &&
 	test_when_finished "rm -f subdir/.git" &&
 	(
@@ -137,7 +141,7 @@ test_expect_success 'gitdir - gitfile in parent' '
 '
 
 test_expect_success SYMLINKS 'gitdir - resulting path avoids symlinks' '
-	echo "$TRASH_DIRECTORY/otherrepo/.git" > expected &&
+	echo "$(pwd -P)/otherrepo/.git" > expected &&
 	mkdir otherrepo/dir &&
 	test_when_finished "rm -rf otherrepo/dir" &&
 	ln -s otherrepo/dir link &&
@@ -243,10 +247,12 @@ test_expect_success 'prompt - inside bare repository' '
 '
 
 test_expect_success 'prompt - interactive rebase' '
-	printf " (b1|REBASE-i)" > expected
+	printf " (b1|REBASE-i 2/3)" > expected
 	echo "#!$SHELL_PATH" >fake_editor.sh &&
 	cat >>fake_editor.sh <<\EOF &&
-echo "edit $(git log -1 --format="%h")" > "$1"
+echo "exec echo" > "$1"
+echo "edit $(git log -1 --format="%h")" >> "$1"
+echo "exec echo" >> "$1"
 EOF
 	test_when_finished "rm -f fake_editor.sh" &&
 	chmod a+x fake_editor.sh &&
@@ -260,7 +266,7 @@ EOF
 '
 
 test_expect_success 'prompt - rebase merge' '
-	printf " (b2|REBASE-m)" > expected &&
+	printf " (b2|REBASE-m 1/3)" > expected &&
 	git checkout b2 &&
 	test_when_finished "git checkout master" &&
 	test_must_fail git rebase --merge b1 b2 &&
@@ -270,7 +276,7 @@ test_expect_success 'prompt - rebase merge' '
 '
 
 test_expect_success 'prompt - rebase' '
-	printf " ((t2)|REBASE)" > expected &&
+	printf " ((t2)|REBASE 1/3)" > expected &&
 	git checkout b2 &&
 	test_when_finished "git checkout master" &&
 	test_must_fail git rebase b1 b2 &&
