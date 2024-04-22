@@ -37,7 +37,7 @@ int fnmatch_icase(const char *pattern, const char *string, int flags)
 	return fnmatch(pattern, string, flags | (ignore_case ? FNM_CASEFOLD : 0));
 }
 
-inline int git_fnmatch(const char *pattern, const char *string,
+int git_fnmatch(const char *pattern, const char *string,
 		       int flags, int prefix)
 {
 	int fnm_flags = 0;
