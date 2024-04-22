@@ -470,7 +470,7 @@ static void fmt_tag_signature(struct strbuf *tagbuf,
 	strbuf_complete_line(tagbuf);
 	if (sig->len) {
 		strbuf_addch(tagbuf, '\n');
-		strbuf_add_lines(tagbuf, "# ", sig->buf, sig->len);
+		strbuf_add_commented_lines(tagbuf, sig->buf, sig->len);
 	}
 }
 
@@ -492,7 +492,7 @@ static void fmt_merge_msg_sigs(struct strbuf *out)
 
 		if (size == len)
 			; /* merely annotated */
-		else if (verify_signed_buffer(buf, len, buf + len, size - len, &sig)) {
+		else if (verify_signed_buffer(buf, len, buf + len, size - len, &sig, NULL)) {
 			if (!sig.len)
 				strbuf_addstr(&sig, "gpg verification failed.\n");
 		}

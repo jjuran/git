@@ -69,6 +69,7 @@ struct wt_status {
 	struct string_list change;
 	struct string_list untracked;
 	struct string_list ignored;
+	uint32_t untracked_in_ms;
 };
 
 struct wt_status_state {
@@ -79,6 +80,8 @@ struct wt_status_state {
 	int rebase_interactive_in_progress;
 	int cherry_pick_in_progress;
 	int bisect_in_progress;
+	const char *branch;
+	const char *onto;
 };
 
 void wt_status_prepare(struct wt_status *s);

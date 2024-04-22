@@ -490,7 +490,7 @@ sub refname {
 	#
 	# Additionally, % must be escaped because it is used for escaping
 	# and we want our escaped refname to be reversible
-	$refname =~ s{([ \%~\^:\?\*\[\t])}{uc sprintf('%%%02x',ord($1))}eg;
+	$refname =~ s{([ \%~\^:\?\*\[\t])}{sprintf('%%%02X',ord($1))}eg;
 
 	# no slash-separated component can begin with a dot .
 	# /.* becomes /%2E*
@@ -1493,13 +1493,18 @@ sub lookup_svn_merge {
 	my @merged_commit_ranges;
 	# find the tip
 	for my $range ( @ranges ) {
+		if ($range =~ /[*]$/) {
+			warn "W: Ignoring partial merge in svn:mergeinfo "
+				."dirprop: $source:$range\n";
+			next;
+		}
 		my ($bottom, $top) = split "-", $range;
 		$top ||= $bottom;
 		my $bottom_commit = $gs->find_rev_after( $bottom, 1, $top );
 		my $top_commit = $gs->find_rev_before( $top, 1, $bottom );
 
 		unless ($top_commit and $bottom_commit) {
-			warn "W:unknown path/rev in svn:mergeinfo "
+			warn "W: unknown path/rev in svn:mergeinfo "
 				."dirprop: $source:$range\n";
 			next;
 		}
@@ -2369,7 +2374,7 @@ sub map_path {
 
 sub uri_encode {
 	my ($f) = @_;
-	$f =~ s#([^a-zA-Z0-9\*!\:_\./\-])#uc sprintf("%%%02x",ord($1))#eg;
+	$f =~ s#([^a-zA-Z0-9\*!\:_\./\-])#sprintf("%%%02X",ord($1))#eg;
 	$f
 }
 

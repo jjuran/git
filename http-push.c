@@ -11,7 +11,11 @@
 #include "list-objects.h"
 #include "sigchain.h"
 
+#ifdef EXPAT_NEEDS_XMLPARSE_H
+#include <xmlparse.h>
+#else
 #include <expat.h>
+#endif
 
 static const char http_push_usage[] =
 "git http-push [--all] [--dry-run] [--force] [--verbose] <remote> [<head>...]\n";
@@ -172,28 +176,7 @@ enum dav_header_flag {
 static char *xml_entities(const char *s)
 {
 	struct strbuf buf = STRBUF_INIT;
-	while (*s) {
-		size_t len = strcspn(s, "\"<>&");
-		strbuf_add(&buf, s, len);
-		s += len;
-		switch (*s) {
-		case '"':
-			strbuf_addstr(&buf, "&quot;");
-			break;
-		case '<':
-			strbuf_addstr(&buf, "&lt;");
-			break;
-		case '>':
-			strbuf_addstr(&buf, "&gt;");
-			break;
-		case '&':
-			strbuf_addstr(&buf, "&amp;");
-			break;
-		case 0:
-			return strbuf_detach(&buf, NULL);
-		}
-		s++;
-	}
+	strbuf_addstr_xml_quoted(&buf, s);
 	return strbuf_detach(&buf, NULL);
 }
 

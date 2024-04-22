@@ -106,7 +106,8 @@ static void insert_packed_refs(const char *packed_refs, struct ref **list)
 		return;
 
 	for (;;) {
-		int cmp = cmp, len;
+		int cmp = 0; /* assigned before used */
+		int len;
 
 		if (!fgets(buffer, sizeof(buffer), f)) {
 			fclose(f);
@@ -659,7 +660,7 @@ static void print_ok_ref_status(struct ref *ref, int porcelain)
 		const char *msg;
 
 		strcpy(quickref, status_abbrev(ref->old_sha1));
-		if (ref->nonfastforward) {
+		if (ref->forced_update) {
 			strcat(quickref, "...");
 			type = '+';
 			msg = "forced update";
@@ -695,6 +696,18 @@ static int print_one_push_status(struct ref *ref, const char *dest, int count, i
 		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
 						 "non-fast-forward", porcelain);
 		break;
+	case REF_STATUS_REJECT_ALREADY_EXISTS:
+		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
+						 "already exists", porcelain);
+		break;
+	case REF_STATUS_REJECT_FETCH_FIRST:
+		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
+						 "fetch first", porcelain);
+		break;
+	case REF_STATUS_REJECT_NEEDS_FORCE:
+		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
+						 "needs force", porcelain);
+		break;
 	case REF_STATUS_REMOTE_REJECT:
 		print_ref_status('!', "[remote rejected]", ref,
 						 ref->deletion ? NULL : ref->peer_ref,
@@ -714,7 +727,7 @@ static int print_one_push_status(struct ref *ref, const char *dest, int count, i
 }
 
 void transport_print_push_status(const char *dest, struct ref *refs,
-				  int verbose, int porcelain, int *nonfastforward)
+				  int verbose, int porcelain, unsigned int *reject_reasons)
 {
 	struct ref *ref;
 	int n = 0;
@@ -733,18 +746,23 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 		if (ref->status == REF_STATUS_OK)
 			n += print_one_push_status(ref, dest, n, porcelain);
 
-	*nonfastforward = 0;
+	*reject_reasons = 0;
 	for (ref = refs; ref; ref = ref->next) {
 		if (ref->status != REF_STATUS_NONE &&
 		    ref->status != REF_STATUS_UPTODATE &&
 		    ref->status != REF_STATUS_OK)
 			n += print_one_push_status(ref, dest, n, porcelain);
-		if (ref->status == REF_STATUS_REJECT_NONFASTFORWARD &&
-		    *nonfastforward != NON_FF_HEAD) {
+		if (ref->status == REF_STATUS_REJECT_NONFASTFORWARD) {
 			if (head != NULL && !strcmp(head, ref->name))
-				*nonfastforward = NON_FF_HEAD;
+				*reject_reasons |= REJECT_NON_FF_HEAD;
 			else
-				*nonfastforward = NON_FF_OTHER;
+				*reject_reasons |= REJECT_NON_FF_OTHER;
+		} else if (ref->status == REF_STATUS_REJECT_ALREADY_EXISTS) {
+			*reject_reasons |= REJECT_ALREADY_EXISTS;
+		} else if (ref->status == REF_STATUS_REJECT_FETCH_FIRST) {
+			*reject_reasons |= REJECT_FETCH_FIRST;
+		} else if (ref->status == REF_STATUS_REJECT_NEEDS_FORCE) {
+			*reject_reasons |= REJECT_NEEDS_FORCE;
 		}
 	}
 }
@@ -1029,11 +1047,67 @@ static void die_with_unpushed_submodules(struct string_list *needs_pushing)
 	die("Aborting.");
 }
 
+static int run_pre_push_hook(struct transport *transport,
+			     struct ref *remote_refs)
+{
+	int ret = 0, x;
+	struct ref *r;
+	struct child_process proc;
+	struct strbuf buf;
+	const char *argv[4];
+
+	if (!(argv[0] = find_hook("pre-push")))
+		return 0;
+
+	argv[1] = transport->remote->name;
+	argv[2] = transport->url;
+	argv[3] = NULL;
+
+	memset(&proc, 0, sizeof(proc));
+	proc.argv = argv;
+	proc.in = -1;
+
+	if (start_command(&proc)) {
+		finish_command(&proc);
+		return -1;
+	}
+
+	strbuf_init(&buf, 256);
+
+	for (r = remote_refs; r; r = r->next) {
+		if (!r->peer_ref) continue;
+		if (r->status == REF_STATUS_REJECT_NONFASTFORWARD) continue;
+		if (r->status == REF_STATUS_UPTODATE) continue;
+
+		strbuf_reset(&buf);
+		strbuf_addf( &buf, "%s %s %s %s\n",
+			 r->peer_ref->name, sha1_to_hex(r->new_sha1),
+			 r->name, sha1_to_hex(r->old_sha1));
+
+		if (write_in_full(proc.in, buf.buf, buf.len) != buf.len) {
+			ret = -1;
+			break;
+		}
+	}
+
+	strbuf_release(&buf);
+
+	x = close(proc.in);
+	if (!ret)
+		ret = x;
+
+	x = finish_command(&proc);
+	if (!ret)
+		ret = x;
+
+	return ret;
+}
+
 int transport_push(struct transport *transport,
 		   int refspec_nr, const char **refspec, int flags,
-		   int *nonfastforward)
+		   unsigned int *reject_reasons)
 {
-	*nonfastforward = 0;
+	*reject_reasons = 0;
 	transport_verify_remote_names(refspec_nr, refspec);
 
 	if (transport->push) {
@@ -1069,6 +1143,10 @@ int transport_push(struct transport *transport,
 			flags & TRANSPORT_PUSH_MIRROR,
 			flags & TRANSPORT_PUSH_FORCE);
 
+		if (!(flags & TRANSPORT_PUSH_NO_HOOK))
+			if (run_pre_push_hook(transport, remote_refs))
+				return -1;
+
 		if ((flags & TRANSPORT_RECURSE_SUBMODULES_ON_DEMAND) && !is_bare_repository()) {
 			struct ref *ref = remote_refs;
 			for (; ref; ref = ref->next)
@@ -1099,7 +1177,7 @@ int transport_push(struct transport *transport,
 		if (!quiet || err)
 			transport_print_push_status(transport->url, remote_refs,
 					verbose | porcelain, porcelain,
-					nonfastforward);
+					reject_reasons);
 
 		if (flags & TRANSPORT_PUSH_SET_UPSTREAM)
 			set_upstreams(transport, remote_refs, pretend);

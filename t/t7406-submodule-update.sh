@@ -135,6 +135,37 @@ test_expect_success 'submodule update --force forcibly checks out submodules' '
 	)
 '
 
+test_expect_success 'submodule update --remote should fetch upstream changes' '
+	(cd submodule &&
+	 echo line4 >> file &&
+	 git add file &&
+	 test_tick &&
+	 git commit -m "upstream line4"
+	) &&
+	(cd super &&
+	 git submodule update --remote --force submodule &&
+	 cd submodule &&
+	 test "$(git log -1 --oneline)" = "$(GIT_DIR=../../submodule/.git git log -1 --oneline)"
+	)
+'
+
+test_expect_success 'local config should override .gitmodules branch' '
+	(cd submodule &&
+	 git checkout -b test-branch &&
+	 echo line5 >> file &&
+	 git add file &&
+	 test_tick &&
+	 git commit -m "upstream line5" &&
+	 git checkout master
+	) &&
+	(cd super &&
+	 git config submodule.submodule.branch test-branch &&
+	 git submodule update --remote --force submodule &&
+	 cd submodule &&
+	 test "$(git log -1 --oneline)" = "$(GIT_DIR=../../submodule/.git git log -1 --oneline test-branch)"
+	)
+'
+
 test_expect_success 'submodule update --rebase staying on master' '
 	(cd super/submodule &&
 	  git checkout master
@@ -612,7 +643,8 @@ test_expect_success 'submodule update places git-dir in superprojects git-dir re
 	rm -rf super_update_r2 &&
 	git clone super_update_r super_update_r2 &&
 	(cd super_update_r2 &&
-	 git submodule update --init --recursive &&
+	 git submodule update --init --recursive >actual &&
+	 test_i18ngrep "Submodule path .submodule/subsubmodule.: checked out" actual &&
 	 (cd submodule/subsubmodule &&
 	  git log > ../../expected
 	 ) &&

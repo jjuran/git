@@ -3,11 +3,15 @@
 
 #include "git-compat-util.h"
 
-extern int advice_push_nonfastforward;
+extern int advice_push_update_rejected;
 extern int advice_push_non_ff_current;
 extern int advice_push_non_ff_default;
 extern int advice_push_non_ff_matching;
+extern int advice_push_already_exists;
+extern int advice_push_fetch_first;
+extern int advice_push_needs_force;
 extern int advice_status_hints;
+extern int advice_status_u_option;
 extern int advice_commit_before_merge;
 extern int advice_resolve_conflict;
 extern int advice_implicit_identity;

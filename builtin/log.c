@@ -22,6 +22,7 @@
 #include "branch.h"
 #include "streaming.h"
 #include "version.h"
+#include "mailmap.h"
 
 /* Set a default date-time format for git log ("log.date" config variable) */
 static const char *default_date_mode = NULL;
@@ -30,6 +31,7 @@ static int default_abbrev_commit;
 static int default_show_root = 1;
 static int decoration_style;
 static int decoration_given;
+static int use_mailmap_config;
 static const char *fmt_patch_subject_prefix = "PATCH";
 static const char *fmt_pretty;
 
@@ -94,7 +96,7 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 			 struct rev_info *rev, struct setup_revision_opt *opt)
 {
 	struct userformat_want w;
-	int quiet = 0, source = 0;
+	int quiet = 0, source = 0, mailmap = 0;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -103,6 +105,7 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 	const struct option builtin_log_options[] = {
 		OPT_BOOLEAN(0, "quiet", &quiet, N_("suppress diff output")),
 		OPT_BOOLEAN(0, "source", &source, N_("show source")),
+		OPT_BOOLEAN(0, "use-mailmap", &mailmap, N_("Use mail map file")),
 		{ OPTION_CALLBACK, 0, "decorate", NULL, NULL, N_("decorate options"),
 		  PARSE_OPT_OPTARG, decorate_callback},
 		OPT_END()
@@ -112,6 +115,7 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 #pragma cplusplus reset
 #endif
 
+	mailmap = use_mailmap_config;
 	argc = parse_options(argc, argv, prefix,
 			     builtin_log_options, builtin_log_usage,
 			     PARSE_OPT_KEEP_ARGV0 | PARSE_OPT_KEEP_UNKNOWN |
@@ -143,6 +147,11 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 
 	if (source)
 		rev->show_source = 1;
+
+	if (mailmap) {
+		rev->mailmap = xcalloc(1, sizeof(struct string_list));
+		read_mailmap(rev->mailmap, NULL);
+	}
 
 	if (rev->pretty_given && rev->commit_format == CMIT_FMT_RAW) {
 		/*
@@ -359,6 +368,11 @@ static int git_log_config(const char *var, const char *value, void *cb)
 	}
 	if (!prefixcmp(var, "color.decorate."))
 		return parse_decorate_color_config(var, 15, value);
+	if (!strcmp(var, "log.mailmap")) {
+		use_mailmap_config = git_config_bool(var, value);
+		return 0;
+	}
+
 	if (grep_config(var, value, cb) < 0)
 		return -1;
 	return git_diff_ui_config(var, value, cb);
@@ -686,7 +700,7 @@ static int reopen_stdout(struct commit *commit, const char *subject,
 			 struct rev_info *rev, int quiet)
 {
 	struct strbuf filename = STRBUF_INIT;
-	int suffix_len = strlen(fmt_patch_suffix) + 1;
+	int suffix_len = strlen(rev->patch_suffix) + 1;
 
 	if (output_directory) {
 		strbuf_addstr(&filename, output_directory);
@@ -697,7 +711,12 @@ static int reopen_stdout(struct commit *commit, const char *subject,
 			strbuf_addch(&filename, '/');
 	}
 
-	get_patch_filename(commit, subject, rev->nr, fmt_patch_suffix, &filename);
+	if (rev->numbered_files)
+		strbuf_addf(&filename, "%d", rev->nr);
+	else if (commit)
+		fmt_output_commit(&filename, commit, rev);
+	else
+		fmt_output_subject(&filename, subject, rev);
 
 	if (!quiet)
 		fprintf(realstdout, "%s\n", filename.buf + outdir_offset);
@@ -781,7 +800,6 @@ static void add_branch_description(struct strbuf *buf, const char *branch_name)
 }
 
 static void make_cover_letter(struct rev_info *rev, int use_stdout,
-			      int numbered, int numbered_files,
 			      struct commit *origin,
 			      int nr, struct commit **list, struct commit *head,
 			      const char *branch_name,
@@ -804,7 +822,7 @@ static void make_cover_letter(struct rev_info *rev, int use_stdout,
 	committer = git_committer_info(0);
 
 	if (!use_stdout &&
-	    reopen_stdout(NULL, numbered_files ? NULL : "cover-letter", rev, quiet))
+	    reopen_stdout(NULL, rev->numbered_files ? NULL : "cover-letter", rev, quiet))
 		return;
 
 	log_write_email_headers(rev, head, &pp.subject, &pp.after_subject,
@@ -1024,8 +1042,9 @@ static char *find_branch_name(struct rev_info *rev)
 {
 	int i, positive = -1;
 	unsigned char branch_sha1[20];
-	struct strbuf buf = STRBUF_INIT;
-	const char *branch;
+	const unsigned char *tip_sha1;
+	const char *ref;
+	char *full_ref, *branch = NULL;
 
 	for (i = 0; i < rev->cmdline.nr; i++) {
 		if (rev->cmdline.rev[i].flags & UNINTERESTING)
@@ -1035,18 +1054,27 @@ static char *find_branch_name(struct rev_info *rev)
 		else
 			return NULL;
 	}
-	if (positive < 0)
+	if (0 <= positive) {
+		ref = rev->cmdline.rev[positive].name;
+		tip_sha1 = rev->cmdline.rev[positive].item->sha1;
+	} else if (!rev->cmdline.nr && rev->pending.nr == 1 &&
+		   !strcmp(rev->pending.objects[0].name, "HEAD")) {
+		/*
+		 * No actual ref from command line, but "HEAD" from
+		 * rev->def was added in setup_revisions()
+		 * e.g. format-patch --cover-letter -12
+		 */
+		ref = "HEAD";
+		tip_sha1 = rev->pending.objects[0].item->sha1;
+	} else {
 		return NULL;
-	strbuf_addf(&buf, "refs/heads/%s", rev->cmdline.rev[positive].name);
-	branch = resolve_ref_unsafe(buf.buf, branch_sha1, 1, NULL);
-	if (!branch ||
-	    prefixcmp(branch, "refs/heads/") ||
-	    hashcmp(rev->cmdline.rev[positive].item->sha1, branch_sha1))
-		branch = NULL;
-	strbuf_release(&buf);
-	if (branch)
-		return xstrdup(rev->cmdline.rev[positive].name);
-	return NULL;
+	}
+	if (dwim_ref(ref, strlen(ref), branch_sha1, &full_ref) &&
+	    !prefixcmp(full_ref, "refs/heads/") &&
+	    !hashcmp(tip_sha1, branch_sha1))
+		branch = xstrdup(full_ref + strlen("refs/heads/"));
+	free(full_ref);
+	return branch;
 }
 
 int cmd_format_patch(int argc, const char **argv, const char *prefix)
@@ -1062,7 +1090,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	int nr = 0, total, i;
 	int use_stdout = 0;
 	int start_number = -1;
-	int numbered_files = 0;		/* _just_ numbers */
+	int just_numbers = 0;
 	int ignore_if_in_upstream = 0;
 	int cover_letter = 0;
 	int boundary_count = 0;
@@ -1074,6 +1102,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	struct strbuf buf = STRBUF_INIT;
 	int use_patch_format = 0;
 	int quiet = 0;
+	int reroll_count = -1;
 	char *branch_name = NULL;
 	const struct option builtin_format_patch_options[] = {
 		{ OPTION_CALLBACK, 'n', "numbered", &numbered, NULL,
@@ -1087,12 +1116,14 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    N_("print patches to standard out")),
 		OPT_BOOLEAN(0, "cover-letter", &cover_letter,
 			    N_("generate a cover letter")),
-		OPT_BOOLEAN(0, "numbered-files", &numbered_files,
+		OPT_BOOLEAN(0, "numbered-files", &just_numbers,
 			    N_("use simple number sequence for output file names")),
 		OPT_STRING(0, "suffix", &fmt_patch_suffix, N_("sfx"),
 			    N_("use <sfx> instead of '.patch'")),
 		OPT_INTEGER(0, "start-number", &start_number,
 			    N_("start numbering patches at <n> instead of 1")),
+		OPT_INTEGER('v', "reroll-count", &reroll_count,
+			    N_("mark the series as Nth re-roll")),
 		{ OPTION_CALLBACK, 0, "subject-prefix", &rev, N_("prefix"),
 			    N_("Use [<prefix>] instead of [PATCH]"),
 			    PARSE_OPT_NONEG, subject_prefix_callback },
@@ -1169,6 +1200,14 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			     builtin_format_patch_usage,
 			     PARSE_OPT_KEEP_ARGV0 | PARSE_OPT_KEEP_UNKNOWN |
 			     PARSE_OPT_KEEP_DASHDASH);
+
+	if (0 < reroll_count) {
+		struct strbuf sprefix = STRBUF_INIT;
+		strbuf_addf(&sprefix, "%s v%d",
+			    rev.subject_prefix, reroll_count);
+		rev.reroll_count = reroll_count;
+		rev.subject_prefix = strbuf_detach(&sprefix, NULL);
+	}
 
 	if (do_signoff) {
 		const char *committer;
@@ -1360,12 +1399,12 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 		const char *msgid = clean_message_id(in_reply_to);
 		string_list_append(rev.ref_message_ids, msgid);
 	}
-	rev.numbered_files = numbered_files;
+	rev.numbered_files = just_numbers;
 	rev.patch_suffix = fmt_patch_suffix;
 	if (cover_letter) {
 		if (thread)
 			gen_message_id(&rev, "cover");
-		make_cover_letter(&rev, use_stdout, numbered, numbered_files,
+		make_cover_letter(&rev, use_stdout,
 				  origin, nr, list, head, branch_name, quiet);
 		total++;
 		start_number--;
@@ -1412,7 +1451,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 		}
 
 		if (!use_stdout &&
-		    reopen_stdout(numbered_files ? NULL : commit, NULL, &rev, quiet))
+		    reopen_stdout(rev.numbered_files ? NULL : commit, NULL, &rev, quiet))
 			die(_("Failed to create output files"));
 		shown = log_tree_commit(&rev, commit);
 		free(commit->buffer);

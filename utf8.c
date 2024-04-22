@@ -507,11 +507,66 @@ char *reencode_string(const char *in, const char *out_encoding, const char *in_e
 
 	if (!in_encoding)
 		return NULL;
+
 	conv = iconv_open(out_encoding, in_encoding);
-	if (conv == (iconv_t) -1)
-		return NULL;
+	if (conv == (iconv_t) -1) {
+		/*
+		 * Some platforms do not have the variously spelled variants of
+		 * UTF-8, so let's fall back to trying the most official
+		 * spelling. We do so only as a fallback in case the platform
+		 * does understand the user's spelling, but not our official
+		 * one.
+		 */
+		if (is_encoding_utf8(in_encoding))
+			in_encoding = "UTF-8";
+		if (is_encoding_utf8(out_encoding))
+			out_encoding = "UTF-8";
+		conv = iconv_open(out_encoding, in_encoding);
+		if (conv == (iconv_t) -1)
+			return NULL;
+	}
+
 	out = reencode_string_iconv(in, strlen(in), conv);
 	iconv_close(conv);
 	return out;
 }
 #endif
+
+/*
+ * Returns first character length in bytes for multi-byte `text` according to
+ * `encoding`.
+ *
+ * - The `text` pointer is updated to point at the next character.
+ * - When `remainder_p` is not NULL, on entry `*remainder_p` is how much bytes
+ *   we can consume from text, and on exit `*remainder_p` is reduced by returned
+ *   character length. Otherwise `text` is treated as limited by NUL.
+ */
+int mbs_chrlen(const char **text, size_t *remainder_p, const char *encoding)
+{
+	int chrlen;
+	const char *p = *text;
+	size_t r = (remainder_p ? *remainder_p : SIZE_MAX);
+
+	if (r < 1)
+		return 0;
+
+	if (is_encoding_utf8(encoding)) {
+		pick_one_utf8_char(&p, &r);
+
+		chrlen = p ? (p - *text)
+			   : 1 /* not valid UTF-8 -> raw byte sequence */;
+	}
+	else {
+		/*
+		 * TODO use iconv to decode one char and obtain its chrlen
+		 * for now, let's treat encodings != UTF-8 as one-byte
+		 */
+		chrlen = 1;
+	}
+
+	*text += chrlen;
+	if (remainder_p)
+		*remainder_p -= chrlen;
+
+	return chrlen;
+}

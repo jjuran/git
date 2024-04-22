@@ -280,6 +280,7 @@ int start_command(struct child_process *cmd)
 	int need_in, need_out, need_err;
 	int fdin[2], fdout[2], fderr[2];
 	int failed_errno;
+	char *str;
 
 	/*
 	 * In case of errors we must keep the promise to close FDs
@@ -292,6 +293,7 @@ int start_command(struct child_process *cmd)
 			failed_errno = errno;
 			if (cmd->out > 0)
 				close(cmd->out);
+			str = "standard input";
 			goto fail_pipe;
 		}
 		cmd->in = fdin[1];
@@ -307,6 +309,7 @@ int start_command(struct child_process *cmd)
 				close_pair(fdin);
 			else if (cmd->in)
 				close(cmd->in);
+			str = "standard output";
 			goto fail_pipe;
 		}
 		cmd->out = fdout[0];
@@ -324,9 +327,10 @@ int start_command(struct child_process *cmd)
 				close_pair(fdout);
 			else if (cmd->out)
 				close(cmd->out);
+			str = "standard error";
 fail_pipe:
-			error("cannot create pipe for %s: %s",
-				cmd->argv[0], strerror(failed_errno));
+			error("cannot create %s pipe for %s: %s",
+				str, cmd->argv[0], strerror(failed_errno));
 			errno = failed_errno;
 			return -1;
 		}
@@ -343,6 +347,7 @@ fail_pipe:
 		notify_pipe[0] = notify_pipe[1] = -1;
 
 	cmd->pid = GIT_FORK();
+	failed_errno = errno;
 	if (!cmd->pid) {
 		/*
 		 * Redirect the channel to write syscall error messages to
@@ -422,7 +427,7 @@ fail_pipe:
 	}
 	if (cmd->pid < 0)
 		error("cannot fork() for %s: %s", cmd->argv[0],
-			strerror(failed_errno = errno));
+			strerror(errno));
 	else if (cmd->clean_on_exit)
 		mark_child_for_cleanup(cmd->pid);
 
@@ -750,6 +755,15 @@ int finish_async(struct async *async)
 #endif
 }
 
+char *find_hook(const char *name)
+{
+	char *path = git_path("hooks/%s", name);
+	if (access(path, X_OK) < 0)
+		path = NULL;
+
+	return path;
+}
+
 int run_hook(const char *index_file, const char *name, ...)
 {
 #ifdef USE_CPLUSPLUS_FOR_INIT
@@ -767,11 +781,13 @@ int run_hook(const char *index_file, const char *name, ...)
 #pragma cplusplus reset
 #endif
 
-	if (access(git_path("hooks/%s", name), X_OK) < 0)
+	p = find_hook(name);
+	if (!p)
 		return 0;
 
+	argv_array_push(&argv, p);
+
 	va_start(args, name);
-	argv_array_push(&argv, git_path("hooks/%s", name));
 	while ((p = va_arg(args, const char *)))
 		argv_array_push(&argv, p);
 	va_end(args);

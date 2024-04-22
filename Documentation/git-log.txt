@@ -47,6 +47,11 @@ OPTIONS
 	Print out the ref name given on the command line by which each
 	commit was reached.
 
+--use-mailmap::
+	Use mailmap file to map author and committer names and email
+	to canonical real names and email addresses. See
+	linkgit:git-shortlog[1].
+
 --full-diff::
 	Without this flag, "git log -p <path>..." shows commits that
 	touch the specified paths, and diffs about the same specified
@@ -59,7 +64,7 @@ produced by --stat etc.
 
 --log-size::
 	Before the log message print out its size in bytes. Intended
-	mainly for porcelain tools consumption. If git is unable to
+	mainly for porcelain tools consumption. If Git is unable to
 	produce a valid value size is set to zero.
 	Note that only message is considered, if also a diff is shown
 	its size is not included.
@@ -167,7 +172,7 @@ log.showroot::
 	`git log -p` output would be shown without a diff attached.
 	The default is `true`.
 
-mailmap.file::
+mailmap.*::
 	See linkgit:git-shortlog[1].
 
 notes.displayRef::

@@ -7,10 +7,21 @@
 #            2007 Trolltech ASA
 # License: MIT <http://www.opensource.org/licenses/mit-license.php>
 #
-
-import optparse, sys, os, marshal, subprocess, shelve
-import tempfile, getopt, os.path, time, platform
-import re, shutil
+import sys
+if sys.hexversion < 0x02040000:
+    # The limiter is the subprocess module
+    sys.stderr.write("git-p4: requires Python 2.4 or later.\n")
+    sys.exit(1)
+import os
+import optparse
+import marshal
+import subprocess
+import tempfile
+import time
+import platform
+import re
+import shutil
+import stat
 
 try:
     from subprocess import CalledProcessError
@@ -178,6 +189,22 @@ def p4_system(cmd):
     retcode = subprocess.call(real_cmd, shell=expand)
     if retcode:
         raise CalledProcessError(retcode, real_cmd)
+
+_p4_version_string = None
+def p4_version_string():
+    """Read the version string, showing just the last line, which
+       hopefully is the interesting version bit.
+
+       $ p4 -V
+       Perforce - The Fast Software Configuration Management System.
+       Copyright 1995-2011 Perforce Software.  All rights reserved.
+       Rev. P4/NTX86/2011.1/393975 (2011/12/16).
+    """
+    global _p4_version_string
+    if not _p4_version_string:
+        a = p4_read_pipe_lines(["-V"])
+        _p4_version_string = a[-1].rstrip()
+    return _p4_version_string
 
 def p4_integrate(src, dest):
     p4_system(["integrate", "-Dt", wildcard_encode(src), wildcard_encode(dest)])
@@ -552,42 +579,74 @@ def gitBranchExists(branch):
     return proc.wait() == 0;
 
 _gitConfig = {}
-def gitConfig(key, args = None): # set args to "--bool", for instance
+
+def gitConfig(key):
     if not _gitConfig.has_key(key):
-        argsFilter = ""
-        if args != None:
-            argsFilter = "%s " % args
-        cmd = "git config %s%s" % (argsFilter, key)
-        _gitConfig[key] = read_pipe(cmd, ignore_error=True).strip()
+        cmd = [ "git", "config", key ]
+        s = read_pipe(cmd, ignore_error=True)
+        _gitConfig[key] = s.strip()
+    return _gitConfig[key]
+
+def gitConfigBool(key):
+    """Return a bool, using git config --bool.  It is True only if the
+       variable is set to true, and False if set to false or not present
+       in the config."""
+
+    if not _gitConfig.has_key(key):
+        cmd = [ "git", "config", "--bool", key ]
+        s = read_pipe(cmd, ignore_error=True)
+        v = s.strip()
+        _gitConfig[key] = v == "true"
     return _gitConfig[key]
 
 def gitConfigList(key):
     if not _gitConfig.has_key(key):
-        _gitConfig[key] = read_pipe("git config --get-all %s" % key, ignore_error=True).strip().split(os.linesep)
+        s = read_pipe(["git", "config", "--get-all", key], ignore_error=True)
+        _gitConfig[key] = s.strip().split(os.linesep)
     return _gitConfig[key]
 
-def p4BranchesInGit(branchesAreInRemotes = True):
+def p4BranchesInGit(branchesAreInRemotes=True):
+    """Find all the branches whose names start with "p4/", looking
+       in remotes or heads as specified by the argument.  Return
+       a dictionary of { branch: revision } for each one found.
+       The branch names are the short names, without any
+       "p4/" prefix."""
+
     branches = {}
 
     cmdline = "git rev-parse --symbolic "
     if branchesAreInRemotes:
-        cmdline += " --remotes"
+        cmdline += "--remotes"
     else:
-        cmdline += " --branches"
+        cmdline += "--branches"
 
     for line in read_pipe_lines(cmdline):
         line = line.strip()
 
-        ## only import to p4/
-        if not line.startswith('p4/') or line == "p4/HEAD":
+        # only import to p4/
+        if not line.startswith('p4/'):
             continue
-        branch = line
+        # special symbolic ref to p4/master
+        if line == "p4/HEAD":
+            continue
 
-        # strip off p4
-        branch = re.sub ("^p4/", "", line)
+        # strip off p4/ prefix
+        branch = line[len("p4/"):]
 
         branches[branch] = parseRevision(line)
+
     return branches
+
+def branch_exists(branch):
+    """Make sure that the given ref name really exists."""
+
+    cmd = [ "git", "rev-parse", "--symbolic", "--verify", branch ]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, _ = p.communicate()
+    if p.returncode:
+        return False
+    # expect exactly one line of output: the branch name
+    return out.rstrip() == branch
 
 def findUpstreamBranchPoint(head = "HEAD"):
     branches = p4BranchesInGit()
@@ -690,8 +749,7 @@ def p4PathStartsWith(path, prefix):
     #
     # we may or may not have a problem. If you have core.ignorecase=true,
     # we treat DirA and dira as the same directory
-    ignorecase = gitConfig("core.ignorecase", "--bool") == "true"
-    if ignorecase:
+    if gitConfigBool("core.ignorecase"):
         return path.lower().startswith(prefix.lower())
     return path.startswith(prefix)
 
@@ -921,19 +979,21 @@ class P4Submit(Command, P4UserMap):
                 optparse.make_option("--dry-run", "-n", dest="dry_run", action="store_true"),
                 optparse.make_option("--prepare-p4-only", dest="prepare_p4_only", action="store_true"),
                 optparse.make_option("--conflict", dest="conflict_behavior",
-                                     choices=self.conflict_behavior_choices)
+                                     choices=self.conflict_behavior_choices),
+                optparse.make_option("--branch", dest="branch"),
         ]
         self.description = "Submit changes from git to the perforce depot."
         self.usage += " [name of git branch to submit into perforce depot]"
         self.origin = ""
         self.detectRenames = False
-        self.preserveUser = gitConfig("git-p4.preserveUser").lower() == "true"
+        self.preserveUser = gitConfigBool("git-p4.preserveUser")
         self.dry_run = False
         self.prepare_p4_only = False
         self.conflict_behavior = None
         self.isWindows = (platform.system() == "Windows")
         self.exportLabels = False
         self.p4HasMoveCommand = p4_has_move_command()
+        self.branch = None
 
     def check(self):
         if len(p4CmdList("opened ...")) > 0:
@@ -1021,7 +1081,8 @@ class P4Submit(Command, P4UserMap):
     def p4UserForCommit(self,id):
         # Return the tuple (perforce user,git email) for a given git commit id
         self.getUserMapFromPerforceServer()
-        gitEmail = read_pipe("git log --max-count=1 --format='%%ae' %s" % id)
+        gitEmail = read_pipe(["git", "log", "--max-count=1",
+                              "--format=%ae", id])
         gitEmail = gitEmail.strip()
         if not self.emails.has_key(gitEmail):
             return (None,gitEmail)
@@ -1034,7 +1095,7 @@ class P4Submit(Command, P4UserMap):
             (user,email) = self.p4UserForCommit(id)
             if not user:
                 msg = "Cannot find p4 user for email %s in commit %s." % (email, id)
-                if gitConfig('git-p4.allowMissingP4Users').lower() == "true":
+                if gitConfigBool("git-p4.allowMissingP4Users"):
                     print "%s" % msg
                 else:
                     die("Error: %s\nSet git-p4.allowMissingP4Users to true to allow this." % msg)
@@ -1129,7 +1190,7 @@ class P4Submit(Command, P4UserMap):
            message.  Return true if okay to continue with the submit."""
 
         # if configured to skip the editing part, just submit
-        if gitConfig("git-p4.skipSubmitEdit") == "true":
+        if gitConfigBool("git-p4.skipSubmitEdit"):
             return True
 
         # look at the modification time, to check later if the user saved
@@ -1145,7 +1206,7 @@ class P4Submit(Command, P4UserMap):
 
         # If the file was not saved, prompt to see if this patch should
         # be skipped.  But skip this verification step if configured so.
-        if gitConfig("git-p4.skipSubmitEditCheck") == "true":
+        if gitConfigBool("git-p4.skipSubmitEditCheck"):
             return True
 
         # modification time updated means user saved the file
@@ -1203,6 +1264,9 @@ class P4Submit(Command, P4UserMap):
                     p4_edit(dest)
                     pureRenameCopy.discard(dest)
                     filesToChangeExecBit[dest] = diff['dst_mode']
+                if self.isWindows:
+                    # turn off read-only attribute
+                    os.chmod(dest, stat.S_IWRITE)
                 os.unlink(dest)
                 editedFiles.add(dest)
             elif modifier == "R":
@@ -1221,6 +1285,8 @@ class P4Submit(Command, P4UserMap):
                         p4_edit(dest)   # with move: already open, writable
                     filesToChangeExecBit[dest] = diff['dst_mode']
                 if not self.p4HasMoveCommand:
+                    if self.isWindows:
+                        os.chmod(dest, stat.S_IWRITE)
                     os.unlink(dest)
                     filesToDelete.add(src)
                 editedFiles.add(dest)
@@ -1240,7 +1306,7 @@ class P4Submit(Command, P4UserMap):
 
             # Patch failed, maybe it's just RCS keyword woes. Look through
             # the patch to see if that's possible.
-            if gitConfig("git-p4.attemptRCSCleanup","--bool") == "true":
+            if gitConfigBool("git-p4.attemptRCSCleanup"):
                 file = None
                 pattern = None
                 kwfiles = {}
@@ -1261,6 +1327,10 @@ class P4Submit(Command, P4UserMap):
                 for file in kwfiles:
                     if verbose:
                         print "zapping %s with %s" % (line,pattern)
+                    # File is being deleted, so not open in p4.  Must
+                    # disable the read-only bit on windows.
+                    if self.isWindows and file not in editedFiles:
+                        os.chmod(file, stat.S_IWRITE)
                     self.patchRCSKeywords(file, kwfiles[file])
                     fixed_rcs_keywords = True
 
@@ -1531,7 +1601,7 @@ class P4Submit(Command, P4UserMap):
             sys.exit(128)
 
         self.useClientSpec = False
-        if gitConfig("git-p4.useclientspec", "--bool") == "true":
+        if gitConfigBool("git-p4.useclientspec"):
             self.useClientSpec = True
         if self.useClientSpec:
             self.clientSpecDirs = getClientSpec()
@@ -1567,11 +1637,11 @@ class P4Submit(Command, P4UserMap):
         self.check()
 
         commits = []
-        for line in read_pipe_lines("git rev-list --no-merges %s..%s" % (self.origin, self.master)):
+        for line in read_pipe_lines(["git", "rev-list", "--no-merges", "%s..%s" % (self.origin, self.master)]):
             commits.append(line.strip())
         commits.reverse()
 
-        if self.preserveUser or (gitConfig("git-p4.skipUserNameCheck") == "true"):
+        if self.preserveUser or gitConfigBool("git-p4.skipUserNameCheck"):
             self.checkAuthorship = False
         else:
             self.checkAuthorship = True
@@ -1607,7 +1677,7 @@ class P4Submit(Command, P4UserMap):
         else:
             self.diffOpts += " -C%s" % detectCopies
 
-        if gitConfig("git-p4.detectCopiesHarder", "--bool") == "true":
+        if gitConfigBool("git-p4.detectCopiesHarder"):
             self.diffOpts += " --find-copies-harder"
 
         #
@@ -1670,6 +1740,8 @@ class P4Submit(Command, P4UserMap):
             print "All commits applied!"
 
             sync = P4Sync()
+            if self.branch:
+                sync.branch = self.branch
             sync.run([])
 
             rebase = P4Rebase()
@@ -1689,7 +1761,7 @@ class P4Submit(Command, P4UserMap):
                                            "--format=format:%h %s",  c])
                 print "You will have to do 'git p4 sync' and rebase."
 
-        if gitConfig("git-p4.exportLabels", "--bool") == "true":
+        if gitConfigBool("git-p4.exportLabels"):
             self.exportLabels = True
 
         if self.exportLabels:
@@ -1959,7 +2031,6 @@ class P4Sync(Command, P4UserMap):
         self.syncWithOrigin = True
         self.importIntoRemotes = True
         self.maxChanges = ""
-        self.isWindows = (platform.system() == "Windows")
         self.keepRepoPath = False
         self.depotPaths = None
         self.p4BranchesInGit = []
@@ -2104,7 +2175,14 @@ class P4Sync(Command, P4UserMap):
             # operations.  utf16 is converted to ascii or utf8, perhaps.
             # But ascii text saved as -t utf16 is completely mangled.
             # Invoke print -o to get the real contents.
+            #
+            # On windows, the newlines will always be mangled by print, so put
+            # them back too.  This is not needed to the cygwin windows version,
+            # just the native "NT" type.
+            #
             text = p4_read_pipe(['print', '-q', '-o', '-', file['depotFile']])
+            if p4_version_string().find("/NT") >= 0:
+                text = text.replace("\r\n", "\n")
             contents = [ text ]
 
         if type_base == "apple":
@@ -2119,15 +2197,6 @@ class P4Sync(Command, P4UserMap):
             # non-mac machines can never find a use for apple filetype.
             print "\nIgnoring apple filetype file %s" % file['depotFile']
             return
-
-        # Perhaps windows wants unicode, utf16 newlines translated too;
-        # but this is not doing it.
-        if self.isWindows and type_base == "text":
-            mangled = []
-            for data in contents:
-                data = data.replace("\r\n", "\n")
-                mangled.append(data)
-            contents = mangled
 
         # Note that we do not try to de-mangle keywords on utf16 files,
         # even though in theory somebody may want that.
@@ -2523,13 +2592,6 @@ class P4Sync(Command, P4UserMap):
                 branch = branch[len(self.projectName):]
             self.knownBranches[branch] = branch
 
-    def listExistingP4GitBranches(self):
-        # branches holds mapping from name to commit
-        branches = p4BranchesInGit(self.importIntoRemotes)
-        self.p4BranchesInGit = branches.keys()
-        for branch in branches.keys():
-            self.initialParents[self.refPrefix + branch] = branches[branch]
-
     def updateOptionDict(self, d):
         option_keys = {}
         if self.keepRepoPath:
@@ -2613,7 +2675,8 @@ class P4Sync(Command, P4UserMap):
 
     def searchParent(self, parent, branch, target):
         parentFound = False
-        for blob in read_pipe_lines(["git", "rev-list", "--reverse", "--no-merges", parent]):
+        for blob in read_pipe_lines(["git", "rev-list", "--reverse",
+                                     "--no-merges", parent]):
             blob = blob.strip()
             if len(read_pipe(["git", "diff-tree", blob, target])) == 0:
                 parentFound = True
@@ -2684,7 +2747,7 @@ class P4Sync(Command, P4UserMap):
 
                         blob = None
                         if len(parent) > 0:
-                            tempBranch = os.path.join(self.tempBranchLocation, "%d" % (change))
+                            tempBranch = "%s/%d" % (self.tempBranchLocation, change)
                             if self.verbose:
                                 print "Creating temporary branch: " + tempBranch
                             self.commit(description, filesForCommit, tempBranch)
@@ -2701,6 +2764,7 @@ class P4Sync(Command, P4UserMap):
                     files = self.extractFilesFromCommit(description)
                     self.commit(description, files, self.branch,
                                 self.initialParent)
+                    # only needed once, to connect to the previous commit
                     self.initialParent = ""
             except IOError:
                 print self.gitError.read()
@@ -2766,41 +2830,38 @@ class P4Sync(Command, P4UserMap):
     def run(self, args):
         self.depotPaths = []
         self.changeRange = ""
-        self.initialParent = ""
         self.previousDepotPaths = []
+        self.hasOrigin = False
 
         # map from branch depot path to parent branch
         self.knownBranches = {}
         self.initialParents = {}
-        self.hasOrigin = originP4BranchesExist()
-        if not self.syncWithOrigin:
-            self.hasOrigin = False
 
         if self.importIntoRemotes:
             self.refPrefix = "refs/remotes/p4/"
         else:
             self.refPrefix = "refs/heads/p4/"
 
-        if self.syncWithOrigin and self.hasOrigin:
-            if not self.silent:
-                print "Syncing with origin first by calling git fetch origin"
-            system("git fetch origin")
+        if self.syncWithOrigin:
+            self.hasOrigin = originP4BranchesExist()
+            if self.hasOrigin:
+                if not self.silent:
+                    print 'Syncing with origin first, using "git fetch origin"'
+                system("git fetch origin")
 
+        branch_arg_given = bool(self.branch)
         if len(self.branch) == 0:
             self.branch = self.refPrefix + "master"
             if gitBranchExists("refs/heads/p4") and self.importIntoRemotes:
                 system("git update-ref %s refs/heads/p4" % self.branch)
-                system("git branch -D p4");
-            # create it /after/ importing, when master exists
-            if not gitBranchExists(self.refPrefix + "HEAD") and self.importIntoRemotes and gitBranchExists(self.branch):
-                system("git symbolic-ref %sHEAD %s" % (self.refPrefix, self.branch))
+                system("git branch -D p4")
 
         # accept either the command-line option, or the configuration variable
         if self.useClientSpec:
             # will use this after clone to set the variable
             self.useClientSpec_from_options = True
         else:
-            if gitConfig("git-p4.useclientspec", "--bool") == "true":
+            if gitConfigBool("git-p4.useclientspec"):
                 self.useClientSpec = True
         if self.useClientSpec:
             self.clientSpecDirs = getClientSpec()
@@ -2810,12 +2871,25 @@ class P4Sync(Command, P4UserMap):
         if args == []:
             if self.hasOrigin:
                 createOrUpdateBranchesFromOrigin(self.refPrefix, self.silent)
-            self.listExistingP4GitBranches()
+
+            # branches holds mapping from branch name to sha1
+            branches = p4BranchesInGit(self.importIntoRemotes)
+
+            # restrict to just this one, disabling detect-branches
+            if branch_arg_given:
+                short = self.branch.split("/")[-1]
+                if short in branches:
+                    self.p4BranchesInGit = [ short ]
+            else:
+                self.p4BranchesInGit = branches.keys()
 
             if len(self.p4BranchesInGit) > 1:
                 if not self.silent:
                     print "Importing from/into multiple branches"
                 self.detectBranches = True
+                for branch in branches.keys():
+                    self.initialParents[self.refPrefix + branch] = \
+                        branches[branch]
 
             if self.verbose:
                 print "branches: %s" % self.p4BranchesInGit
@@ -2852,13 +2926,21 @@ class P4Sync(Command, P4UserMap):
             if p4Change > 0:
                 self.depotPaths = sorted(self.previousDepotPaths)
                 self.changeRange = "@%s,#head" % p4Change
-                if not self.detectBranches:
-                    self.initialParent = parseRevision(self.branch)
                 if not self.silent and not self.detectBranches:
                     print "Performing incremental import into %s git branch" % self.branch
 
+        # accept multiple ref name abbreviations:
+        #    refs/foo/bar/branch -> use it exactly
+        #    p4/branch -> prepend refs/remotes/ or refs/heads/
+        #    branch -> prepend refs/remotes/p4/ or refs/heads/p4/
         if not self.branch.startswith("refs/"):
-            self.branch = "refs/heads/" + self.branch
+            if self.importIntoRemotes:
+                prepend = "refs/remotes/"
+            else:
+                prepend = "refs/heads/"
+            if not self.branch.startswith("p4/"):
+                prepend += "p4/"
+            self.branch = prepend + self.branch
 
         if len(args) == 0 and self.depotPaths:
             if not self.silent:
@@ -2969,8 +3051,21 @@ class P4Sync(Command, P4UserMap):
             else:
                 # catch "git p4 sync" with no new branches, in a repo that
                 # does not have any existing p4 branches
-                if len(args) == 0 and not self.p4BranchesInGit:
-                    die("No remote p4 branches.  Perhaps you never did \"git p4 clone\" in here.");
+                if len(args) == 0:
+                    if not self.p4BranchesInGit:
+                        die("No remote p4 branches.  Perhaps you never did \"git p4 clone\" in here.")
+
+                    # The default branch is master, unless --branch is used to
+                    # specify something else.  Make sure it exists, or complain
+                    # nicely about how to use --branch.
+                    if not self.detectBranches:
+                        if not branch_exists(self.branch):
+                            if branch_arg_given:
+                                die("Error: branch %s does not exist." % self.branch)
+                            else:
+                                die("Error: no branch %s; perhaps specify one with --branch." %
+                                    self.branch)
+
                 if self.verbose:
                     print "Getting p4 changes for %s...%s" % (', '.join(self.depotPaths),
                                                               self.changeRange)
@@ -2988,6 +3083,14 @@ class P4Sync(Command, P4UserMap):
 
                 self.updatedBranches = set()
 
+                if not self.detectBranches:
+                    if args:
+                        # start a new branch
+                        self.initialParent = ""
+                    else:
+                        # build on a previous revision
+                        self.initialParent = parseRevision(self.branch)
+
                 self.importChanges(changes)
 
                 if not self.silent:
@@ -2998,7 +3101,7 @@ class P4Sync(Command, P4UserMap):
                             sys.stdout.write("%s " % b)
                         sys.stdout.write("\n")
 
-        if gitConfig("git-p4.importLabels", "--bool") == "true":
+        if gitConfigBool("git-p4.importLabels"):
             self.importLabels = True
 
         if self.importLabels:
@@ -3019,6 +3122,13 @@ class P4Sync(Command, P4UserMap):
             for branch in self.tempBranches:
                 read_pipe("git update-ref -d %s" % branch)
             os.rmdir(os.path.join(os.environ.get("GIT_DIR", ".git"), self.tempBranchLocation))
+
+        # Create a symbolic ref p4/HEAD pointing to p4/<branch> to allow
+        # a convenient shortcut refname "p4".
+        if self.importIntoRemotes:
+            head_ref = self.refPrefix + "HEAD"
+            if not gitBranchExists(head_ref) and gitBranchExists(self.branch):
+                system(["git", "symbolic-ref", head_ref, self.branch])
 
         return True
 
@@ -3109,6 +3219,7 @@ class P4Clone(P4Sync):
         self.cloneExclude = ["/"+p for p in self.cloneExclude]
         for p in depotPaths:
             if not p.startswith("//"):
+                sys.stderr.write('Depot paths must start with "//": %s\n' % p)
                 return False
 
         if not self.cloneDestination:
@@ -3129,17 +3240,15 @@ class P4Clone(P4Sync):
 
         if not P4Sync.run(self, depotPaths):
             return False
-        if self.branch != "master":
-            if self.importIntoRemotes:
-                masterbranch = "refs/remotes/p4/master"
-            else:
-                masterbranch = "refs/heads/p4/master"
-            if gitBranchExists(masterbranch):
-                system("git branch master %s" % masterbranch)
-                if not self.cloneBare:
-                    system("git checkout -f")
-            else:
-                print "Could not detect main branch. No checkout/master branch created."
+
+        # create a master branch and check out a work tree
+        if gitBranchExists(self.branch):
+            system([ "git", "branch", "master", self.branch ])
+            if not self.cloneBare:
+                system([ "git", "checkout", "-f" ])
+        else:
+            print 'Not checking out any branch, use ' \
+                  '"git checkout -q -b master <branch>"'
 
         # auto-set this variable if invoked with --use-client-spec
         if self.useClientSpec_from_options:
