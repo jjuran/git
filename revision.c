@@ -2026,10 +2026,11 @@ static struct commit_list **simplify_one(struct rev_info *revs, struct commit *c
 		if (revs->first_parent_only)
 			break;
 	}
-	if (!revs->first_parent_only)
-		cnt = remove_duplicate_parents(commit);
-	else
+
+	if (revs->first_parent_only)
 		cnt = 1;
+	else
+		cnt = remove_duplicate_parents(commit);
 
 	/*
 	 * It is possible that we are a merge and one side branch
@@ -2294,7 +2295,7 @@ static int commit_match(struct commit *commit, struct rev_info *opt)
 	 * in it.
 	 */
 	encoding = get_log_output_encoding();
-	message = logmsg_reencode(commit, encoding);
+	message = logmsg_reencode(commit, NULL, encoding);
 
 	/* Copy the commit to temporary if we are using "fake" headers */
 	if (buf.len)

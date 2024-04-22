@@ -26,6 +26,7 @@ static const char upload_pack_usage[] = "git upload-pack [--strict] [--timeout=<
 #define SHALLOW		(1u << 16)
 #define NOT_SHALLOW	(1u << 17)
 #define CLIENT_SHALLOW	(1u << 18)
+#define HIDDEN_REF	(1u << 19)
 
 static unsigned long oldest_have;
 
@@ -33,6 +34,7 @@ static int multi_ack;
 static int no_done;
 static int use_thin_pack, use_ofs_delta, use_include_tag;
 static int no_progress, daemon_mode;
+static int allow_tip_sha1_in_want;
 static int shallow_nr;
 static struct object_array have_obj;
 static struct object_array want_obj;
@@ -42,20 +44,12 @@ static unsigned int timeout;
  * otherwise maximum packet size (up to 65520 bytes).
  */
 static int use_sideband;
-static int debug_fd;
 static int advertise_refs;
 static int stateless_rpc;
 
 static void reset_timeout(void)
 {
 	alarm(timeout);
-}
-
-static int strip(char *line, int len)
-{
-	if (len && line[len-1] == '\n')
-		line[--len] = 0;
-	return len;
 }
 
 static ssize_t send_client_data(int fd, const char *data, ssize_t sz)
@@ -70,7 +64,8 @@ static ssize_t send_client_data(int fd, const char *data, ssize_t sz)
 		xwrite(fd, data, sz);
 		return sz;
 	}
-	return safe_write(fd, data, sz);
+	write_or_die(fd, data, sz);
+	return sz;
 }
 
 static FILE *pack_pipe = NULL;
@@ -413,7 +408,6 @@ static int ok_to_give_up(void)
 
 static int get_common_commits(void)
 {
-	static char line[1000];
 	unsigned char sha1[20];
 	char last_hex[41];
 	int got_common = 0;
@@ -423,10 +417,10 @@ static int get_common_commits(void)
 	save_commit_buffer = 0;
 
 	for (;;) {
-		int len = packet_read_line(0, line, sizeof(line));
+		char *line = packet_read_line(0, NULL);
 		reset_timeout();
 
-		if (!len) {
+		if (!line) {
 			if (multi_ack == 2 && got_common
 			    && !got_other && ok_to_give_up()) {
 				sent_ready = 1;
@@ -445,7 +439,6 @@ static int get_common_commits(void)
 			got_other = 0;
 			continue;
 		}
-		strip(line, len);
 		if (!prefixcmp(line, "have ")) {
 			switch (got_sha1(line+5, sha1)) {
 			case -1: /* they have what we do not */
@@ -485,6 +478,12 @@ static int get_common_commits(void)
 	}
 }
 
+static int is_our_ref(struct object *o)
+{
+	return o->flags &
+		((allow_tip_sha1_in_want ? HIDDEN_REF : 0) | OUR_REF);
+}
+
 static void check_non_tip(void)
 {
 	static const char *argv[] = {
@@ -521,7 +520,7 @@ static void check_non_tip(void)
 		o = get_indexed_object(--i);
 		if (!o)
 			continue;
-		if (!(o->flags & OUR_REF))
+		if (!is_our_ref(o))
 			continue;
 		memcpy(namebuf + 1, sha1_to_hex(o->sha1), 40);
 		if (write_in_full(cmd.in, namebuf, 42) < 0)
@@ -530,7 +529,7 @@ static void check_non_tip(void)
 	namebuf[40] = '\n';
 	for (i = 0; i < want_obj.nr; i++) {
 		o = want_obj.objects[i].item;
-		if (o->flags & OUR_REF)
+		if (is_our_ref(o))
 			continue;
 		memcpy(namebuf, sha1_to_hex(o->sha1), 40);
 		if (write_in_full(cmd.in, namebuf, 41) < 0)
@@ -564,7 +563,7 @@ error:
 	/* Pick one of them (we know there at least is one) */
 	for (i = 0; i < want_obj.nr; i++) {
 		o = want_obj.objects[i].item;
-		if (!(o->flags & OUR_REF))
+		if (!is_our_ref(o))
 			die("git upload-pack: not our ref %s",
 			    sha1_to_hex(o->sha1));
 	}
@@ -573,36 +572,33 @@ error:
 static void receive_needs(void)
 {
 	struct object_array shallows = OBJECT_ARRAY_INIT;
-	static char line[1000];
-	int len, depth = 0;
+	int depth = 0;
 	int has_non_tip = 0;
 
 	shallow_nr = 0;
-	if (debug_fd)
-		write_str_in_full(debug_fd, "#S\n");
 	for (;;) {
 		struct object *o;
 		const char *features;
 		unsigned char sha1_buf[20];
-		len = packet_read_line(0, line, sizeof(line));
+		char *line = packet_read_line(0, NULL);
 		reset_timeout();
-		if (!len)
+		if (!line)
 			break;
-		if (debug_fd)
-			write_in_full(debug_fd, line, len);
 
 		if (!prefixcmp(line, "shallow ")) {
 			unsigned char sha1[20];
 			struct object *object;
-			if (get_sha1(line + 8, sha1))
+			if (get_sha1_hex(line + 8, sha1))
 				die("invalid shallow line: %s", line);
 			object = parse_object(sha1);
 			if (!object)
 				die("did not find object for %s", line);
 			if (object->type != OBJ_COMMIT)
 				die("invalid shallow object %s", sha1_to_hex(sha1));
-			object->flags |= CLIENT_SHALLOW;
-			add_object_array(object, NULL, &shallows);
+			if (!(object->flags & CLIENT_SHALLOW)) {
+				object->flags |= CLIENT_SHALLOW;
+				add_object_array(object, NULL, &shallows);
+			}
 			continue;
 		}
 		if (!prefixcmp(line, "deepen ")) {
@@ -644,13 +640,11 @@ static void receive_needs(void)
 			    sha1_to_hex(sha1_buf));
 		if (!(o->flags & WANTED)) {
 			o->flags |= WANTED;
-			if (!(o->flags & OUR_REF))
+			if (!is_our_ref(o))
 				has_non_tip = 1;
 			add_object_array(o, NULL, &want_obj);
 		}
 	}
-	if (debug_fd)
-		write_str_in_full(debug_fd, "#E\n");
 
 	/*
 	 * We have sent all our refs already, and the other end
@@ -730,8 +724,10 @@ static int mark_our_ref(const char *refname, const unsigned char *sha1, int flag
 {
 	struct object *o = lookup_unknown_object(sha1);
 
-	if (ref_is_hidden(refname))
+	if (ref_is_hidden(refname)) {
+		o->flags |= HIDDEN_REF;
 		return 1;
+	}
 	if (!o)
 		die("git upload-pack: cannot find object %s:", sha1_to_hex(sha1));
 	o->flags |= OUR_REF;
@@ -750,9 +746,10 @@ static int send_ref(const char *refname, const unsigned char *sha1, int flag, vo
 		return 0;
 
 	if (capabilities)
-		packet_write(1, "%s %s%c%s%s agent=%s\n",
+		packet_write(1, "%s %s%c%s%s%s agent=%s\n",
 			     sha1_to_hex(sha1), refname_nons,
 			     0, capabilities,
+			     allow_tip_sha1_in_want ? " allow-tip-sha1-in-want" : "",
 			     stateless_rpc ? " no-done" : "",
 			     git_user_agent_sanitized());
 	else
@@ -786,6 +783,8 @@ static void upload_pack(void)
 
 static int upload_pack_config(const char *var, const char *value, void *unused)
 {
+	if (!strcmp("uploadpack.allowtipsha1inwant", var))
+		allow_tip_sha1_in_want = git_config_bool(var, value);
 	return parse_hide_refs_config(var, value, "uploadpack");
 }
 
@@ -841,8 +840,6 @@ int main(int argc, char **argv)
 	if (is_repository_shallow())
 		die("attempt to fetch/clone from a shallow repository");
 	git_config(upload_pack_config, NULL);
-	if (getenv("GIT_DEBUG_SEND_PACK"))
-		debug_fd = atoi(getenv("GIT_DEBUG_SEND_PACK"));
 	upload_pack();
 	return 0;
 }

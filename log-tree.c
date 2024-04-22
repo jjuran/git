@@ -9,6 +9,7 @@
 #include "string-list.h"
 #include "color.h"
 #include "gpg-interface.h"
+#include "sequencer.h"
 
 struct decoration name_decoration = { "object names" };
 
@@ -174,119 +175,52 @@ static void show_children(struct rev_info *opt, struct commit *commit, int abbre
 	}
 }
 
-void show_decorations(struct rev_info *opt, struct commit *commit)
+/*
+ * The caller makes sure there is no funny color before
+ * calling. format_decorations makes sure the same after return.
+ */
+void format_decorations(struct strbuf *sb,
+			const struct commit *commit,
+			int use_color)
 {
 	const char *prefix;
 	struct name_decoration *decoration;
 	const char *color_commit =
-		diff_get_color_opt(&opt->diffopt, DIFF_COMMIT);
+		diff_get_color(use_color, DIFF_COMMIT);
 	const char *color_reset =
-		decorate_get_color_opt(&opt->diffopt, DECORATION_NONE);
+		decorate_get_color(use_color, DECORATION_NONE);
 
-	if (opt->show_source && commit->util)
-		printf("\t%s", (char *) commit->util);
-	if (!opt->show_decorations)
-		return;
 	decoration = lookup_decoration(&name_decoration, &commit->object);
 	if (!decoration)
 		return;
 	prefix = " (";
 	while (decoration) {
-		printf("%s", prefix);
-		fputs(decorate_get_color_opt(&opt->diffopt, decoration->type),
-		      stdout);
+		strbuf_addstr(sb, color_commit);
+		strbuf_addstr(sb, prefix);
+		strbuf_addstr(sb, decorate_get_color(use_color, decoration->type));
 		if (decoration->type == DECORATION_REF_TAG)
-			fputs("tag: ", stdout);
-		printf("%s", decoration->name);
-		fputs(color_reset, stdout);
-		fputs(color_commit, stdout);
+			strbuf_addstr(sb, "tag: ");
+		strbuf_addstr(sb, decoration->name);
+		strbuf_addstr(sb, color_reset);
 		prefix = ", ";
 		decoration = decoration->next;
 	}
-	putchar(')');
+	strbuf_addstr(sb, color_commit);
+	strbuf_addch(sb, ')');
+	strbuf_addstr(sb, color_reset);
 }
 
-/*
- * Search for "^[-A-Za-z]+: [^@]+@" pattern. It usually matches
- * Signed-off-by: and Acked-by: lines.
- */
-static int detect_any_signoff(char *letter, int size)
+void show_decorations(struct rev_info *opt, struct commit *commit)
 {
-	char *cp;
-	int seen_colon = 0;
-	int seen_at = 0;
-	int seen_name = 0;
-	int seen_head = 0;
+	struct strbuf sb = STRBUF_INIT;
 
-	cp = letter + size;
-	while (letter <= --cp && *cp == '\n')
-		continue;
-
-	while (letter <= cp) {
-		char ch = *cp--;
-		if (ch == '\n')
-			break;
-
-		if (!seen_at) {
-			if (ch == '@')
-				seen_at = 1;
-			continue;
-		}
-		if (!seen_colon) {
-			if (ch == '@')
-				return 0;
-			else if (ch == ':')
-				seen_colon = 1;
-			else
-				seen_name = 1;
-			continue;
-		}
-		if (('A' <= ch && ch <= 'Z') ||
-		    ('a' <= ch && ch <= 'z') ||
-		    ch == '-') {
-			seen_head = 1;
-			continue;
-		}
-		/* no empty last line doesn't match */
-		return 0;
-	}
-	return seen_head && seen_name;
-}
-
-static void append_signoff(struct strbuf *sb, const char *signoff)
-{
-	static const char signed_off_by[] = "Signed-off-by: ";
-	size_t signoff_len = strlen(signoff);
-	int has_signoff = 0;
-	char *cp;
-
-	cp = sb->buf;
-
-	/* First see if we already have the sign-off by the signer */
-	while ((cp = strstr(cp, signed_off_by))) {
-
-		has_signoff = 1;
-
-		cp += strlen(signed_off_by);
-		if (cp + signoff_len >= sb->buf + sb->len)
-			break;
-		if (strncmp(cp, signoff, signoff_len))
-			continue;
-		if (!isspace(cp[signoff_len]))
-			continue;
-		/* we already have him */
+	if (opt->show_source && commit->util)
+		printf("\t%s", (char *) commit->util);
+	if (!opt->show_decorations)
 		return;
-	}
-
-	if (!has_signoff)
-		has_signoff = detect_any_signoff(sb->buf, sb->len);
-
-	if (!has_signoff)
-		strbuf_addch(sb, '\n');
-
-	strbuf_addstr(sb, signed_off_by);
-	strbuf_add(sb, signoff, signoff_len);
-	strbuf_addch(sb, '\n');
+	format_decorations(&sb, commit, opt->diffopt.use_color);
+	fputs(sb.buf, stdout);
+	strbuf_release(&sb);
 }
 
 static unsigned int digits_in_number(unsigned int number)
@@ -622,8 +556,8 @@ void show_log(struct rev_info *opt)
 			printf(" (from %s)",
 			       find_unique_abbrev(parent->object.sha1,
 						  abbrev_commit));
+		fputs(diff_get_color_opt(&opt->diffopt, DIFF_RESET), stdout);
 		show_decorations(opt, commit);
-		printf("%s", diff_get_color_opt(&opt->diffopt, DIFF_RESET));
 		if (opt->commit_format == CMIT_FMT_ONELINE) {
 			putchar(' ');
 		} else {
@@ -669,8 +603,10 @@ void show_log(struct rev_info *opt)
 	/*
 	 * And then the pretty-printed message itself
 	 */
-	if (ctx.need_8bit_cte >= 0)
-		ctx.need_8bit_cte = has_non_ascii(opt->add_signoff);
+	if (ctx.need_8bit_cte >= 0 && opt->add_signoff)
+		ctx.need_8bit_cte =
+			has_non_ascii(fmt_name(getenv("GIT_COMMITTER_NAME"),
+					       getenv("GIT_COMMITTER_EMAIL")));
 	ctx.date_mode = opt->date_mode;
 	ctx.date_mode_explicit = opt->date_mode_explicit;
 	ctx.abbrev = opt->diffopt.abbrev;
@@ -683,7 +619,7 @@ void show_log(struct rev_info *opt)
 	pretty_print_commit(&ctx, commit, &msgbuf);
 
 	if (opt->add_signoff)
-		append_signoff(&msgbuf, opt->add_signoff);
+		append_signoff(&msgbuf, 0, APPEND_SIGNOFF_DEDUP);
 
 	if ((ctx.fmt != CMIT_FMT_USERFORMAT) &&
 	    ctx.notes_message && *ctx.notes_message) {
@@ -789,10 +725,13 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 {
 	int showed_log;
 	struct commit_list *parents;
-	unsigned const char *sha1 = commit->object.sha1;
+	unsigned const char *sha1;
 
 	if (!opt->diff && !DIFF_OPT_TST(&opt->diffopt, EXIT_WITH_STATUS))
 		return 0;
+
+	parse_commit(commit);
+	sha1 = commit->tree->object.sha1;
 
 	/* Root commit? */
 	parents = commit->parents;
@@ -816,7 +755,9 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 			 * parent, showing summary diff of the others
 			 * we merged _in_.
 			 */
-			diff_tree_sha1(parents->item->object.sha1, sha1, "", &opt->diffopt);
+			parse_commit(parents->item);
+			diff_tree_sha1(parents->item->tree->object.sha1,
+				       sha1, "", &opt->diffopt);
 			log_tree_diff_flush(opt);
 			return !opt->loginfo;
 		}
@@ -829,7 +770,9 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 	for (;;) {
 		struct commit *parent = parents->item;
 
-		diff_tree_sha1(parent->object.sha1, sha1, "", &opt->diffopt);
+		parse_commit(parent);
+		diff_tree_sha1(parent->tree->object.sha1,
+			       sha1, "", &opt->diffopt);
 		log_tree_diff_flush(opt);
 
 		showed_log |= !opt->loginfo;

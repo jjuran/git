@@ -17,20 +17,6 @@ if ! "$PYTHON_PATH" -c 'import bzrlib'; then
 	test_done
 fi
 
-cmd='
-import bzrlib
-bzrlib.initialize()
-import bzrlib.plugin
-bzrlib.plugin.load_plugins()
-import bzrlib.plugins.fastimport
-'
-
-if ! "$PYTHON_PATH" -c "$cmd"; then
-	echo "consider setting BZR_PLUGIN_PATH=$HOME/.bazaar/plugins" 1>&2
-	skip_all='skipping remote-bzr tests; bzr-fastimport not available'
-	test_done
-fi
-
 check () {
 	(cd $1 &&
 	git log --format='%s' -1 &&
@@ -136,7 +122,219 @@ test_expect_success 'special modes' '
   (cd gitrepo &&
   git cat-file -p HEAD:link > ../actual) &&
 
-  echo -n content > expected &&
+  printf content > expected &&
+  test_cmp expected actual
+'
+
+cat > expected <<EOF
+100644 blob 54f9d6da5c91d556e6b54340b1327573073030af	content
+100755 blob 68769579c3eaadbe555379b9c3538e6628bae1eb	executable
+120000 blob 6b584e8ece562ebffc15d38808cd6b98fc3d97ea	link
+040000 tree 35c0caa46693cef62247ac89a680f0c5ce32b37b	movedir-new
+EOF
+
+test_expect_success 'moving directory' '
+  (cd bzrrepo &&
+  mkdir movedir &&
+  echo one > movedir/one &&
+  echo two > movedir/two &&
+  bzr add movedir &&
+  bzr commit -m movedir &&
+  bzr mv movedir movedir-new &&
+  bzr commit -m movedir-new) &&
+
+  (cd gitrepo &&
+  git pull &&
+  git ls-tree HEAD > ../actual) &&
+
+  test_cmp expected actual
+'
+
+test_expect_success 'different authors' '
+  (cd bzrrepo &&
+  echo john >> content &&
+  bzr commit -m john \
+    --author "Jane Rey <jrey@example.com>" \
+    --author "John Doe <jdoe@example.com>") &&
+
+  (cd gitrepo &&
+  git pull &&
+  git show --format="%an <%ae>, %cn <%ce>" --quiet > ../actual) &&
+
+  echo "Jane Rey <jrey@example.com>, A U Thor <author@example.com>" > expected &&
+  test_cmp expected actual
+'
+
+test_expect_success 'fetch utf-8 filenames' '
+  mkdir -p tmp && cd tmp &&
+  test_when_finished "cd .. && rm -rf tmp && LC_ALL=C" &&
+
+  LC_ALL=en_US.UTF-8
+  export LC_ALL
+  (
+  bzr init bzrrepo &&
+  cd bzrrepo &&
+
+  echo test >> "ærø" &&
+  bzr add "ærø" &&
+  echo test >> "ø~?" &&
+  bzr add "ø~?" &&
+  bzr commit -m add-utf-8 &&
+  echo test >> "ærø" &&
+  bzr commit -m test-utf-8 &&
+  bzr rm "ø~?" &&
+  bzr mv "ærø" "ø~?" &&
+  bzr commit -m bzr-mv-utf-8
+  ) &&
+
+  (
+  git clone "bzr::$PWD/bzrrepo" gitrepo &&
+  cd gitrepo &&
+  git -c core.quotepath=false ls-files > ../actual
+  ) &&
+  echo "ø~?" > expected &&
+  test_cmp expected actual
+'
+
+test_expect_success 'push utf-8 filenames' '
+  mkdir -p tmp && cd tmp &&
+  test_when_finished "cd .. && rm -rf tmp && LC_ALL=C" &&
+
+  LC_ALL=en_US.UTF-8
+  export LC_ALL
+
+  (
+  bzr init bzrrepo &&
+  cd bzrrepo &&
+
+  echo one >> content &&
+  bzr add content &&
+  bzr commit -m one
+  ) &&
+
+  (
+  git clone "bzr::$PWD/bzrrepo" gitrepo &&
+  cd gitrepo &&
+
+  echo test >> "ærø" &&
+  git add "ærø" &&
+  git commit -m utf-8 &&
+
+  git push
+  ) &&
+
+  (cd bzrrepo && bzr ls > ../actual) &&
+  printf "content\nærø\n" > expected &&
+  test_cmp expected actual
+'
+
+test_expect_success 'pushing a merge' '
+  mkdir -p tmp && cd tmp &&
+  test_when_finished "cd .. && rm -rf tmp" &&
+
+  (
+  bzr init bzrrepo &&
+  cd bzrrepo &&
+  echo one > content &&
+  bzr add content &&
+  bzr commit -m one
+  ) &&
+
+  git clone "bzr::$PWD/bzrrepo" gitrepo &&
+
+  (
+  cd bzrrepo &&
+  echo two > content &&
+  bzr commit -m two
+  ) &&
+
+  (
+  cd gitrepo &&
+  echo three > content &&
+  git commit -a -m three &&
+  git fetch &&
+  git merge origin/master || true &&
+  echo three > content &&
+  git commit -a --no-edit &&
+  git push
+  ) &&
+
+  echo three > expected &&
+  cat bzrrepo/content > actual &&
+  test_cmp expected actual
+'
+
+cat > expected <<EOF
+origin/HEAD
+origin/branch
+origin/trunk
+EOF
+
+test_expect_success 'proper bzr repo' '
+  mkdir -p tmp && cd tmp &&
+  test_when_finished "cd .. && rm -rf tmp" &&
+
+  bzr init-repo bzrrepo &&
+
+  bzr init bzrrepo/trunk &&
+  (
+  cd bzrrepo/trunk &&
+  echo one >> content &&
+  bzr add content &&
+  bzr commit -m one
+  ) &&
+
+  bzr branch bzrrepo/trunk bzrrepo/branch &&
+  (
+  cd bzrrepo/branch &&
+  echo two >> content &&
+  bzr commit -m one
+  ) &&
+
+  git clone "bzr::$PWD/bzrrepo" gitrepo &&
+  (
+  cd gitrepo &&
+  git for-each-ref --format "%(refname:short)" refs/remotes/origin > ../actual
+  ) &&
+
+  test_cmp ../expected actual
+'
+
+test_expect_success 'strip' '
+  # Do not imitate this style; always chdir inside a subshell instead
+  mkdir -p tmp && cd tmp &&
+  test_when_finished "cd .. && rm -rf tmp" &&
+
+  (
+  bzr init bzrrepo &&
+  cd bzrrepo &&
+
+  echo one >> content &&
+  bzr add content &&
+  bzr commit -m one &&
+
+  echo two >> content &&
+  bzr commit -m two
+  ) &&
+
+  git clone "bzr::$PWD/bzrrepo" gitrepo &&
+
+  (
+  cd bzrrepo &&
+  bzr uncommit --force &&
+
+  echo three >> content &&
+  bzr commit -m three &&
+
+  echo four >> content &&
+  bzr commit -m four &&
+  bzr log --line | sed -e "s/^[0-9][0-9]*: //" > ../expected
+  ) &&
+
+  (cd gitrepo &&
+  git fetch &&
+  git log --format="%an %ad %s" --date=short origin/master > ../actual) &&
+
   test_cmp expected actual
 '
 

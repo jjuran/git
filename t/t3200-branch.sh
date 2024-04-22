@@ -75,7 +75,7 @@ test_expect_success 'git branch l should work after branch l/m has been deleted'
 
 test_expect_success 'git branch -m dumps usage' '
 	test_expect_code 128 git branch -m 2>err &&
-	test_i18ngrep "too many branches for a rename operation" err
+	test_i18ngrep "branch name required" err
 '
 
 test_expect_success 'git branch -m m m/m should work' '
@@ -407,6 +407,18 @@ test_expect_success '--set-upstream-to fails on detached HEAD' '
 	git checkout HEAD^{} &&
 	test_must_fail git branch --set-upstream-to master &&
 	git checkout -
+'
+
+test_expect_success '--set-upstream-to fails on a missing dst branch' '
+	test_must_fail git branch --set-upstream-to master does-not-exist
+'
+
+test_expect_success '--set-upstream-to fails on a missing src branch' '
+	test_must_fail git branch --set-upstream-to does-not-exist master
+'
+
+test_expect_success '--set-upstream-to fails on a non-ref' '
+	test_must_fail git branch --set-upstream-to HEAD^{}
 '
 
 test_expect_success 'use --set-upstream-to modify HEAD' '

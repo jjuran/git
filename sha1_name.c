@@ -594,7 +594,7 @@ struct object *peel_to_type(const char *name, int namelen,
 	while (1) {
 		if (!o || (!o->parsed && !parse_object(o->sha1)))
 			return NULL;
-		if (o->type == expected_type)
+		if (expected_type == OBJ_ANY || o->type == expected_type)
 			return o;
 		if (o->type == OBJ_TAG)
 			o = ((struct tag*) o)->tagged;
@@ -645,6 +645,8 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		expected_type = OBJ_TREE;
 	else if (!strncmp(blob_type, sp, 4) && sp[4] == '}')
 		expected_type = OBJ_BLOB;
+	else if (!prefixcmp(sp, "object}"))
+		expected_type = OBJ_ANY;
 	else if (sp[0] == '}')
 		expected_type = OBJ_NONE;
 	else if (sp[0] == '/')
@@ -654,6 +656,8 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 
 	if (expected_type == OBJ_COMMIT)
 		lookup_flags = GET_SHA1_COMMITTISH;
+	else if (expected_type == OBJ_TREE)
+		lookup_flags = GET_SHA1_TREEISH;
 
 	if (get_sha1_1(name, sp - name - 2, outer, lookup_flags))
 		return -1;
@@ -856,8 +860,8 @@ static int get_sha1_oneline(const char *prefix, unsigned char *sha1,
 }
 
 struct grab_nth_branch_switch_cbdata {
-	long cnt, alloc;
-	struct strbuf *buf;
+	int remaining;
+	struct strbuf buf;
 };
 
 static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
@@ -867,7 +871,6 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 	struct grab_nth_branch_switch_cbdata *cb = cb_data;
 	const char *match = NULL, *target = NULL;
 	size_t len;
-	int nth;
 
 	if (!prefixcmp(message, "checkout: moving from ")) {
 		match = message + strlen("checkout: moving from ");
@@ -876,11 +879,12 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 
 	if (!match || !target)
 		return 0;
-
-	len = target - match;
-	nth = cb->cnt++ % cb->alloc;
-	strbuf_reset(&cb->buf[nth]);
-	strbuf_add(&cb->buf[nth], match, len);
+	if (--(cb->remaining) == 0) {
+		len = target - match;
+		strbuf_reset(&cb->buf);
+		strbuf_add(&cb->buf, match, len);
+		return 1; /* we are done */
+	}
 	return 0;
 }
 
@@ -891,7 +895,7 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
 {
 	long nth;
-	int i, retval;
+	int retval;
 	struct grab_nth_branch_switch_cbdata cb;
 	const char *brace;
 	char *num_end;
@@ -901,34 +905,22 @@ static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
 	brace = strchr(name, '}');
 	if (!brace)
 		return -1;
-	nth = strtol(name+3, &num_end, 10);
+	nth = strtol(name + 3, &num_end, 10);
 	if (num_end != brace)
 		return -1;
 	if (nth <= 0)
 		return -1;
-	cb.alloc = nth;
-	cb.buf = xmalloc(nth * sizeof(struct strbuf));
-	for (i = 0; i < nth; i++)
-		strbuf_init(&cb.buf[i], 20);
-	cb.cnt = 0;
+	cb.remaining = nth;
+	strbuf_init(&cb.buf, 20);
+
 	retval = 0;
-	for_each_recent_reflog_ent("HEAD", grab_nth_branch_switch, 40960, &cb);
-	if (cb.cnt < nth) {
-		cb.cnt = 0;
-		for_each_reflog_ent("HEAD", grab_nth_branch_switch, &cb);
+	if (0 < for_each_reflog_ent_reverse("HEAD", grab_nth_branch_switch, &cb)) {
+		strbuf_reset(buf);
+		strbuf_add(buf, cb.buf.buf, cb.buf.len);
+		retval = brace - name + 1;
 	}
-	if (cb.cnt < nth)
-		goto release_return;
-	i = cb.cnt % nth;
-	strbuf_reset(buf);
-	strbuf_add(buf, cb.buf[i].buf, cb.buf[i].len);
-	retval = brace-name+1;
 
-release_return:
-	for (i = 0; i < nth; i++)
-		strbuf_release(&cb.buf[i]);
-	free(cb.buf);
-
+	strbuf_release(&cb.buf);
 	return retval;
 }
 

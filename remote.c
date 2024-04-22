@@ -15,6 +15,7 @@ static struct refspec s_tag_refspec = {
 	0,
 	1,
 	0,
+	0,
 	"refs/tags/*",
 	"refs/tags/*"
 };
@@ -48,6 +49,7 @@ static int branches_nr;
 
 static struct branch *current_branch;
 static const char *default_remote_name;
+static const char *pushremote_name;
 static int explicit_default_remote_name;
 
 static struct rewrites rewrites;
@@ -356,13 +358,16 @@ static int handle_config(const char *key, const char *value, void *cb)
 			return 0;
 		branch = make_branch(name, subkey - name);
 		if (!strcmp(subkey, ".remote")) {
-			if (!value)
-				return config_error_nonbool(key);
-			branch->remote_name = xstrdup(value);
+			if (git_config_string(&branch->remote_name, key, value))
+				return -1;
 			if (branch == current_branch) {
 				default_remote_name = branch->remote_name;
 				explicit_default_remote_name = 1;
 			}
+		} else if (!strcmp(subkey, ".pushremote")) {
+			if (branch == current_branch)
+				if (git_config_string(&pushremote_name, key, value))
+					return -1;
 		} else if (!strcmp(subkey, ".merge")) {
 			if (!value)
 				return config_error_nonbool(key);
@@ -388,9 +393,16 @@ static int handle_config(const char *key, const char *value, void *cb)
 			add_instead_of(rewrite, xstrdup(value));
 		}
 	}
+
 	if (prefixcmp(key,  "remote."))
 		return 0;
 	name = key + 7;
+
+	/* Handle remote.* variables */
+	if (!strcmp(name, "pushdefault"))
+		return git_config_string(&pushremote_name, key, value);
+
+	/* Handle remote.<name>.* variables */
 	if (*name == '/') {
 		warning("Config remote shorthand cannot begin with '/': %s",
 			name);
@@ -538,7 +550,7 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 
 		/*
 		 * Before going on, special case ":" (or "+:") as a refspec
-		 * for matching refs.
+		 * for pushing matching refs.
 		 */
 		if (!fetch && rhs == lhs && rhs[1] == '\0') {
 			rs[i].matching = 1;
@@ -565,26 +577,25 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 		flags = REFNAME_ALLOW_ONELEVEL | (is_glob ? REFNAME_REFSPEC_PATTERN : 0);
 
 		if (fetch) {
-			/*
-			 * LHS
-			 * - empty is allowed; it means HEAD.
-			 * - otherwise it must be a valid looking ref.
-			 */
+			unsigned char unused[40];
+
+			/* LHS */
 			if (!*rs[i].src)
-				; /* empty is ok */
-			else if (check_refname_format(rs[i].src, flags))
+				; /* empty is ok; it means "HEAD" */
+			else if (llen == 40 && !get_sha1_hex(rs[i].src, unused))
+				rs[i].exact_sha1 = 1; /* ok */
+			else if (!check_refname_format(rs[i].src, flags))
+				; /* valid looking ref is ok */
+			else
 				goto invalid;
-			/*
-			 * RHS
-			 * - missing is ok, and is same as empty.
-			 * - empty is ok; it means not to store.
-			 * - otherwise it must be a valid looking ref.
-			 */
+			/* RHS */
 			if (!rs[i].dst)
-				; /* ok */
+				; /* missing is ok; it is the same as empty */
 			else if (!*rs[i].dst)
-				; /* ok */
-			else if (check_refname_format(rs[i].dst, flags))
+				; /* empty is ok; it means "do not store" */
+			else if (!check_refname_format(rs[i].dst, flags))
+				; /* valid looking ref is ok */
+			else
 				goto invalid;
 		} else {
 			/*
@@ -674,17 +685,21 @@ static int valid_remote_nick(const char *name)
 	return !strchr(name, '/'); /* no slash */
 }
 
-struct remote *remote_get(const char *name)
+static struct remote *remote_get_1(const char *name, const char *pushremote_name)
 {
 	struct remote *ret;
 	int name_given = 0;
 
-	read_config();
 	if (name)
 		name_given = 1;
 	else {
-		name = default_remote_name;
-		name_given = explicit_default_remote_name;
+		if (pushremote_name) {
+			name = pushremote_name;
+			name_given = 1;
+		} else {
+			name = default_remote_name;
+			name_given = explicit_default_remote_name;
+		}
 	}
 
 	ret = make_remote(name, 0);
@@ -701,6 +716,18 @@ struct remote *remote_get(const char *name)
 	ret->fetch = parse_fetch_refspec(ret->fetch_refspec_nr, ret->fetch_refspec);
 	ret->push = parse_push_refspec(ret->push_refspec_nr, ret->push_refspec);
 	return ret;
+}
+
+struct remote *remote_get(const char *name)
+{
+	read_config();
+	return remote_get_1(name, NULL);
+}
+
+struct remote *pushremote_get(const char *name)
+{
+	read_config();
+	return remote_get_1(name, pushremote_name);
 }
 
 int remote_is_configured(const char *name)
@@ -1198,6 +1225,101 @@ static struct ref **tail_ref(struct ref **head)
 	return tail;
 }
 
+struct tips {
+	struct commit **tip;
+	int nr, alloc;
+};
+
+static void add_to_tips(struct tips *tips, const unsigned char *sha1)
+{
+	struct commit *commit;
+
+	if (is_null_sha1(sha1))
+		return;
+	commit = lookup_commit_reference_gently(sha1, 1);
+	if (!commit || (commit->object.flags & TMP_MARK))
+		return;
+	commit->object.flags |= TMP_MARK;
+	ALLOC_GROW(tips->tip, tips->nr + 1, tips->alloc);
+	tips->tip[tips->nr++] = commit;
+}
+
+static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***dst_tail)
+{
+	struct string_list dst_tag = STRING_LIST_INIT_NODUP;
+	struct string_list src_tag = STRING_LIST_INIT_NODUP;
+	struct string_list_item *item;
+	struct ref *ref;
+	struct tips sent_tips;
+
+	/*
+	 * Collect everything we know they would have at the end of
+	 * this push, and collect all tags they have.
+	 */
+	memset(&sent_tips, 0, sizeof(sent_tips));
+	for (ref = *dst; ref; ref = ref->next) {
+		if (ref->peer_ref &&
+		    !is_null_sha1(ref->peer_ref->new_sha1))
+			add_to_tips(&sent_tips, ref->peer_ref->new_sha1);
+		else
+			add_to_tips(&sent_tips, ref->old_sha1);
+		if (!prefixcmp(ref->name, "refs/tags/"))
+			string_list_append(&dst_tag, ref->name);
+	}
+	clear_commit_marks_many(sent_tips.nr, sent_tips.tip, TMP_MARK);
+
+	sort_string_list(&dst_tag);
+
+	/* Collect tags they do not have. */
+	for (ref = src; ref; ref = ref->next) {
+		if (prefixcmp(ref->name, "refs/tags/"))
+			continue; /* not a tag */
+		if (string_list_has_string(&dst_tag, ref->name))
+			continue; /* they already have it */
+		if (sha1_object_info(ref->new_sha1, NULL) != OBJ_TAG)
+			continue; /* be conservative */
+		item = string_list_append(&src_tag, ref->name);
+		item->util = ref;
+	}
+	string_list_clear(&dst_tag, 0);
+
+	/*
+	 * At this point, src_tag lists tags that are missing from
+	 * dst, and sent_tips lists the tips we are pushing or those
+	 * that we know they already have. An element in the src_tag
+	 * that is an ancestor of any of the sent_tips needs to be
+	 * sent to the other side.
+	 */
+	if (sent_tips.nr) {
+		for_each_string_list_item(item, &src_tag) {
+			struct ref *ref = item->util;
+			struct ref *dst_ref;
+			struct commit *commit;
+
+			if (is_null_sha1(ref->new_sha1))
+				continue;
+			commit = lookup_commit_reference_gently(ref->new_sha1, 1);
+			if (!commit)
+				/* not pushing a commit, which is not an error */
+				continue;
+
+			/*
+			 * Is this tag, which they do not have, reachable from
+			 * any of the commits we are sending?
+			 */
+			if (!in_merge_bases_many(commit, sent_tips.nr, sent_tips.tip))
+				continue;
+
+			/* Add it in */
+			dst_ref = make_linked_ref(ref->name, dst_tail);
+			hashcpy(dst_ref->new_sha1, ref->new_sha1);
+			dst_ref->peer_ref = copy_ref(ref);
+		}
+	}
+	string_list_clear(&src_tag, 0);
+	free(sent_tips.tip);
+}
+
 /*
  * Given the set of refs the local repository has, the set of refs the
  * remote repository has, and the refspec used for push, determine
@@ -1230,9 +1352,6 @@ int match_push_refs(struct ref *src, struct ref **dst,
 		const struct refspec *pat = NULL;
 		char *dst_name;
 
-		if (ref->peer_ref)
-			continue;
-
 		dst_name = get_ref_match(rs, nr_refspec, ref, send_mirror, FROM_SRC, &pat);
 		if (!dst_name)
 			continue;
@@ -1260,6 +1379,10 @@ int match_push_refs(struct ref *src, struct ref **dst,
 	free_name:
 		free(dst_name);
 	}
+
+	if (flags & MATCH_REFS_FOLLOW_TAGS)
+		add_missing_tags(src, dst, &dst_tail);
+
 	if (send_prune) {
 		/* check for missing refs on the remote */
 		for (ref = *dst; ref; ref = ref->next) {
@@ -1469,7 +1592,12 @@ int get_fetch_map(const struct ref *remote_refs,
 	} else {
 		const char *name = refspec->src[0] ? refspec->src : "HEAD";
 
-		ref_map = get_remote_ref(remote_refs, name);
+		if (refspec->exact_sha1) {
+			ref_map = alloc_ref(name);
+			get_sha1_hex(name, ref_map->old_sha1);
+		} else {
+			ref_map = get_remote_ref(remote_refs, name);
+		}
 		if (!missing_ok && !ref_map)
 			die("Couldn't find remote ref %s", name);
 		if (ref_map) {
