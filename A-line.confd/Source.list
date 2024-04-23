@@ -23,6 +23,7 @@ builtin/bundle.c
 builtin/cat-file.c
 builtin/check-attr.c
 builtin/check-ignore.c
+builtin/check-mailmap.c
 builtin/check-ref-format.c
 builtin/checkout-index.c
 builtin/checkout.c
@@ -167,6 +168,8 @@ ident.c
 imap-send.c
 kwset.c
 levenshtein.c
+line-log.c
+line-range.c
 list-objects.c
 ll-merge.c
 lockfile.c
@@ -181,9 +184,9 @@ name-hash.c
 notes.c
 notes-cache.c
 notes-merge.c
+notes-utils.c
 object.c
 pack-check.c
-pack-refs.c
 pack-revindex.c
 pack-write.c
 pager.c
@@ -196,6 +199,7 @@ pathspec.c
 pkt-line.c
 preload-index.c
 pretty.c
+prio-queue.c
 progress.c
 prompt.c
 quote.c
