@@ -1686,9 +1686,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		del = deleted;
 
 		if (graph_width <= max_change) {
-			int total = add + del;
-
-			total = scale_linear(add + del, graph_width, max_change);
+			int total = scale_linear(add + del, graph_width, max_change);
 			if (total < 2 && add && del)
 				/* width >= 2 due to the sanity check */
 				total = 2;
@@ -2589,7 +2587,7 @@ void fill_filespec(struct diff_filespec *spec, const unsigned char *sha1,
  */
 static int reuse_worktree_file(const char *name, const unsigned char *sha1, int want_file)
 {
-	struct cache_entry *ce;
+	const struct cache_entry *ce;
 	struct stat st;
 	int pos, len;
 
@@ -3508,6 +3506,11 @@ static int parse_submodule_opt(struct diff_options *options, const char *value)
 	return 1;
 }
 
+static void enable_patch_output(int *fmt) {
+	*fmt &= ~DIFF_FORMAT_NO_OUTPUT;
+	*fmt |= DIFF_FORMAT_PATCH;
+}
+
 int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 {
 	const char *arg = av[0];
@@ -3515,15 +3518,15 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	int argcount;
 
 	/* Output format options */
-	if (!strcmp(arg, "-p") || !strcmp(arg, "-u") || !strcmp(arg, "--patch"))
-		options->output_format |= DIFF_FORMAT_PATCH;
-	else if (opt_arg(arg, 'U', "unified", &options->context))
-		options->output_format |= DIFF_FORMAT_PATCH;
+	if (!strcmp(arg, "-p") || !strcmp(arg, "-u") || !strcmp(arg, "--patch")
+	    || opt_arg(arg, 'U', "unified", &options->context))
+		enable_patch_output(&options->output_format);
 	else if (!strcmp(arg, "--raw"))
 		options->output_format |= DIFF_FORMAT_RAW;
-	else if (!strcmp(arg, "--patch-with-raw"))
-		options->output_format |= DIFF_FORMAT_PATCH | DIFF_FORMAT_RAW;
-	else if (!strcmp(arg, "--numstat"))
+	else if (!strcmp(arg, "--patch-with-raw")) {
+		enable_patch_output(&options->output_format);
+		options->output_format |= DIFF_FORMAT_RAW;
+	} else if (!strcmp(arg, "--numstat"))
 		options->output_format |= DIFF_FORMAT_NUMSTAT;
 	else if (!strcmp(arg, "--shortstat"))
 		options->output_format |= DIFF_FORMAT_SHORTSTAT;
@@ -3545,13 +3548,14 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		options->output_format |= DIFF_FORMAT_CHECKDIFF;
 	else if (!strcmp(arg, "--summary"))
 		options->output_format |= DIFF_FORMAT_SUMMARY;
-	else if (!strcmp(arg, "--patch-with-stat"))
-		options->output_format |= DIFF_FORMAT_PATCH | DIFF_FORMAT_DIFFSTAT;
-	else if (!strcmp(arg, "--name-only"))
+	else if (!strcmp(arg, "--patch-with-stat")) {
+		enable_patch_output(&options->output_format);
+		options->output_format |= DIFF_FORMAT_DIFFSTAT;
+	} else if (!strcmp(arg, "--name-only"))
 		options->output_format |= DIFF_FORMAT_NAME;
 	else if (!strcmp(arg, "--name-status"))
 		options->output_format |= DIFF_FORMAT_NAME_STATUS;
-	else if (!strcmp(arg, "-s"))
+	else if (!strcmp(arg, "-s") || !strcmp(arg, "--no-patch"))
 		options->output_format |= DIFF_FORMAT_NO_OUTPUT;
 	else if (!prefixcmp(arg, "--stat"))
 		/* --stat, --stat-width, --stat-name-width, or --stat-count */
@@ -3604,6 +3608,8 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_CHANGE);
 	else if (!strcmp(arg, "--ignore-space-at-eol"))
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_AT_EOL);
+	else if (!strcmp(arg, "--ignore-blank-lines"))
+		DIFF_XDL_SET(options, IGNORE_BLANK_LINES);
 	else if (!strcmp(arg, "--patience"))
 		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))
@@ -3622,7 +3628,7 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 
 	/* flags options */
 	else if (!strcmp(arg, "--binary")) {
-		options->output_format |= DIFF_FORMAT_PATCH;
+		enable_patch_output(&options->output_format);
 		DIFF_OPT_SET(options, BINARY);
 	}
 	else if (!strcmp(arg, "--full-index"))
@@ -4461,7 +4467,7 @@ void diff_flush(struct diff_options *options)
 	    DIFF_OPT_TST(options, DIFF_FROM_CONTENTS)) {
 		/*
 		 * run diff_flush_patch for the exit status. setting
-		 * options->file to /dev/null should be safe, becaue we
+		 * options->file to /dev/null should be safe, because we
 		 * aren't supposed to produce any output anyway.
 		 */
 		if (options->close_file)

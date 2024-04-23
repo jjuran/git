@@ -297,7 +297,7 @@ static int failure;
 static FILE *pack_edges;
 static unsigned int show_stats = 1;
 static int global_argc;
-static const char **global_argv;
+static char **global_argv;
 
 /* Memory pools */
 static size_t mem_pool_alloc = 2*1024*1024 - sizeof(struct mem_pool);
@@ -1822,7 +1822,7 @@ static void read_marks(void)
 		*end = 0;
 		mark = strtoumax(line + 1, &end, 10);
 		if (!mark || end == line + 1
-			|| *end != ' ' || get_sha1(end + 1, sha1))
+			|| *end != ' ' || get_sha1_hex(end + 1, sha1))
 			die("corrupt mark line: %s", line);
 		e = find_object(sha1);
 		if (!e) {
@@ -3347,7 +3347,7 @@ static void parse_argv(void)
 		read_marks();
 }
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 

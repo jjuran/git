@@ -29,6 +29,7 @@
 #include "gpg-interface.h"
 #include "column.h"
 #include "sequencer.h"
+#include "notes-utils.h"
 
 static const char * const builtin_commit_usage[] = {
 	N_("git commit [options] [--] <pathspec>..."),
@@ -62,8 +63,18 @@ N_("The previous cherry-pick is now empty, possibly due to conflict resolution.\
 "If you wish to commit it anyway, use:\n"
 "\n"
 "    git commit --allow-empty\n"
+"\n");
+
+static const char empty_cherry_pick_advice_single[] =
+N_("Otherwise, please use 'git reset'\n");
+
+static const char empty_cherry_pick_advice_multi[] =
+N_("If you wish to skip this commit, use:\n"
 "\n"
-"Otherwise, please use 'git reset'\n");
+"    git reset\n"
+"\n"
+"Then \"git cherry-pick --continue\" will resume cherry-picking\n"
+"the remaining commits.\n");
 
 static const char *use_message_buffer;
 static const char commit_editmsg[] = "COMMIT_EDITMSG";
@@ -106,17 +117,20 @@ static enum {
 static const char *cleanup_arg;
 
 static enum commit_whence whence;
+static int sequencer_in_use;
 static int use_editor = 1, include_status = 1;
 static int show_ignored_in_status, have_option_m;
 static const char *only_include_assumed;
 static struct strbuf message = STRBUF_INIT;
 
-static enum {
+static enum status_format {
 	STATUS_FORMAT_NONE = 0,
 	STATUS_FORMAT_LONG,
 	STATUS_FORMAT_SHORT,
-	STATUS_FORMAT_PORCELAIN
-} status_format;
+	STATUS_FORMAT_PORCELAIN,
+
+	STATUS_FORMAT_UNSPECIFIED
+} status_format = STATUS_FORMAT_UNSPECIFIED;
 
 static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 {
@@ -138,8 +152,11 @@ static void determine_whence(struct wt_status *s)
 {
 	if (file_exists(git_path("MERGE_HEAD")))
 		whence = FROM_MERGE;
-	else if (file_exists(git_path("CHERRY_PICK_HEAD")))
+	else if (file_exists(git_path("CHERRY_PICK_HEAD"))) {
 		whence = FROM_CHERRY_PICK;
+		if (file_exists(git_path("sequencer")))
+			sequencer_in_use = 1;
+	}
 	else
 		whence = FROM_COMMIT;
 	if (s)
@@ -204,7 +221,7 @@ static int list_paths(struct string_list *list, const char *with_tree,
 	}
 
 	for (i = 0; i < active_nr; i++) {
-		struct cache_entry *ce = active_cache[i];
+		const struct cache_entry *ce = active_cache[i];
 		struct string_list_item *item;
 
 		if (ce->ce_flags & CE_UPDATE)
@@ -459,6 +476,9 @@ static int run_status(FILE *fp, const char *index_file, const char *prefix, int 
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(s);
 		break;
+	case STATUS_FORMAT_UNSPECIFIED:
+		die("BUG: finalize_deferred_config() should have been called");
+		break;
 	case STATUS_FORMAT_NONE:
 	case STATUS_FORMAT_LONG:
 		wt_status_print(s);
@@ -528,7 +548,6 @@ static void determine_author_info(struct strbuf *author_ident)
 					(lb - strlen(" ") -
 					 (a + strlen("\nauthor "))));
 		email = xmemdupz(lb + strlen("<"), rb - (lb + strlen("<")));
-		date = xmemdupz(rb + strlen("> "), eol - (rb + strlen("> ")));
 		len = eol - (rb + strlen("> "));
 		date = xmalloc(len + 2);
 		*date = '@';
@@ -805,8 +824,13 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		run_status(stdout, index_file, prefix, 0, s);
 		if (amend)
 			fputs(_(empty_amend_advice), stderr);
-		else if (whence == FROM_CHERRY_PICK)
+		else if (whence == FROM_CHERRY_PICK) {
 			fputs(_(empty_cherry_pick_advice), stderr);
+			if (!sequencer_in_use)
+				fputs(_(empty_cherry_pick_advice_single), stderr);
+			else
+				fputs(_(empty_cherry_pick_advice_multi), stderr);
+		}
 		return 0;
 	}
 
@@ -963,6 +987,42 @@ static const char *read_commit_message(const char *name)
 	return logmsg_reencode(commit, NULL, out_enc);
 }
 
+/*
+ * Enumerate what needs to be propagated when --porcelain
+ * is not in effect here.
+ */
+static struct status_deferred_config {
+	enum status_format status_format;
+	int show_branch;
+} status_deferred_config = {
+	STATUS_FORMAT_UNSPECIFIED,
+	-1 /* unspecified */
+};
+
+static void finalize_deferred_config(struct wt_status *s)
+{
+	int use_deferred_config = (status_format != STATUS_FORMAT_PORCELAIN &&
+				   !s->null_termination);
+
+	if (s->null_termination) {
+		if (status_format == STATUS_FORMAT_NONE ||
+		    status_format == STATUS_FORMAT_UNSPECIFIED)
+			status_format = STATUS_FORMAT_PORCELAIN;
+		else if (status_format == STATUS_FORMAT_LONG)
+			die(_("--long and -z are incompatible"));
+	}
+
+	if (use_deferred_config && status_format == STATUS_FORMAT_UNSPECIFIED)
+		status_format = status_deferred_config.status_format;
+	if (status_format == STATUS_FORMAT_UNSPECIFIED)
+		status_format = STATUS_FORMAT_NONE;
+
+	if (use_deferred_config && s->show_branch < 0)
+		s->show_branch = status_deferred_config.show_branch;
+	if (s->show_branch < 0)
+		s->show_branch = 0;
+}
+
 static int parse_and_validate_options(int argc, const char *argv[],
 				      const struct option *options,
 				      const char * const usage[],
@@ -973,6 +1033,7 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	int f = 0;
 
 	argc = parse_options(argc, argv, prefix, options, usage, 0);
+	finalize_deferred_config(s);
 
 	if (force_author && !strchr(force_author, '>'))
 		force_author = find_author_by_nickname(force_author);
@@ -1057,12 +1118,6 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (all && argc > 0)
 		die(_("Paths with -a does not make sense."));
 
-	if (s->null_termination) {
-		if (status_format == STATUS_FORMAT_NONE)
-			status_format = STATUS_FORMAT_PORCELAIN;
-		else if (status_format == STATUS_FORMAT_LONG)
-			die(_("--long and -z are incompatible"));
-	}
 	if (status_format != STATUS_FORMAT_NONE)
 		dry_run = 1;
 
@@ -1115,6 +1170,17 @@ static int git_status_config(const char *k, const char *v, void *cb)
 			s->submodule_summary = -1;
 		return 0;
 	}
+	if (!strcmp(k, "status.short")) {
+		if (git_config_bool(k, v))
+			status_deferred_config.status_format = STATUS_FORMAT_SHORT;
+		else
+			status_deferred_config.status_format = STATUS_FORMAT_NONE;
+		return 0;
+	}
+	if (!strcmp(k, "status.branch")) {
+		status_deferred_config.show_branch = git_config_bool(k, v);
+		return 0;
+	}
 	if (!strcmp(k, "status.color") || !strcmp(k, "color.status")) {
 		s->use_color = git_config_colorbool(k, v);
 		return 0;
@@ -1157,8 +1223,8 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT__VERBOSE(&verbose, N_("be verbose")),
 		OPT_SET_INT('s', "short", &status_format,
 			    N_("show status concisely"), STATUS_FORMAT_SHORT),
-		OPT_BOOLEAN('b', "branch", &s.show_branch,
-			    N_("show branch information")),
+		OPT_BOOL('b', "branch", &s.show_branch,
+			 N_("show branch information")),
 		OPT_SET_INT(0, "porcelain", &status_format,
 			    N_("machine-readable output"),
 			    STATUS_FORMAT_PORCELAIN),
@@ -1191,13 +1257,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 			     builtin_status_options,
 			     builtin_status_usage, 0);
 	finalize_colopts(&s.colopts, -1);
-
-	if (s.null_termination) {
-		if (status_format == STATUS_FORMAT_NONE)
-			status_format = STATUS_FORMAT_PORCELAIN;
-		else if (status_format == STATUS_FORMAT_LONG)
-			die(_("--long and -z are incompatible"));
-	}
+	finalize_deferred_config(&s);
 
 	handle_untracked_files_arg(&s);
 	if (show_ignored_in_status)
@@ -1225,6 +1285,9 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		break;
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(&s);
+		break;
+	case STATUS_FORMAT_UNSPECIFIED:
+		die("BUG: finalize_deferred_config() should have been called");
 		break;
 	case STATUS_FORMAT_NONE:
 	case STATUS_FORMAT_LONG:
@@ -1394,7 +1457,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_BOOLEAN(0, "dry-run", &dry_run, N_("show what would be committed")),
 		OPT_SET_INT(0, "short", &status_format, N_("show status concisely"),
 			    STATUS_FORMAT_SHORT),
-		OPT_BOOLEAN(0, "branch", &s.show_branch, N_("show branch information")),
+		OPT_BOOL(0, "branch", &s.show_branch, N_("show branch information")),
 		OPT_SET_INT(0, "porcelain", &status_format,
 			    N_("machine-readable output"), STATUS_FORMAT_PORCELAIN),
 		OPT_SET_INT(0, "long", &status_format,
@@ -1435,6 +1498,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 	wt_status_prepare(&s);
 	gitmodules_config();
 	git_config(git_commit_config, &s);
+	status_format = STATUS_FORMAT_NONE; /* Ignore status.short */
 	determine_whence(&s);
 	s.colopts = 0;
 
@@ -1596,7 +1660,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		if (cfg) {
 			/* we are amending, so current_head is not NULL */
 			copy_note_for_rewrite(cfg, current_head->object.sha1, sha1);
-			finish_copy_notes_for_rewrite(cfg);
+			finish_copy_notes_for_rewrite(cfg, "Notes added by 'git commit --amend'");
 		}
 		run_rewrite_hook(current_head->object.sha1, sha1);
 	}
