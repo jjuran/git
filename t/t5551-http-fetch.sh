@@ -198,6 +198,22 @@ test_expect_success 'dumb clone via http-backend respects namespace' '
 	test_cmp expect actual
 '
 
+cat >cookies.txt <<EOF
+127.0.0.1	FALSE	/smart_cookies/	FALSE	0	othername	othervalue
+EOF
+cat >expect_cookies.txt <<EOF
+
+127.0.0.1	FALSE	/smart_cookies/	FALSE	0	othername	othervalue
+127.0.0.1	FALSE	/smart_cookies/repo.git/info/	FALSE	0	name	value
+EOF
+test_expect_success 'cookies stored in http.cookiefile when http.savecookies set' '
+	git config http.cookiefile cookies.txt &&
+	git config http.savecookies true &&
+	git ls-remote $HTTPD_URL/smart_cookies/repo.git master &&
+	tail -3 cookies.txt > cookies_tail.txt
+	test_cmp expect_cookies.txt cookies_tail.txt
+'
+
 test -n "$GIT_TEST_LONG" && test_set_prereq EXPENSIVE
 
 test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
@@ -219,7 +235,7 @@ test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
 	done | git fast-import --export-marks=marks &&
 
 	# now assign tags to all the dangling commits we created above
-	tag=$("$PERL_PATH" -e "print \"bla\" x 30") &&
+	tag=$(perl -e "print \"bla\" x 30") &&
 	sed -e "s|^:\([^ ]*\) \(.*\)$|\2 refs/tags/$tag-\1|" <marks >>packed-refs
 	)
 '

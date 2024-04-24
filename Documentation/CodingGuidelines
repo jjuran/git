@@ -145,6 +145,14 @@ For C programs:
    they were describing changes.  Often splitting a function
    into two makes the intention of the code much clearer.
 
+ - Multi-line comments include their delimiters on separate lines from
+   the text.  E.g.
+
+	/*
+	 * A very long
+	 * multi-line comment.
+	 */
+
  - Double negation is often harder to understand than no negation
    at all.
 
@@ -241,6 +249,14 @@ Writing Documentation:
  AsciiDoc format in *.txt files (e.g. Documentation/git.txt), and
  processed into HTML and manpages (e.g. git.html and git.1 in the
  same directory).
+
+ The documentation liberally mixes US and UK English (en_US/UK)
+ norms for spelling and grammar, which is somewhat unfortunate.
+ In an ideal world, it would have been better if it consistently
+ used only one and not the other, and we would have picked en_US
+ (if you wish to correct the English of some of the existing
+ documentation, please see the documentation-related advice in the
+ Documentation/SubmittingPatches file).
 
  Every user-visible change should be reflected in the documentation.
  The same general rule as for code applies -- imitate the existing
