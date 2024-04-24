@@ -15,6 +15,7 @@
 #include "quote.h"
 #include "column.h"
 #include "color.h"
+#include "pathspec.h"
 
 static int force = -1; /* unset */
 static int interactive;
@@ -863,13 +864,12 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 	int rm_flags = REMOVE_DIR_KEEP_NESTED_GIT;
 	struct strbuf abs_path = STRBUF_INIT;
 	struct dir_struct dir;
-	static const char **pathspec;
+	struct pathspec pathspec;
 	struct strbuf buf = STRBUF_INIT;
 	struct string_list exclude_list = STRING_LIST_INIT_NODUP;
 	struct exclude_list *el;
 	struct string_list_item *item;
 	const char *qname;
-	char *seen = NULL;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus on
@@ -880,12 +880,12 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 		OPT__DRY_RUN(&dry_run, N_("dry run")),
 		OPT__FORCE(&force, N_("force")),
 		OPT_BOOL('i', "interactive", &interactive, N_("interactive cleaning")),
-		OPT_BOOLEAN('d', NULL, &remove_directories,
+		OPT_BOOL('d', NULL, &remove_directories,
 				N_("remove whole directories")),
 		{ OPTION_CALLBACK, 'e', "exclude", &exclude_list, N_("pattern"),
 		  N_("add <pattern> to ignore rules"), PARSE_OPT_NONEG, exclude_cb },
-		OPT_BOOLEAN('x', NULL, &ignored, N_("remove ignored files, too")),
-		OPT_BOOLEAN('X', NULL, &ignored_only,
+		OPT_BOOL('x', NULL, &ignored, N_("remove ignored files, too")),
+		OPT_BOOL('X', NULL, &ignored_only,
 				N_("remove only ignored files")),
 		OPT_END()
 	};
@@ -934,12 +934,11 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 	for (i = 0; i < exclude_list.nr; i++)
 		add_exclude(exclude_list.items[i].string, "", 0, el, -(i+1));
 
-	pathspec = get_pathspec(prefix, argv);
+	parse_pathspec(&pathspec, 0,
+		       PATHSPEC_PREFER_CWD,
+		       prefix, argv);
 
-	fill_directory(&dir, pathspec);
-
-	if (pathspec)
-		seen = xmalloc(argc > 0 ? argc : 1);
+	fill_directory(&dir, &pathspec);
 
 	for (i = 0; i < dir.nr; i++) {
 		struct dir_entry *ent = dir.entries[i];
@@ -970,11 +969,9 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 		if (lstat(ent->name, &st))
 			die_errno("Cannot lstat '%s'", ent->name);
 
-		if (pathspec) {
-			memset(seen, 0, argc > 0 ? argc : 1);
-			matches = match_pathspec(pathspec, ent->name, len,
-						 0, seen);
-		}
+		if (pathspec.nr)
+			matches = match_pathspec_depth(&pathspec, ent->name,
+						       len, 0, NULL);
 
 		if (S_ISDIR(st.st_mode)) {
 			if (remove_directories || (matches == MATCHED_EXACTLY)) {
@@ -982,7 +979,7 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 				string_list_append(&del_list, rel);
 			}
 		} else {
-			if (pathspec && !matches)
+			if (pathspec.nr && !matches)
 				continue;
 			rel = relative_path(ent->name, prefix, &buf);
 			string_list_append(&del_list, rel);
@@ -1028,7 +1025,6 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 		}
 		strbuf_reset(&abs_path);
 	}
-	free(seen);
 
 	strbuf_release(&abs_path);
 	strbuf_release(&buf);

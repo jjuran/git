@@ -46,16 +46,17 @@ int type_from_string(const char *str)
 	return 0;
 }
 
-static unsigned int hash_obj(struct object *obj, unsigned int n)
+static unsigned int hash_obj(const unsigned char *sha1, unsigned int n)
 {
 	unsigned int hash;
-	memcpy(&hash, obj->sha1, sizeof(unsigned int));
-	return hash % n;
+	memcpy(&hash, sha1, sizeof(unsigned int));
+	/* Assumes power-of-2 hash sizes in grow_object_hash */
+	return hash & (n - 1);
 }
 
 static void insert_obj_hash(struct object *obj, struct object **hash, unsigned int size)
 {
-	unsigned int j = hash_obj(obj, size);
+	unsigned int j = hash_obj(obj->sha1, size);
 
 	while (hash[j]) {
 		j++;
@@ -63,13 +64,6 @@ static void insert_obj_hash(struct object *obj, struct object **hash, unsigned i
 			j = 0;
 	}
 	hash[j] = obj;
-}
-
-static unsigned int hashtable_index(const unsigned char *sha1)
-{
-	unsigned int i;
-	memcpy(&i, sha1, sizeof(unsigned int));
-	return i % obj_hash_size;
 }
 
 struct object *lookup_object(const unsigned char *sha1)
@@ -80,7 +74,7 @@ struct object *lookup_object(const unsigned char *sha1)
 	if (!obj_hash)
 		return NULL;
 
-	first = i = hashtable_index(sha1);
+	first = i = hash_obj(sha1, obj_hash_size);
 	while ((obj = obj_hash[i]) != NULL) {
 		if (!hashcmp(sha1, obj->sha1))
 			break;
@@ -104,6 +98,10 @@ struct object *lookup_object(const unsigned char *sha1)
 static void grow_object_hash(void)
 {
 	int i;
+	/*
+	 * Note that this size must always be power-of-2 to match hash_obj
+	 * above.
+	 */
 	int new_hash_size = obj_hash_size < 32 ? 32 : 2 * obj_hash_size;
 	struct object **new_hash;
 
@@ -269,18 +267,16 @@ int object_list_contains(struct object_list *list, struct object *obj)
 	return 0;
 }
 
-void add_object_array(struct object *obj, const char *name, struct object_array *array)
-{
-	add_object_array_with_mode(obj, name, array, S_IFINVALID);
-}
-
 /*
  * A zero-length string to which object_array_entry::name can be
  * initialized without requiring a malloc/free.
  */
 static char object_array_slopbuf[1];
 
-void add_object_array_with_mode(struct object *obj, const char *name, struct object_array *array, unsigned mode)
+static void add_object_array_with_mode_context(struct object *obj, const char *name,
+					       struct object_array *array,
+					       unsigned mode,
+					       struct object_context *context)
 {
 	unsigned nr = array->nr;
 	unsigned alloc = array->alloc;
@@ -303,7 +299,26 @@ void add_object_array_with_mode(struct object *obj, const char *name, struct obj
 	else
 		entry->name = xstrdup(name);
 	entry->mode = mode;
+	entry->context = context;
 	array->nr = ++nr;
+}
+
+void add_object_array(struct object *obj, const char *name, struct object_array *array)
+{
+	add_object_array_with_mode(obj, name, array, S_IFINVALID);
+}
+
+void add_object_array_with_mode(struct object *obj, const char *name, struct object_array *array, unsigned mode)
+{
+	add_object_array_with_mode_context(obj, name, array, mode, NULL);
+}
+
+void add_object_array_with_context(struct object *obj, const char *name, struct object_array *array, struct object_context *context)
+{
+	if (context)
+		add_object_array_with_mode_context(obj, name, array, context->mode, context);
+	else
+		add_object_array_with_mode_context(obj, name, array, S_IFINVALID, context);
 }
 
 void object_array_filter(struct object_array *array,
