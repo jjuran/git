@@ -138,6 +138,10 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	int quiet = 0;
 	int local = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_repack_options[] = {
 		OPT_BIT('a', NULL, &pack_everything,
 				N_("pack everything in a single pack"), ALL_INTO_ONE),
@@ -167,6 +171,10 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 				N_("maximum size of each packfile")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(repack_config, NULL);
 
