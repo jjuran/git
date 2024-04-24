@@ -2449,7 +2449,6 @@ static int sha1_loose_object_info(const unsigned char *sha1,
 	return 0;
 }
 
-/* returns enum object_type or negative */
 int sha1_object_info_extended(const unsigned char *sha1, struct object_info *oi)
 {
 	struct cached_object *co;
@@ -2498,6 +2497,7 @@ int sha1_object_info_extended(const unsigned char *sha1, struct object_info *oi)
 	return 0;
 }
 
+/* returns enum object_type or negative */
 int sha1_object_info(const unsigned char *sha1, unsigned long *sizep)
 {
 	enum object_type type;
@@ -2930,7 +2930,10 @@ int has_sha1_file(const unsigned char *sha1)
 
 	if (find_pack_entry(sha1, &e))
 		return 1;
-	return has_loose_object(sha1);
+	if (has_loose_object(sha1))
+		return 1;
+	reprepare_packed_git();
+	return find_pack_entry(sha1, &e);
 }
 
 static void check_tree(const void *buf, size_t size)
