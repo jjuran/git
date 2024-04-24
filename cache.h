@@ -119,15 +119,19 @@ struct cache_time {
 	unsigned int nsec;
 };
 
+struct stat_data {
+	struct cache_time sd_ctime;
+	struct cache_time sd_mtime;
+	unsigned int sd_dev;
+	unsigned int sd_ino;
+	unsigned int sd_uid;
+	unsigned int sd_gid;
+	unsigned int sd_size;
+};
+
 struct cache_entry {
-	struct cache_time ce_ctime;
-	struct cache_time ce_mtime;
-	unsigned int ce_dev;
-	unsigned int ce_ino;
+	struct stat_data ce_stat_data;
 	unsigned int ce_mode;
-	unsigned int ce_uid;
-	unsigned int ce_gid;
-	unsigned int ce_size;
 	unsigned int ce_flags;
 	unsigned int ce_namelen;
 	unsigned char sha1[20];
@@ -190,7 +194,8 @@ struct cache_entry {
  * another. But we never change the name, or the hash state!
  */
 #define CE_STATE_MASK (CE_HASHED | CE_UNHASHED)
-static inline void copy_cache_entry(struct cache_entry *dst, struct cache_entry *src)
+static inline void copy_cache_entry(struct cache_entry *dst,
+				    const struct cache_entry *src)
 {
 	unsigned int state = dst->ce_flags & CE_STATE_MASK;
 
@@ -222,7 +227,8 @@ static inline unsigned int create_ce_mode(unsigned int mode)
 		return S_IFGITLINK;
 	return S_IFREG | ce_permissions(mode);
 }
-static inline unsigned int ce_mode_from_stat(struct cache_entry *ce, unsigned int mode)
+static inline unsigned int ce_mode_from_stat(const struct cache_entry *ce,
+					     unsigned int mode)
 {
 	extern int trust_executable_bit, has_symlinks;
 	if (!has_symlinks && S_ISREG(mode) &&
@@ -419,6 +425,8 @@ extern int path_inside_repo(const char *prefix, const char *path);
 extern int set_git_dir_init(const char *git_dir, const char *real_git_dir, int);
 extern int init_db(const char *template_dir, unsigned int flags);
 
+extern void sanitize_stdfds(void);
+
 #define alloc_nr(x) (((x)+16)*3/2)
 
 /*
@@ -470,7 +478,7 @@ extern int remove_file_from_index(struct index_state *, const char *path);
 extern int add_to_index(struct index_state *, const char *path, struct stat *, int flags);
 extern int add_file_to_index(struct index_state *, const char *path, int flags);
 extern struct cache_entry *make_cache_entry(unsigned int mode, const unsigned char *sha1, const char *path, int stage, int refresh);
-extern int ce_same_name(struct cache_entry *a, struct cache_entry *b);
+extern int ce_same_name(const struct cache_entry *a, const struct cache_entry *b);
 extern int index_name_is_other(const struct index_state *, const char *, int);
 extern void *read_blob_data_from_index(struct index_state *, const char *, unsigned long *);
 
@@ -480,10 +488,10 @@ extern void *read_blob_data_from_index(struct index_state *, const char *, unsig
 #define CE_MATCH_RACY_IS_DIRTY		02
 /* do stat comparison even if CE_SKIP_WORKTREE is true */
 #define CE_MATCH_IGNORE_SKIP_WORKTREE	04
-extern int ie_match_stat(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
-extern int ie_modified(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
+extern int ie_match_stat(const struct index_state *, const struct cache_entry *, struct stat *, unsigned int);
+extern int ie_modified(const struct index_state *, const struct cache_entry *, struct stat *, unsigned int);
 
-#define PATHSPEC_ONESTAR 1	/* the pathspec pattern sastisfies GFNM_ONESTAR */
+#define PATHSPEC_ONESTAR 1	/* the pathspec pattern satisfies GFNM_ONESTAR */
 
 struct pathspec {
 	const char **raw; /* get_pathspec() result, not freed by free_pathspec() */
@@ -509,6 +517,21 @@ extern int limit_pathspec_to_literal(void);
 #define HASH_FORMAT_CHECK 2
 extern int index_fd(unsigned char *sha1, int fd, struct stat *st, enum object_type type, const char *path, unsigned flags);
 extern int index_path(unsigned char *sha1, const char *path, struct stat *st, unsigned flags);
+
+/*
+ * Record to sd the data from st that we use to check whether a file
+ * might have changed.
+ */
+extern void fill_stat_data(struct stat_data *sd, struct stat *st);
+
+/*
+ * Return 0 if st is consistent with a file not having been changed
+ * since sd was filled.  If there are differences, return a
+ * combination of MTIME_CHANGED, CTIME_CHANGED, OWNER_CHANGED,
+ * INODE_CHANGED, and DATA_CHANGED.
+ */
+extern int match_stat_data(const struct stat_data *sd, struct stat *st);
+
 extern void fill_stat_cache_info(struct cache_entry *ce, struct stat *st);
 
 #define REFRESH_REALLY		0x0001	/* ignore_valid */
@@ -554,6 +577,7 @@ extern int assume_unchanged;
 extern int prefer_symlink_refs;
 extern int log_all_ref_updates;
 extern int warn_ambiguous_refs;
+extern int warn_on_object_refname_ambiguity;
 extern int shared_repository;
 extern const char *apply_default_whitespace;
 extern const char *apply_default_ignorewhitespace;
@@ -737,7 +761,7 @@ int is_directory(const char *);
 const char *real_path(const char *path);
 const char *real_path_if_valid(const char *path);
 const char *absolute_path(const char *path);
-const char *relative_path(const char *abs, const char *base);
+const char *relative_path(const char *in, const char *prefix, struct strbuf *sb);
 int normalize_path_copy(char *dst, const char *src);
 int longest_ancestor_length(const char *path, struct string_list *prefixes);
 char *strip_path_suffix(const char *path, const char *suffix);
@@ -771,9 +795,6 @@ extern int parse_sha1_header(const char *hdr, unsigned long *sizep);
 
 /* global flag to enable extra checks when accessing packed objects */
 extern int do_check_packed_object_crc;
-
-/* for development: log offset of pack access */
-extern const char *log_pack_access;
 
 extern int check_sha1_signature(const unsigned char *sha1, void *buf, unsigned long size, const char *type);
 
@@ -910,6 +931,7 @@ void show_date_relative(unsigned long time, int tz, const struct timeval *now,
 			struct strbuf *timebuf);
 int parse_date(const char *date, char *buf, int bufsize);
 int parse_date_basic(const char *date, unsigned long *timestamp, int *offset);
+int parse_expiry_date(const char *date, unsigned long *timestamp);
 void datestamp(char *buf, int bufsize);
 #define approxidate(s) approxidate_careful((s), NULL)
 unsigned long approxidate_careful(const char *, int *);
@@ -1024,9 +1046,21 @@ struct ref {
 	unsigned int
 		force:1,
 		forced_update:1,
-		merge:1,
 		deletion:1,
 		matched:1;
+
+	/*
+	 * Order is important here, as we write to FETCH_HEAD
+	 * in numeric order. And the default NOT_FOR_MERGE
+	 * should be 0, so that xcalloc'd structures get it
+	 * by default.
+	 */
+	enum {
+		FETCH_HEAD_MERGE = -1,
+		FETCH_HEAD_NOT_FOR_MERGE = 0,
+		FETCH_HEAD_IGNORE = 1
+	} fetch_head_status;
+
 	enum {
 		REF_STATUS_NONE = 0,
 		REF_STATUS_OK,
@@ -1098,7 +1132,9 @@ extern int unpack_object_header(struct packed_git *, struct pack_window **, off_
 
 struct object_info {
 	/* Request */
+	enum object_type *typep;
 	unsigned long *sizep;
+	unsigned long *disk_sizep;
 
 	/* Response */
 	enum {
@@ -1142,11 +1178,15 @@ extern int update_server_info(int);
 typedef int (*config_fn_t)(const char *, const char *, void *);
 extern int git_default_config(const char *, const char *, void *);
 extern int git_config_from_file(config_fn_t fn, const char *, void *);
+extern int git_config_from_buf(config_fn_t fn, const char *name,
+			       const char *buf, size_t len, void *data);
 extern void git_config_push_parameter(const char *text);
 extern int git_config_from_parameters(config_fn_t fn, void *data);
 extern int git_config(config_fn_t fn, void *);
 extern int git_config_with_options(config_fn_t fn, void *,
-				   const char *filename, int respect_includes);
+				   const char *filename,
+				   const char *blob_ref,
+				   int respect_includes);
 extern int git_config_early(config_fn_t fn, void *, const char *repo_config);
 extern int git_parse_ulong(const char *, unsigned long *);
 extern int git_config_int(const char *, const char *);
@@ -1325,5 +1365,32 @@ int checkout_fast_forward(const unsigned char *from,
 
 
 int sane_execvp(const char *file, char *const argv[]);
+
+/*
+ * A struct to encapsulate the concept of whether a file has changed
+ * since we last checked it. This uses criteria similar to those used
+ * for the index.
+ */
+struct stat_validity {
+	struct stat_data *sd;
+};
+
+void stat_validity_clear(struct stat_validity *sv);
+
+/*
+ * Returns 1 if the path is a regular file (or a symlink to a regular
+ * file) and matches the saved stat_validity, 0 otherwise.  A missing
+ * or inaccessible file is considered a match if the struct was just
+ * initialized, or if the previous update found an inaccessible file.
+ */
+int stat_validity_check(struct stat_validity *sv, const char *path);
+
+/*
+ * Update the stat_validity from a file opened at descriptor fd. If
+ * the file is missing, inaccessible, or not a regular file, then
+ * future calls to stat_validity_check will match iff one of those
+ * conditions continues to be true.
+ */
+void stat_validity_update(struct stat_validity *sv, int fd);
 
 #endif /* CACHE_H */

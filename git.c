@@ -324,6 +324,7 @@ static void handle_internal_command(int argc, const char **argv)
 		{ "cat-file", cmd_cat_file, RUN_SETUP },
 		{ "check-attr", cmd_check_attr, RUN_SETUP },
 		{ "check-ignore", cmd_check_ignore, RUN_SETUP | NEED_WORK_TREE },
+		{ "check-mailmap", cmd_check_mailmap, RUN_SETUP },
 		{ "check-ref-format", cmd_check_ref_format },
 		{ "checkout", cmd_checkout, RUN_SETUP | NEED_WORK_TREE },
 		{ "checkout-index", cmd_checkout_index,
@@ -514,8 +515,9 @@ static int run_argv(int *argcp, const char ***argv)
 }
 
 
-int main(int argc, const char **argv)
+int main(int argc, char **av)
 {
+	const char **argv = (const char **) av;
 	const char *cmd;
 
 	startup_info = &git_startup_info;
@@ -523,6 +525,13 @@ int main(int argc, const char **argv)
 	cmd = git_extract_argv0_path(argv[0]);
 	if (!cmd)
 		cmd = "git-help";
+
+	/*
+	 * Always open file descriptors 0/1/2 to avoid clobbering files
+	 * in die().  It also avoids messing up when the pipes are dup'ed
+	 * onto stdin/stdout/stderr in the child processes we spawn.
+	 */
+	sanitize_stdfds();
 
 	git_setup_gettext();
 

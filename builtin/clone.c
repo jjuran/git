@@ -18,7 +18,6 @@
 #include "transport.h"
 #include "strbuf.h"
 #include "dir.h"
-#include "pack-refs.h"
 #include "sigchain.h"
 #include "branch.h"
 #include "remote.h"
@@ -494,13 +493,16 @@ static void write_remote_refs(const struct ref *local_refs)
 {
 	const struct ref *r;
 
+	lock_packed_refs(LOCK_DIE_ON_ERROR);
+
 	for (r = local_refs; r; r = r->next) {
 		if (!r->peer_ref)
 			continue;
 		add_packed_ref(r->peer_ref->name, r->old_sha1);
 	}
 
-	pack_refs(PACK_REFS_ALL);
+	if (commit_packed_refs())
+		die_errno("unable to overwrite old ref-pack file");
 }
 
 static void write_followtags(const struct ref *refs, const char *msg)
@@ -542,16 +544,21 @@ static void update_remote_refs(const struct ref *refs,
 			       const struct ref *mapped_refs,
 			       const struct ref *remote_head_points_at,
 			       const char *branch_top,
-			       const char *msg)
+			       const char *msg,
+			       struct transport *transport,
+			       int check_connectivity)
 {
 	const struct ref *rm = mapped_refs;
 
-	if (0 <= option_verbosity)
-		printf(_("Checking connectivity... "));
-	if (check_everything_connected(iterate_ref_map, 0, &rm))
-		die(_("remote did not send all necessary objects"));
-	if (0 <= option_verbosity)
-		printf(_("done\n"));
+	if (check_connectivity) {
+		if (0 <= option_verbosity)
+			printf(_("Checking connectivity... "));
+		if (check_everything_connected_with_transport(iterate_ref_map,
+							      0, &rm, transport))
+			die(_("remote did not send all necessary objects"));
+		if (0 <= option_verbosity)
+			printf(_("done\n"));
+	}
 
 	if (refs) {
 		write_remote_refs(mapped_refs);
@@ -697,7 +704,7 @@ static void write_refspec_config(const char* src_ref_prefix,
 			/*
 			 * otherwise, the next "git fetch" will
 			 * simply fetch from HEAD without updating
-			 * any remote tracking branch, which is what
+			 * any remote-tracking branch, which is what
 			 * we want.
 			 */
 		} else {
@@ -787,6 +794,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	is_local = option_local != 0 && path && !is_bundle;
 	if (is_local && option_depth)
 		warning(_("--depth is ignored in local clones; use file:// instead."));
+	if (option_local > 0 && !is_local)
+		warning(_("--local is ignored"));
 
 	if (argc == 2)
 		dir = xstrdup(argv[1]);
@@ -893,6 +902,9 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		if (option_upload_pack)
 			transport_set_option(transport, TRANS_OPT_UPLOADPACK,
 					     option_upload_pack);
+
+		if (transport->smart_options && !option_depth)
+			transport->smart_options->check_self_contained_and_connected = 1;
 	}
 
 	refs = transport_get_remote_refs(transport);
@@ -954,7 +966,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		transport_fetch_refs(transport, mapped_refs);
 
 	update_remote_refs(refs, mapped_refs, remote_head_points_at,
-			   branch_top.buf, reflog_msg.buf);
+			   branch_top.buf, reflog_msg.buf, transport, !is_local);
 
 	update_head(our_head_points_at, remote_head, reflog_msg.buf);
 

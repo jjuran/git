@@ -97,7 +97,7 @@ static int read_tree_some(struct tree *tree, const char **pathspec)
 	return 0;
 }
 
-static int skip_same_name(struct cache_entry *ce, int pos)
+static int skip_same_name(const struct cache_entry *ce, int pos)
 {
 	while (++pos < active_nr &&
 	       !strcmp(active_cache[pos]->name, ce->name))
@@ -105,7 +105,7 @@ static int skip_same_name(struct cache_entry *ce, int pos)
 	return pos;
 }
 
-static int check_stage(int stage, struct cache_entry *ce, int pos)
+static int check_stage(int stage, const struct cache_entry *ce, int pos)
 {
 	while (pos < active_nr &&
 	       !strcmp(active_cache[pos]->name, ce->name)) {
@@ -119,7 +119,7 @@ static int check_stage(int stage, struct cache_entry *ce, int pos)
 		return error(_("path '%s' does not have their version"), ce->name);
 }
 
-static int check_stages(unsigned stages, struct cache_entry *ce, int pos)
+static int check_stages(unsigned stages, const struct cache_entry *ce, int pos)
 {
 	unsigned seen = 0;
 	const char *name = ce->name;
@@ -321,7 +321,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 
 	/* Any unmerged paths? */
 	for (pos = 0; pos < active_nr; pos++) {
-		struct cache_entry *ce = active_cache[pos];
+		const struct cache_entry *ce = active_cache[pos];
 		if (ce->ce_flags & CE_MATCHED) {
 			if (!ce_stage(ce))
 				continue;
@@ -587,7 +587,7 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 				   struct branch_info *new)
 {
 	struct strbuf msg = STRBUF_INIT;
-	const char *old_desc;
+	const char *old_desc, *reflog_msg;
 	if (opts->new_branch) {
 		if (opts->new_orphan_branch) {
 			if (opts->new_branch_log && !log_all_ref_updates) {
@@ -620,8 +620,13 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	old_desc = old->name;
 	if (!old_desc && old->commit)
 		old_desc = sha1_to_hex(old->commit->object.sha1);
-	strbuf_addf(&msg, "checkout: moving from %s to %s",
-		    old_desc ? old_desc : "(invalid)", new->name);
+
+	reflog_msg = getenv("GIT_REFLOG_ACTION");
+	if (!reflog_msg)
+		strbuf_addf(&msg, "checkout: moving from %s to %s",
+			old_desc ? old_desc : "(invalid)", new->name);
+	else
+		strbuf_insert(&msg, 0, reflog_msg, strlen(reflog_msg));
 
 	if (!strcmp(new->name, "HEAD") && !new->path && !opts->force_detach) {
 		/* Nothing to do. */
@@ -838,13 +843,16 @@ static int check_tracking_name(struct remote *remote, void *cb_data)
 	memset(&query, 0, sizeof(struct refspec));
 	query.src = cb->src_ref;
 	if (remote_find_tracking(remote, &query) ||
-	    get_sha1(query.dst, cb->dst_sha1))
+	    get_sha1(query.dst, cb->dst_sha1)) {
+		free(query.dst);
 		return 0;
+	}
 	if (cb->dst_ref) {
+		free(query.dst);
 		cb->unique = 0;
 		return 0;
 	}
-	cb->dst_ref = xstrdup(query.dst);
+	cb->dst_ref = query.dst;
 	return 0;
 }
 

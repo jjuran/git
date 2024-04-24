@@ -276,10 +276,9 @@ static void read_remotes_file(struct remote *remote)
 
 static void read_branches_file(struct remote *remote)
 {
-	const char *slash = strchr(remote->name, '/');
 	char *frag;
 	struct strbuf branch = STRBUF_INIT;
-	int n = slash ? slash - remote->name : 1000;
+	int n = 1000;
 	FILE *f = fopen(git_path("branches/%.*s", n, remote->name), "r");
 	char *s, *p;
 	int len;
@@ -299,21 +298,11 @@ static void read_branches_file(struct remote *remote)
 	while (isspace(p[-1]))
 		*--p = 0;
 	len = p - s;
-	if (slash)
-		len += strlen(slash);
 	p = xmalloc(len + 1);
 	strcpy(p, s);
-	if (slash)
-		strcat(p, slash);
 
 	/*
-	 * With "slash", e.g. "git fetch jgarzik/netdev-2.6" when
-	 * reading from $GIT_DIR/branches/jgarzik fetches "HEAD" from
-	 * the partial URL obtained from the branches file plus
-	 * "/netdev-2.6" and does not store it in any tracking ref.
-	 * #branch specifier in the file is ignored.
-	 *
-	 * Otherwise, the branches file would have URL and optionally
+	 * The branches file would have URL and optionally
 	 * #branch specified.  The "master" (or specified) branch is
 	 * fetched and stored in the local branch of the same name.
 	 */
@@ -323,12 +312,8 @@ static void read_branches_file(struct remote *remote)
 		strbuf_addf(&branch, "refs/heads/%s", frag);
 	} else
 		strbuf_addstr(&branch, "refs/heads/master");
-	if (!slash) {
-		strbuf_addf(&branch, ":refs/heads/%s", remote->name);
-	} else {
-		strbuf_reset(&branch);
-		strbuf_addstr(&branch, "HEAD:");
-	}
+
+	strbuf_addf(&branch, ":refs/heads/%s", remote->name);
 	add_url_alias(remote, p);
 	add_fetch_refspec(remote, strbuf_detach(&branch, NULL));
 	/*
@@ -1320,6 +1305,14 @@ static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***ds
 	free(sent_tips.tip);
 }
 
+static void prepare_ref_index(struct string_list *ref_index, struct ref *ref)
+{
+	for ( ; ref; ref = ref->next)
+		string_list_append_nodup(ref_index, ref->name)->util = ref;
+
+	sort_string_list(ref_index);
+}
+
 /*
  * Given the set of refs the local repository has, the set of refs the
  * remote repository has, and the refspec used for push, determine
@@ -1338,6 +1331,7 @@ int match_push_refs(struct ref *src, struct ref **dst,
 	int errs;
 	static const char *default_refspec[] = { ":", NULL };
 	struct ref *ref, **dst_tail = tail_ref(dst);
+	struct string_list dst_ref_index = STRING_LIST_INIT_NODUP;
 
 	if (!nr_refspec) {
 		nr_refspec = 1;
@@ -1348,6 +1342,7 @@ int match_push_refs(struct ref *src, struct ref **dst,
 
 	/* pick the remainder */
 	for (ref = src; ref; ref = ref->next) {
+		struct string_list_item *dst_item;
 		struct ref *dst_peer;
 		const struct refspec *pat = NULL;
 		char *dst_name;
@@ -1356,7 +1351,11 @@ int match_push_refs(struct ref *src, struct ref **dst,
 		if (!dst_name)
 			continue;
 
-		dst_peer = find_ref_by_name(*dst, dst_name);
+		if (!dst_ref_index.nr)
+			prepare_ref_index(&dst_ref_index, *dst);
+
+		dst_item = string_list_lookup(&dst_ref_index, dst_name);
+		dst_peer = dst_item ? dst_item->util : NULL;
 		if (dst_peer) {
 			if (dst_peer->peer_ref)
 				/* We're already sending something to this ref. */
@@ -1373,6 +1372,8 @@ int match_push_refs(struct ref *src, struct ref **dst,
 			/* Create a new one and link it */
 			dst_peer = make_linked_ref(dst_name, &dst_tail);
 			hashcpy(dst_peer->new_sha1, ref->new_sha1);
+			string_list_insert(&dst_ref_index,
+				dst_peer->name)->util = dst_peer;
 		}
 		dst_peer->peer_ref = copy_ref(ref);
 		dst_peer->force = pat->force;
@@ -1380,10 +1381,13 @@ int match_push_refs(struct ref *src, struct ref **dst,
 		free(dst_name);
 	}
 
+	string_list_clear(&dst_ref_index, 0);
+
 	if (flags & MATCH_REFS_FOLLOW_TAGS)
 		add_missing_tags(src, dst, &dst_tail);
 
 	if (send_prune) {
+		struct string_list src_ref_index = STRING_LIST_INIT_NODUP;
 		/* check for missing refs on the remote */
 		for (ref = *dst; ref; ref = ref->next) {
 			char *src_name;
@@ -1394,11 +1398,15 @@ int match_push_refs(struct ref *src, struct ref **dst,
 
 			src_name = get_ref_match(rs, nr_refspec, ref, send_mirror, FROM_DST, NULL);
 			if (src_name) {
-				if (!find_ref_by_name(src, src_name))
+				if (!src_ref_index.nr)
+					prepare_ref_index(&src_ref_index, src);
+				if (!string_list_has_string(&src_ref_index,
+					    src_name))
 					ref->peer_ref = alloc_delete_ref();
 				free(src_name);
 			}
 		}
+		string_list_clear(&src_ref_index, 0);
 	}
 	if (errs)
 		return -1;
@@ -1477,8 +1485,7 @@ struct branch *branch_get(const char *name)
 		ret->remote = remote_get(ret->remote_name);
 		if (ret->merge_nr) {
 			int i;
-			ret->merge = xcalloc(sizeof(*ret->merge),
-					     ret->merge_nr);
+			ret->merge = xcalloc(ret->merge_nr, sizeof(*ret->merge));
 			for (i = 0; i < ret->merge_nr; i++) {
 				ret->merge[i] = xcalloc(1, sizeof(**ret->merge));
 				ret->merge[i]->src = xstrdup(ret->merge_name[i]);
