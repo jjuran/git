@@ -2488,15 +2488,18 @@ static int sha1_loose_object_info(const unsigned char *sha1,
 
 	/*
 	 * If we don't care about type or size, then we don't
-	 * need to look inside the object at all.
+	 * need to look inside the object at all. Note that we
+	 * do not optimize out the stat call, even if the
+	 * caller doesn't care about the disk-size, since our
+	 * return value implicitly indicates whether the
+	 * object even exists.
 	 */
 	if (!oi->typep && !oi->sizep) {
-		if (oi->disk_sizep) {
-			struct stat st;
-			if (stat_sha1_file(sha1, &st) < 0)
-				return -1;
+		struct stat st;
+		if (stat_sha1_file(sha1, &st) < 0)
+			return -1;
+		if (oi->disk_sizep)
 			*oi->disk_sizep = st.st_size;
-		}
 		return 0;
 	}
 
@@ -2862,7 +2865,9 @@ static int create_tmpfile(char *buffer, size_t bufsiz, const char *filename)
 		/* Make sure the directory exists */
 		memcpy(buffer, filename, dirlen);
 		buffer[dirlen-1] = 0;
-		if (mkdir(buffer, 0777) || adjust_shared_perm(buffer))
+		if (mkdir(buffer, 0777) && errno != EEXIST)
+			return -1;
+		if (adjust_shared_perm(buffer))
 			return -1;
 
 		/* Try again */
