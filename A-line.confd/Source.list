@@ -83,6 +83,7 @@ builtin/reflog.c
 builtin/remote.c
 builtin/remote-ext.c
 builtin/remote-fd.c
+builtin/repack.c
 builtin/replace.c
 builtin/rerere.c
 builtin/reset.c
@@ -255,6 +256,7 @@ tree.c
 unpack-trees.c
 upload-pack.c
 url.c
+urlmatch.c
 usage.c
 userdiff.c
 utf8.c
