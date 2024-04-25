@@ -367,7 +367,7 @@ static void squash_message(struct commit *commit, struct commit_list *remotehead
 			sha1_to_hex(commit->object.sha1));
 		pretty_print_commit(&ctx, commit, &out);
 	}
-	if (write(fd, out.buf, out.len) < 0)
+	if (write_in_full(fd, out.buf, out.len) != out.len)
 		die_errno(_("Writing SQUASH_MSG"));
 	if (close(fd))
 		die_errno(_("Finishing SQUASH_MSG"));
@@ -446,17 +446,17 @@ static void merge_name(const char *remote, struct strbuf *msg)
 		die(_("'%s' does not point to a commit"), remote);
 
 	if (dwim_ref(remote, strlen(remote), branch_head, &found_ref) > 0) {
-		if (!prefixcmp(found_ref, "refs/heads/")) {
+		if (starts_with(found_ref, "refs/heads/")) {
 			strbuf_addf(msg, "%s\t\tbranch '%s' of .\n",
 				    sha1_to_hex(branch_head), remote);
 			goto cleanup;
 		}
-		if (!prefixcmp(found_ref, "refs/tags/")) {
+		if (starts_with(found_ref, "refs/tags/")) {
 			strbuf_addf(msg, "%s\t\ttag '%s' of .\n",
 				    sha1_to_hex(branch_head), remote);
 			goto cleanup;
 		}
-		if (!prefixcmp(found_ref, "refs/remotes/")) {
+		if (starts_with(found_ref, "refs/remotes/")) {
 			strbuf_addf(msg, "%s\t\tremote-tracking branch '%s' of .\n",
 				    sha1_to_hex(branch_head), remote);
 			goto cleanup;
@@ -570,8 +570,8 @@ static int git_merge_config(const char *k, const char *v, void *cb)
 {
 	int status;
 
-	if (branch && !prefixcmp(k, "branch.") &&
-		!prefixcmp(k + 7, branch) &&
+	if (branch && starts_with(k, "branch.") &&
+		starts_with(k + 7, branch) &&
 		!strcmp(k + 7 + strlen(branch), ".mergeoptions")) {
 		free(branch_mergeoptions);
 		branch_mergeoptions = xstrdup(v);
@@ -1114,7 +1114,7 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 	 * current branch.
 	 */
 	branch = branch_to_free = resolve_refdup("HEAD", head_sha1, 0, &flag);
-	if (branch && !prefixcmp(branch, "refs/heads/"))
+	if (branch && starts_with(branch, "refs/heads/"))
 		branch += 11;
 	if (!branch || is_null_sha1(head_sha1))
 		head_commit = NULL;

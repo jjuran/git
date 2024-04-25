@@ -380,8 +380,8 @@ static void show_local_changes(struct object *head,
 static void describe_detached_head(const char *msg, struct commit *commit)
 {
 	struct strbuf sb = STRBUF_INIT;
-	parse_commit(commit);
-	pp_commit_easy(CMIT_FMT_ONELINE, commit, &sb);
+	if (!parse_commit(commit))
+		pp_commit_easy(CMIT_FMT_ONELINE, commit, &sb);
 	fprintf(stderr, "%s %s... %s\n", msg,
 		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV), sb.buf);
 	strbuf_release(&sb);
@@ -677,12 +677,12 @@ static int add_pending_uninteresting_ref(const char *refname,
 
 static void describe_one_orphan(struct strbuf *sb, struct commit *commit)
 {
-	parse_commit(commit);
 	strbuf_addstr(sb, "  ");
 	strbuf_addstr(sb,
 		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
 	strbuf_addch(sb, ' ');
-	pp_commit_easy(CMIT_FMT_ONELINE, commit, sb);
+	if (!parse_commit(commit))
+		pp_commit_easy(CMIT_FMT_ONELINE, commit, sb);
 	strbuf_addch(sb, '\n');
 }
 
@@ -781,7 +781,7 @@ static int switch_branches(const struct checkout_opts *opts,
 	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
 
-	if (old.path && !prefixcmp(old.path, "refs/heads/"))
+	if (old.path && starts_with(old.path, "refs/heads/"))
 		old.name = old.path + strlen("refs/heads/");
 
 	if (!new->name) {
@@ -789,7 +789,7 @@ static int switch_branches(const struct checkout_opts *opts,
 		new->commit = old.commit;
 		if (!new->commit)
 			die(_("You are on a branch yet to be born"));
-		parse_commit(new->commit);
+		parse_commit_or_die(new->commit);
 	}
 
 	ret = merge_working_tree(opts, &old, new, &writeout_error);
@@ -816,7 +816,7 @@ static int git_checkout_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
-	if (!prefixcmp(var, "submodule."))
+	if (starts_with(var, "submodule."))
 		return parse_submodule_config_option(var, value);
 
 	return git_xmerge_config(var, value, NULL);
@@ -995,7 +995,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 		/* not a commit */
 		*source_tree = parse_tree_indirect(rev);
 	} else {
-		parse_commit(new->commit);
+		parse_commit_or_die(new->commit);
 		*source_tree = new->commit->tree;
 	}
 
@@ -1160,9 +1160,9 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		const char *argv0 = argv[0];
 		if (!argc || !strcmp(argv0, "--"))
 			die (_("--track needs a branch name"));
-		if (!prefixcmp(argv0, "refs/"))
+		if (starts_with(argv0, "refs/"))
 			argv0 += 5;
-		if (!prefixcmp(argv0, "remotes/"))
+		if (starts_with(argv0, "remotes/"))
 			argv0 += 8;
 		argv0 = strchr(argv0, '/');
 		if (!argv0 || !argv0[1])
