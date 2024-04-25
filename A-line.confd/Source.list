@@ -47,6 +47,7 @@ builtin/fmt-merge-msg.c
 builtin/for-each-ref.c
 builtin/fsck.c
 builtin/gc.c
+builtin/get-tar-commit-id.c
 builtin/grep.c
 builtin/hash-object.c
 builtin/help.c
@@ -98,7 +99,6 @@ builtin/show-ref.c
 builtin/stripspace.c
 builtin/symbolic-ref.c
 builtin/tag.c
-builtin/tar-tree.c
 builtin/unpack-file.c
 builtin/unpack-objects.c
 builtin/update-index.c
