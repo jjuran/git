@@ -265,6 +265,9 @@ static const char *wt_status_unmerged_status_string(int stagemask)
 	default:
 		die(_("bug: unhandled unmerged status %x"), stagemask);
 	}
+
+	/* Not reached */
+	return NULL;
 }
 
 static const char *wt_status_diff_status_string(int status)
