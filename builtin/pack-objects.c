@@ -743,8 +743,6 @@ static void write_pack_file(void)
 			f = create_tmp_packfile(&pack_tmp_name);
 
 		offset = write_pack_header(f, nr_remaining);
-		if (!offset)
-			die_errno("unable to write pack header");
 		nr_written = 0;
 		for (; i < nr_objects; i++) {
 			struct object_entry *e = write_order[i];
@@ -2038,7 +2036,7 @@ static int add_ref_tag(const char *path, const unsigned char *sha1, int flag, vo
 {
 	unsigned char peeled[20];
 
-	if (!prefixcmp(path, "refs/tags/") && /* is a tag? */
+	if (starts_with(path, "refs/tags/") && /* is a tag? */
 	    !peel_ref(path, peeled)        && /* peelable? */
 	    locate_object_entry(peeled))      /* object packed? */
 		add_object_entry(sha1, OBJ_TAG, NULL, 0);

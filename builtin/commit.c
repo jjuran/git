@@ -733,7 +733,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 				eol = nl - sb.buf;
 			else
 				eol = sb.len;
-			if (!prefixcmp(sb.buf + previous, "\nConflicts:\n")) {
+			if (starts_with(sb.buf + previous, "\nConflicts:\n")) {
 				ignore_footer = sb.len - previous;
 				break;
 			}
@@ -904,7 +904,7 @@ static int rest_is_empty(struct strbuf *sb, int start)
 			eol = sb->len;
 
 		if (strlen(sign_off_header) <= eol - i &&
-		    !prefixcmp(sb->buf + i, sign_off_header)) {
+		    starts_with(sb->buf + i, sign_off_header)) {
 			i = eol;
 			continue;
 		}
@@ -1186,7 +1186,7 @@ static int git_status_config(const char *k, const char *v, void *cb)
 {
 	struct wt_status *s = cb;
 
-	if (!prefixcmp(k, "column."))
+	if (starts_with(k, "column."))
 		return git_column_config(k, v, "status", &s->colopts);
 	if (!strcmp(k, "status.submodulesummary")) {
 		int is_bool;
@@ -1214,7 +1214,7 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		s->display_comment_prefix = git_config_bool(k, v);
 		return 0;
 	}
-	if (!prefixcmp(k, "status.color.") || !prefixcmp(k, "color.status.")) {
+	if (starts_with(k, "status.color.") || starts_with(k, "color.status.")) {
 		int slot = parse_status_slot(k, 13);
 		if (slot < 0)
 			return 0;
@@ -1341,7 +1341,7 @@ static void print_summary(const char *prefix, const unsigned char *sha1,
 	commit = lookup_commit(sha1);
 	if (!commit)
 		die(_("couldn't look up newly created commit"));
-	if (!commit || parse_commit(commit))
+	if (parse_commit(commit))
 		die(_("could not parse newly created commit"));
 
 	strbuf_addstr(&format, "format:%h] %s");
@@ -1380,7 +1380,7 @@ static void print_summary(const char *prefix, const unsigned char *sha1,
 
 	head = resolve_ref_unsafe("HEAD", junk_sha1, 0, NULL);
 	printf("[%s%s ",
-		!prefixcmp(head, "refs/heads/") ?
+		starts_with(head, "refs/heads/") ?
 			head + 11 :
 			!strcmp(head, "HEAD") ?
 				_("detached HEAD") :
@@ -1528,7 +1528,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		current_head = NULL;
 	else {
 		current_head = lookup_commit_or_die(sha1, "HEAD");
-		if (!current_head || parse_commit(current_head))
+		if (parse_commit(current_head))
 			die(_("could not parse HEAD commit"));
 	}
 	argc = parse_and_validate_options(argc, argv, builtin_commit_options,
