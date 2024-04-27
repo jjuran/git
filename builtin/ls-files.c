@@ -450,6 +450,11 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 	struct dir_struct dir;
 	struct exclude_list *el;
 	struct string_list exclude_list = STRING_LIST_INIT_NODUP;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_ls_files_options[] = {
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
 			N_("paths are separated with NUL character"),
@@ -505,6 +510,10 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		OPT_BOOL(0, "debug", &debug_mode, N_("show debugging data")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(ls_files_usage, builtin_ls_files_options);

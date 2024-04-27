@@ -33,8 +33,14 @@ static int check_symref(const char *HEAD, int quiet, int shorten, int print)
 
 int cmd_symbolic_ref(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define delete delete_
+#endif
+
 	int quiet = 0, delete = 0, shorten = 0, ret = 0;
 	const char *msg = NULL;
+
 	struct option options[] = {
 		OPT__QUIET(&quiet,
 			N_("suppress error message for non-symbolic (detached) refs")),
@@ -43,6 +49,10 @@ int cmd_symbolic_ref(int argc, const char **argv, const char *prefix)
 		OPT_STRING('m', NULL, &msg, N_("reason"), N_("reason of the update")),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options,

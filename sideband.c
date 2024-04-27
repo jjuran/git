@@ -13,6 +13,7 @@
  * the remote died unexpectedly.  A flush() concludes the stream.
  */
 
+#undef PREFIX
 #define PREFIX "remote:"
 
 #define ANSI_SUFFIX "\033[K"

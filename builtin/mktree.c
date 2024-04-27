@@ -146,12 +146,20 @@ int cmd_mktree(int ac, const char **av, const char *prefix)
 	int is_batch_mode = 0;
 	int got_eof = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option option[] = {
 		OPT_SET_INT('z', NULL, &line_termination, N_("input is NUL terminated"), '\0'),
 		OPT_SET_INT( 0 , "missing", &allow_missing, N_("allow missing objects"), 1),
 		OPT_SET_INT( 0 , "batch", &is_batch_mode, N_("allow creation of more than one tree"), 1),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	ac = parse_options(ac, av, prefix, option, mktree_usage, 0);
 
@@ -184,5 +192,5 @@ int cmd_mktree(int ac, const char **av, const char *prefix)
 		used=0; /* reset tree entry buffer for re-use in batch mode */
 	}
 	strbuf_release(&sb);
-	exit(0);
+	return 0;
 }

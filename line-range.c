@@ -113,6 +113,9 @@ static const char *parse_loc(const char *spec, nth_line_fn_t nth_line,
 		die("-L parameter '%s' starting at line %ld: %s",
 		    spec + 1, begin + 1, errbuf);
 	}
+
+	/* Not reached */
+	return NULL;
 }
 
 static int match_funcname(xdemitconf_t *xecfg, const char *bol, const char *eol)

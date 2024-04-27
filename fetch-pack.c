@@ -208,6 +208,9 @@ static enum ack_type get_ack(int fd, unsigned char *result_sha1)
 		}
 	}
 	die("git fetch_pack: expected ACK/NAK, got '%s'", line);
+
+	/* Not reached */
+	return NAK;
 }
 
 static void send_request(struct fetch_pack_args *args,

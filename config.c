@@ -450,8 +450,8 @@ static int git_parse_source(config_fn_t fn, void *data)
 	}
 	if (cf->die_on_error)
 		die("bad config file line %d in %s", cf->linenr, cf->name);
-	else
-		return error("bad config file line %d in %s", cf->linenr, cf->name);
+
+	return error("bad config file line %d in %s", cf->linenr, cf->name);
 }
 
 static int parse_unit_factor(const char *end, uintmax_t *val)

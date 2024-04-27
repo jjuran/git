@@ -491,6 +491,9 @@ static int grep_object(struct grep_opt *opt, const struct pathspec *pathspec,
 		return hit;
 	}
 	die(_("unable to grep from object of type %s"), typename(obj->type));
+
+	/* Not reached */
+	return 0;
 }
 
 static int grep_objects(struct grep_opt *opt, const struct pathspec *pathspec,
@@ -635,6 +638,10 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	int use_index = 1;
 	int pattern_type_arg = GREP_PATTERN_TYPE_UNSPECIFIED;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOL(0, "cached", &cached,
 			N_("search in index instead of in the work tree")),
@@ -737,13 +744,17 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 		OPT_GROUP(""),
 		{ OPTION_STRING, 'O', "open-files-in-pager", &show_in_pager,
 			N_("pager"), N_("show matching files in the pager"),
-			PARSE_OPT_OPTARG, NULL, (intptr_t)default_pager },
+			PARSE_OPT_OPTARG, NULL, (intptr_t)(char*)default_pager },
 		OPT_BOOL(0, "ext-grep", &external_grep_allowed__ignored,
 			 N_("allow calling of grep(1) (ignored by this build)")),
 		{ OPTION_CALLBACK, 0, "help-all", &options, NULL, N_("show usage"),
 		  PARSE_OPT_HIDDEN | PARSE_OPT_NOARG, help_callback },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	/*
 	 * 'git grep -h', unlike 'git grep -h <pattern>', is a request

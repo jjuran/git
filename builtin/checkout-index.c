@@ -182,6 +182,11 @@ int cmd_checkout_index(int argc, const char **argv, const char *prefix)
 	int read_from_stdin = 0;
 	int prefix_length;
 	int force = 0, quiet = 0, not_new = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_checkout_index_options[] = {
 		OPT_BOOL('a', "all", &all,
 			N_("check out all files in the index")),
@@ -208,6 +213,10 @@ int cmd_checkout_index(int argc, const char **argv, const char *prefix)
 			option_parse_stage),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(builtin_checkout_index_usage,

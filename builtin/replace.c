@@ -168,6 +168,11 @@ static int replace_object(const char *object_ref, const char *replace_ref,
 
 int cmd_replace(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define delete delete_
+#endif
+
 	int list = 0, delete = 0, force = 0;
 	const char *format = NULL;
 	struct option options[] = {
@@ -177,6 +182,10 @@ int cmd_replace(int argc, const char **argv, const char *prefix)
 		OPT_STRING(0, "format", &format, N_("format"), N_("use this format")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	check_replace_refs = 0;
 

@@ -210,6 +210,10 @@ int cmd_merge_base(int argc, const char **argv, const char *prefix)
 	int show_all = 0;
 	int cmdmode = 0;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option options[] = {
 		OPT_BOOL('a', "all", &show_all, N_("output all common ancestors")),
 		OPT_CMDMODE(0, "octopus", &cmdmode,
@@ -222,6 +226,10 @@ int cmd_merge_base(int argc, const char **argv, const char *prefix)
 			    N_("find where <commit> forked from reflog of <ref>"), 'f'),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, options, merge_base_usage, 0);

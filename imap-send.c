@@ -699,7 +699,7 @@ static int parse_response_code(struct imap_store *ctx, struct imap_cmd_cb *cb,
 		/* RFC2060 says that these messages MUST be displayed
 		 * to the user
 		 */
-		for (; isspace((unsigned char)*p); p++);
+		for (; isspace((unsigned char)*p); p++) continue;
 		fprintf(stderr, "*** IMAP ALERT *** %s\n", p);
 	} else if (cb && cb->ctx && !strcmp("APPENDUID", arg)) {
 		if (!(arg = next_arg(&s)) || !(ctx->uidvalidity = atoi(arg)) ||
@@ -924,6 +924,9 @@ static char *cram(const char *challenge_64, const char *user, const char *pass)
 {
 	die("If you want to use CRAM-MD5 authenticate method, "
 	    "you have to build git-imap-send with OpenSSL library.");
+	
+	/* not reached */
+	return NULL;
 }
 
 #endif
@@ -960,8 +963,17 @@ static struct imap_store *imap_open_store(struct imap_server_conf *srvc)
 	/* open connection to IMAP server */
 
 	if (srvc->tunnel) {
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 		const char *argv[] = { srvc->tunnel, NULL };
 		struct child_process tunnel = {NULL};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 		imap_info("Starting tunnel '%s'... ", srvc->tunnel);
 

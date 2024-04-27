@@ -277,6 +277,9 @@ static enum protocol get_protocol(const char *name)
 	if (!strcmp(name, "file"))
 		return PROTO_FILE;
 	die("I don't handle protocol '%s'", name);
+
+	/* Not reached */
+	return (enum protocol)0;
 }
 
 #define STR_(s)	# s
@@ -309,6 +312,9 @@ static void enable_keepalive(int sockfd)
 	int ka = 1;
 
 	if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &ka, sizeof(ka)) < 0)
+	#ifdef __RELIX__
+		if (errno != ENOSYS)
+	#endif
 		fprintf(stderr, "unable to set SO_KEEPALIVE on socket: %s\n",
 			strerror(errno));
 }

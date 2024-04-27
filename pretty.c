@@ -1528,7 +1528,7 @@ void format_commit_message(const struct commit *commit,
 	}
 
 	if (output_enc) {
-		int outsz;
+		int outsz = 0;
 		char *out = reencode_string_len(sb->buf, sb->len,
 						output_enc, utf8, &outsz);
 		if (out)

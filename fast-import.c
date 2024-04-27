@@ -2921,7 +2921,7 @@ static void cat_blob(struct object_entry *oe, unsigned char sha1[20])
 static void parse_cat_blob(void)
 {
 	const char *p;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	unsigned char sha1[20];
 
 	/* cat-blob SP <object> LF */
