@@ -20,5 +20,5 @@ int main(int ac, char **av)
 	shift_tree(one->object.sha1, two->object.sha1, shifted, -1);
 	printf("shifted: %s\n", sha1_to_hex(shifted));
 
-	exit(0);
+	return 0;
 }

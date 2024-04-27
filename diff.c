@@ -560,6 +560,9 @@ static struct diff_tempfile *claim_diff_tempfile(void) {
 		if (!diff_temp[i].name)
 			return diff_temp + i;
 	die("BUG: diff is failing to clean up its tempfiles");
+
+	/* Not reached */
+	return NULL;
 }
 
 static int remove_tempfile_installed;

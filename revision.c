@@ -332,6 +332,9 @@ static struct commit *handle_commit(struct rev_info *revs,
 		return NULL;
 	}
 	die("%s is unknown object", name);
+
+	/* Not reached */
+	return NULL;
 }
 
 static int everybody_uninteresting(struct commit_list *orig)

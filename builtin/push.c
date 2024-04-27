@@ -152,6 +152,9 @@ static NORETURN int die_push_simple(struct branch *branch, struct remote *remote
 	      "%s"),
 	    remote->name, short_upstream,
 	    remote->name, branch->name, advice_maybe);
+	
+	/* Not reached */
+	return 0;
 }
 
 static const char message_detached_head_die[] =
@@ -530,6 +533,5 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 	rc = do_push(repo, flags);
 	if (rc == -1)
 		usage_with_options(push_usage, options);
-	else
-		return rc;
+	return rc;
 }
