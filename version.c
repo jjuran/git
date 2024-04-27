@@ -2,6 +2,12 @@
 #include "version.h"
 #include "strbuf.h"
 
+
+#define GIT_VERSION "2.0.1"
+
+#define GIT_USER_AGENT "git/" GIT_VERSION
+
+
 const char git_version_string[] = GIT_VERSION;
 
 const char *git_user_agent(void)
