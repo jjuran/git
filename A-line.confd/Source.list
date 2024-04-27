@@ -118,7 +118,6 @@ column.c
 combine-diff.c
 commit.c
 compat/basename.c
-compat/fnmatch/fnmatch.c
 compat/inet_pton.c
 compat/memmem.c
 compat/mmap.c
@@ -149,6 +148,10 @@ dir.c
 editor.c
 entry.c
 environment.c
+ewah/bitmap.c
+ewah/ewah_bitmap.c
+ewah/ewah_io.c
+ewah/ewah_rlw.c
 exec_cmd.c
 fast-import.c
 fetch-pack.c
@@ -157,7 +160,7 @@ git.c
 gpg-interface.c
 graph.c
 grep.c
-hash.c
+hashmap.c
 help.c
 hex.c
 http-backend.c
@@ -187,7 +190,10 @@ notes-cache.c
 notes-merge.c
 notes-utils.c
 object.c
+pack-bitmap.c
+pack-bitmap-write.c
 pack-check.c
+pack-objects.c
 pack-revindex.c
 pack-write.c
 pager.c
@@ -262,6 +268,7 @@ userdiff.c
 utf8.c
 varint.c
 version.c
+versioncmp.c
 walker.c
 wildmatch.c
 wrapper.c

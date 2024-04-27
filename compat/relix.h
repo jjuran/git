@@ -8,8 +8,6 @@
 // Include <ctype.h> early so git's macros don't interfere with it later
 #include <ctype.h>
 
-#define GIT_VERSION "1.9.4"
-
 // MacRelix has small thread stacks, and 68K has a hard 32K local data limit.
 #define LARGE_PACKET_MAX (16384 - 16)
 
@@ -28,8 +26,6 @@
 #define NO_PTHREADS 1
 #define NO_LIBGEN_H 1
 
-#define HAVE_STRING_H 1
-
 #define SHA1_HEADER "block-sha1/sha1.h"
 
 #define ETC_GITCONFIG "/etc/gitconfig"
@@ -42,11 +38,21 @@
 #define GIT_INFO_PATH "info"
 #define GIT_HTML_PATH "html"
 
-#define GIT_USER_AGENT "git/" GIT_VERSION
-
-#define PREFIX "/usr"
-
 #define gitmemmem     memmem
 #define gitstrcasestr strcasestr
+
+// All MacRelix architectures are big-endian.
+
+#ifndef LITTLE_ENDIAN
+#define LITTLE_ENDIAN  1234
+#endif
+
+#ifndef BIG_ENDIAN
+#define BIG_ENDIAN  4321
+#endif
+
+#ifndef BYTE_ORDER
+#define BYTE_ORDER  BIG_ENDIAN
+#endif
 
 extern int reexec( void* f, ... );

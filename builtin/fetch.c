@@ -188,18 +188,10 @@ static void find_non_local_tags(struct transport *transport,
 			struct ref **head,
 			struct ref ***tail)
 {
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus on
-#endif
-
 	struct string_list existing_refs = STRING_LIST_INIT_DUP;
 	struct string_list remote_refs = STRING_LIST_INIT_NODUP;
 	const struct ref *ref;
 	struct string_list_item *item = NULL;
-
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus reset
-#endif
 
 	for_each_ref(add_existing, &existing_refs);
 	for (ref = transport_get_remote_refs(transport); ref; ref = ref->next) {
@@ -1042,7 +1034,6 @@ static int fetch_multiple(struct string_list *list)
 
 static int fetch_one(struct remote *remote, int argc, const char **argv)
 {
-	int i;
 	static const char **refs = NULL;
 	struct refspec *refspec;
 	int ref_nr = 0;
@@ -1066,6 +1057,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv)
 
 	if (argc > 0) {
 		int j = 0;
+		int i;
 		refs = xcalloc(argc + 1, sizeof(const char *));
 		for (i = 0; i < argc; i++) {
 			if (!strcmp(argv[i], "tag")) {

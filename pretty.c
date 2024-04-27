@@ -555,14 +555,13 @@ static char *get_header(const struct commit *commit, const char *msg,
 	const char *line = msg;
 
 	while (line) {
-		const char *eol = strchr(line, '\n'), *next;
+		const char *eol = strchrnul(line, '\n'), *next;
 
 		if (line == eol)
 			return NULL;
-		if (!eol) {
+		if (!*eol) {
 			warning("malformed commit (header is missing newline): %s",
 				sha1_to_hex(commit->object.sha1));
-			eol = line + strlen(line);
 			next = NULL;
 		} else
 			next = eol + 1;
@@ -1507,13 +1506,18 @@ void format_commit_message(const struct commit *commit,
 	context.commit = commit;
 	context.pretty_ctx = pretty_ctx;
 	context.wrap_start = sb->len;
+	/*
+	 * convert a commit message to UTF-8 first
+	 * as far as 'format_commit_item' assumes it in UTF-8
+	 */
 	context.message = logmsg_reencode(commit,
 					  &context.commit_encoding,
-					  output_enc);
+					  utf8);
 
 	strbuf_expand(sb, format, format_commit_item, &context);
 	rewrap_message_tail(sb, &context, 0, 0, 0);
 
+	/* then convert a commit message to an actual output encoding */
 	if (output_enc) {
 		if (same_encoding(utf8, output_enc))
 			output_enc = NULL;

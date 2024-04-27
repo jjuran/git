@@ -300,11 +300,13 @@ static int fuzzy_matchlines(const char *s1, size_t n1,
 	while ((*last2 == '\r') || (*last2 == '\n'))
 		last2--;
 
-	/* skip leading whitespace */
-	while (isspace(*s1) && (s1 <= last1))
-		s1++;
-	while (isspace(*s2) && (s2 <= last2))
-		s2++;
+	/* skip leading whitespaces, if both begin with whitespace */
+	if (s1 <= last1 && s2 <= last2 && isspace(*s1) && isspace(*s2)) {
+		while (isspace(*s1) && (s1 <= last1))
+			s1++;
+		while (isspace(*s2) && (s2 <= last2))
+			s2++;
+	}
 	/* early return if both lines are empty */
 	if ((s1 > last1) && (s2 > last2))
 		return 1;
@@ -1943,13 +1945,7 @@ static int parse_chunk(char *buffer, unsigned long size, struct patch *patch)
 				       size - offset - hdrsize, patch);
 
 	if (!patchsize) {
-		static const char *binhdr[] = {
-			"Binary files ",
-			"Files ",
-			NULL,
-		};
 		static const char git_binary[] = "GIT binary patch\n";
-		int i;
 		int hd = hdrsize + offset;
 		unsigned long llen = linelen(buffer + hd, size - hd);
 
@@ -1965,6 +1961,12 @@ static int parse_chunk(char *buffer, unsigned long size, struct patch *patch)
 				patchsize = 0;
 		}
 		else if (!memcmp(" differ\n", buffer + hd + llen - 8, 8)) {
+			static const char *binhdr[] = {
+				"Binary files ",
+				"Files ",
+				NULL,
+			};
+			int i;
 			for (i = 0; binhdr[i]; i++) {
 				int len = strlen(binhdr[i]);
 				if (len < size - hd &&
@@ -4152,7 +4154,7 @@ static int use_patch(struct patch *p)
 	/* See if it matches any of exclude/include rule */
 	for (i = 0; i < limit_by_name.nr; i++) {
 		struct string_list_item *it = &limit_by_name.items[i];
-		if (!fnmatch(it->string, pathname, 0))
+		if (!wildmatch(it->string, pathname, 0, NULL))
 			return (it->util != NULL);
 	}
 

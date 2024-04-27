@@ -1064,11 +1064,6 @@ static void drop_privileges(struct credentials *cred)
 	/* nothing */
 }
 
-static void daemonize(void)
-{
-	die("--detach not supported on this platform");
-}
-
 static struct credentials *prepare_credentials(const char *user_name,
     const char *group_name)
 {
@@ -1109,24 +1104,6 @@ static struct credentials *prepare_credentials(const char *user_name,
 	}
 
 	return &c;
-}
-
-static void daemonize(void)
-{
-	switch (fork()) {
-		case 0:
-			break;
-		case -1:
-			die_errno("fork failed");
-		default:
-			exit(0);
-	}
-	if (setsid() == -1)
-		die_errno("setsid failed");
-	close(0);
-	close(1);
-	close(2);
-	sanitize_stdfds();
 }
 #endif
 
@@ -1341,9 +1318,10 @@ int main(int argc, char **argv)
 	if (inetd_mode || serve_mode)
 		return execute();
 
-	if (detach)
-		daemonize();
-	else
+	if (detach) {
+		if (daemonize())
+			die("--detach not supported on this platform");
+	} else
 		sanitize_stdfds();
 
 	if (pid_file)
