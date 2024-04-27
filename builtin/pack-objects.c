@@ -21,6 +21,12 @@
 #include "thread-utils.h"
 #include "pack-bitmap.h"
 
+#ifdef __RELIX__
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 4)
+#else
+#define LARGE_BLOB_BUFFER_SIZE  (1024 * 16)
+#endif
+
 static const char *pack_usage[] = {
 	N_("git pack-objects --stdout [options...] [< ref-list | < object-list]"),
 	N_("git pack-objects [options...] base-name [< ref-list | < object-list]"),
@@ -147,8 +153,8 @@ static unsigned long write_large_blob_data(struct git_istream *st, struct sha1fi
 					   const unsigned char *sha1)
 {
 	git_zstream stream;
-	unsigned char ibuf[1024 * 16];
-	unsigned char obuf[1024 * 16];
+	unsigned char ibuf[LARGE_BLOB_BUFFER_SIZE];
+	unsigned char obuf[LARGE_BLOB_BUFFER_SIZE];
 	unsigned long olen = 0;
 
 	memset(&stream, 0, sizeof(stream));
@@ -2569,6 +2575,10 @@ static int option_parse_ulong(const struct option *opt,
 
 int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int use_internal_rev_list = 0;
 	int thin = 0;
 	int all_progress_implied = 0;
@@ -2644,6 +2654,10 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 			 N_("write a bitmap index together with the pack index")),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	check_replace_refs = 0;
 

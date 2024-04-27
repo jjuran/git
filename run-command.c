@@ -4,6 +4,12 @@
 #include "sigchain.h"
 #include "argv-array.h"
 
+#ifdef __RELIX__
+#define GIT_FORK() vfork()
+#else
+#define GIT_FORK() fork()
+#endif
+
 #ifndef SHELL_PATH
 # define SHELL_PATH "/bin/sh"
 #endif
@@ -343,7 +349,7 @@ fail_pipe:
 	if (pipe(notify_pipe))
 		notify_pipe[0] = notify_pipe[1] = -1;
 
-	cmd->pid = fork();
+	cmd->pid = GIT_FORK();
 	failed_errno = errno;
 	if (!cmd->pid) {
 		/*
@@ -416,7 +422,7 @@ fail_pipe:
 			if (!cmd->silent_exec_failure)
 				error("cannot run %s: %s", cmd->argv[0],
 					strerror(ENOENT));
-			exit(127);
+			_exit(127);
 		} else {
 			die_errno("cannot exec '%s'", cmd->argv[0]);
 		}
@@ -625,6 +631,15 @@ static int async_die_is_recursing(void)
 
 #endif
 
+static void run_async_proc(struct async *async, int proc_in, int proc_out)
+{
+#ifdef __RELIX__
+	(void) reexec(async->proc, proc_in, proc_out, async->data);
+#else
+	exit(!!async->proc(proc_in, proc_out, async->data));
+#endif
+}
+
 int start_async(struct async *async)
 {
 	int need_in, need_out;
@@ -671,7 +686,7 @@ int start_async(struct async *async)
 	/* Flush stdio before fork() to avoid cloning buffers */
 	fflush(NULL);
 
-	async->pid = fork();
+	async->pid = GIT_FORK();
 	if (async->pid < 0) {
 		error("fork (async) failed: %s", strerror(errno));
 		goto error;
@@ -681,7 +696,7 @@ int start_async(struct async *async)
 			close(fdin[1]);
 		if (need_out)
 			close(fdout[0]);
-		exit(!!async->proc(proc_in, proc_out, async->data));
+		run_async_proc(async, proc_in, proc_out);
 	}
 
 	mark_child_for_cleanup(async->pid);
@@ -762,10 +777,18 @@ char *find_hook(const char *name)
 
 int run_hook_ve(const char *const *env, const char *name, va_list args)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct child_process hook;
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	const char *p;
 	int ret;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	p = find_hook(name);
 	if (!p)

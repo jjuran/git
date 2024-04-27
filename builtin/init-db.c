@@ -479,6 +479,11 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 	const char *work_tree;
 	const char *template_dir = NULL;
 	unsigned int flags = 0;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	const struct option init_db_options[] = {
 		OPT_STRING(0, "template", &template_dir, N_("template-directory"),
 				N_("directory from which templates will be used")),
@@ -493,6 +498,10 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 			   N_("separate git dir from working tree")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, init_db_options, init_db_usage, 0);
 

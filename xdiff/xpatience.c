@@ -42,6 +42,8 @@
 
 #define NON_UNIQUE ULONG_MAX
 
+#define hashmap xdiff_hashmap
+
 /*
  * This is a hash mapping from line hash to line numbers in the first and
  * second file.

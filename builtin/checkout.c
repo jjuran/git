@@ -1081,6 +1081,11 @@ static int checkout_branch(struct checkout_opts *opts,
 
 int cmd_checkout(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#define new new_
+#endif
+
 	struct checkout_opts opts;
 	struct branch_info new;
 	char *conflict_style = NULL;
@@ -1112,6 +1117,10 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 				N_("second guess 'git checkout no-such-branch'")),
 		OPT_END(),
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	memset(&opts, 0, sizeof(opts));
 	memset(&new, 0, sizeof(new));

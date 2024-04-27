@@ -4355,6 +4355,10 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 
 	const char *whitespace_option = NULL;
 
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	struct option builtin_apply_options[] = {
 		{ OPTION_CALLBACK, 0, "exclude", NULL, N_("path"),
 			N_("don't apply changes matching the given path"),
@@ -4421,6 +4425,10 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 			0, option_parse_directory },
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	prefix = prefix_;
 	prefix_length = prefix ? strlen(prefix) : 0;
