@@ -59,6 +59,7 @@ If you prefer to skip this patch, run "git rebase --skip" instead.
 To check out the original branch and stop rebasing, run "git rebase --abort".')
 "
 unset onto
+unset restrict_revision
 cmd=
 strategy=
 strategy_opts=
@@ -466,8 +467,8 @@ then
 else
 	if test -z "$onto"
 	then
-		empty_tree=`git hash-object -t tree /dev/null`
-		onto=`git commit-tree $empty_tree </dev/null`
+		empty_tree=$(git hash-object -t tree /dev/null)
+		onto=$(git commit-tree $empty_tree </dev/null)
 		squash_onto="$onto"
 	fi
 	unset upstream_name
@@ -525,10 +526,10 @@ case "$#" in
 	;;
 0)
 	# Do not need to switch branches, we are already on it.
-	if branch_name=`git symbolic-ref -q HEAD`
+	if branch_name=$(git symbolic-ref -q HEAD)
 	then
 		head_name=$branch_name
-		branch_name=`expr "z$branch_name" : 'zrefs/heads/\(.*\)'`
+		branch_name=$(expr "z$branch_name" : 'zrefs/heads/\(.*\)')
 	else
 		head_name="detached HEAD"
 		branch_name=HEAD ;# detached
@@ -546,7 +547,7 @@ then
 			"${switch_to:-HEAD}")
 	if test -n "$new_upstream"
 	then
-		upstream=$new_upstream
+		restrict_revision=$new_upstream
 	fi
 fi
 
@@ -572,7 +573,7 @@ require_clean_work_tree "rebase" "$(gettext "Please commit or stash them.")"
 # and if this is not an interactive rebase.
 mb=$(git merge-base "$onto" "$orig_head")
 if test "$type" != interactive && test "$upstream" = "$onto" &&
-	test "$mb" = "$onto" &&
+	test "$mb" = "$onto" && test -z "$restrict_revision" &&
 	# linear history?
 	! (git rev-list --parents "$onto".."$orig_head" | sane_grep " .* ") > /dev/null
 then
@@ -626,7 +627,7 @@ if test -n "$rebase_root"
 then
 	revisions="$onto..$orig_head"
 else
-	revisions="$upstream..$orig_head"
+	revisions="${restrict_revision-$upstream}..$orig_head"
 fi
 
 run_specific_rebase

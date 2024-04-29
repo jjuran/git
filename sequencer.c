@@ -243,11 +243,15 @@ static int fast_forward_to(const unsigned char *to, const unsigned char *from,
 
 	read_cache();
 	if (checkout_fast_forward(from, to, 1))
-		exit(1); /* the callee should have complained already */
+		exit(128); /* the callee should have complained already */
 	ref_lock = lock_any_ref_for_update("HEAD", unborn ? null_sha1 : from,
 					   0, NULL);
+	if (!ref_lock)
+		return error(_("Failed to lock HEAD during fast_forward_to"));
+
 	strbuf_addf(&sb, "%s: fast-forward", action_name(opts));
 	ret = write_ref_sha1(ref_lock, to, sb.buf);
+
 	strbuf_release(&sb);
 	return ret;
 }
@@ -259,11 +263,11 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 {
 	struct merge_options o;
 	struct tree *result, *next_tree, *base_tree, *head_tree;
-	int clean, index_fd;
+	int clean;
 	const char **xopt;
 	static struct lock_file index_lock;
 
-	index_fd = hold_locked_index(&index_lock, 1);
+	hold_locked_index(&index_lock, 1);
 
 	read_cache();
 
@@ -284,8 +288,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 			    next_tree, base_tree, &result);
 
 	if (active_cache_changed &&
-	    (write_cache(index_fd, active_cache, active_nr) ||
-	     commit_locked_index(&index_lock)))
+	    write_locked_index(&the_index, &index_lock, COMMIT_LOCK))
 		/* TRANSLATORS: %s will be "revert" or "cherry-pick" */
 		die(_("%s: Unable to write new index file"), action_name(opts));
 	rollback_lock_file(&index_lock);
@@ -337,9 +340,7 @@ static int is_index_unchanged(void)
 		active_cache_tree = cache_tree();
 
 	if (!cache_tree_fully_valid(active_cache_tree))
-		if (cache_tree_update(active_cache_tree,
-				      (const struct cache_entry * const *)active_cache,
-				      active_nr, 0))
+		if (cache_tree_update(&the_index, 0))
 			return error(_("Unable to update cache tree\n"));
 
 	return !hashcmp(active_cache_tree->sha1, head_commit->tree->object.sha1);
@@ -357,18 +358,13 @@ static int run_git_commit(const char *defmsg, struct replay_opts *opts,
 {
 	struct argv_array array;
 	int rc;
-	char *gpg_sign;
 
 	argv_array_init(&array);
 	argv_array_push(&array, "commit");
 	argv_array_push(&array, "-n");
 
-	if (opts->gpg_sign) {
-		gpg_sign = xmalloc(3 + strlen(opts->gpg_sign));
-		sprintf(gpg_sign, "-S%s", opts->gpg_sign);
-		argv_array_push(&array, gpg_sign);
-		free(gpg_sign);
-	}
+	if (opts->gpg_sign)
+		argv_array_pushf(&array, "-S%s", opts->gpg_sign);
 	if (opts->signoff)
 		argv_array_push(&array, "-s");
 	if (!opts->edit) {
@@ -644,9 +640,8 @@ static void read_and_refresh_cache(struct replay_opts *opts)
 	if (read_index_preload(&the_index, NULL) < 0)
 		die(_("git %s: failed to read the index"), action_name(opts));
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, NULL, NULL, NULL);
-	if (the_index.cache_changed) {
-		if (write_index(&the_index, index_fd) ||
-		    commit_locked_index(&index_lock))
+	if (the_index.cache_changed && index_fd >= 0) {
+		if (write_locked_index(&the_index, &index_lock, COMMIT_LOCK))
 			die(_("git %s: failed to refresh the index"), action_name(opts));
 	}
 	rollback_lock_file(&index_lock);

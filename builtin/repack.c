@@ -10,7 +10,7 @@
 
 static int delta_base_offset = 1;
 static int pack_kept_objects = -1;
-static int write_bitmaps = -1;
+static int write_bitmaps;
 static char *packdir, *packtmp;
 
 static const char *const git_repack_usage[] = {
@@ -28,7 +28,8 @@ static int repack_config(const char *var, const char *value, void *cb)
 		pack_kept_objects = git_config_bool(var, value);
 		return 0;
 	}
-	if (!strcmp(var, "pack.writebitmaps")) {
+	if (!strcmp(var, "repack.writebitmaps") ||
+	    !strcmp(var, "pack.writebitmaps")) {
 		write_bitmaps = git_config_bool(var, value);
 		return 0;
 	}
@@ -82,16 +83,15 @@ static void get_non_kept_pack_filenames(struct string_list *fname_list)
 	DIR *dir;
 	struct dirent *e;
 	char *fname;
-	size_t len;
 
 	if (!(dir = opendir(packdir)))
 		return;
 
 	while ((e = readdir(dir)) != NULL) {
-		if (!ends_with(e->d_name, ".pack"))
+		size_t len;
+		if (!strip_suffix(e->d_name, ".pack", &len))
 			continue;
 
-		len = strlen(e->d_name) - strlen(".pack");
 		fname = xmemdupz(e->d_name, len);
 
 		if (!file_exists(mkpath("%s/%s.keep", packdir, fname)))
@@ -207,7 +207,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 				git_repack_usage, 0);
 
 	if (pack_kept_objects < 0)
-		pack_kept_objects = write_bitmaps > 0;
+		pack_kept_objects = write_bitmaps;
 
 	packdir = mkpathdup("%s/pack", get_object_directory());
 	packtmp = mkpathdup("%s/.tmp-%d-pack", packdir, (int)getpid());
@@ -233,9 +233,8 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 		argv_array_pushf(&cmd_args, "--no-reuse-delta");
 	if (no_reuse_object)
 		argv_array_pushf(&cmd_args, "--no-reuse-object");
-	if (write_bitmaps >= 0)
-		argv_array_pushf(&cmd_args, "--%swrite-bitmap-index",
-				 write_bitmaps ? "" : "no-");
+	if (write_bitmaps)
+		argv_array_push(&cmd_args, "--write-bitmap-index");
 
 	if (pack_everything & ALL_INTO_ONE) {
 		get_non_kept_pack_filenames(&existing_packs);

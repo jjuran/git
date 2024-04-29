@@ -40,10 +40,9 @@ static int git_pretty_formats_config(const char *var, const char *value, void *c
 	const char *fmt;
 	int i;
 
-	if (!starts_with(var, "pretty."))
+	if (!skip_prefix(var, "pretty.", &name))
 		return 0;
 
-	name = var + strlen("pretty.");
 	for (i = 0; i < builtin_formats_len; i++) {
 		if (!strcmp(commit_formats[i].name, name))
 			return 0;
@@ -393,8 +392,8 @@ static void add_rfc2047(struct strbuf *sb, const char *line, size_t len,
 	strbuf_addstr(sb, "?=");
 }
 
-static const char *show_ident_date(const struct ident_split *ident,
-				   enum date_mode mode)
+const char *show_ident_date(const struct ident_split *ident,
+			    enum date_mode mode)
 {
 	unsigned long date = 0;
 	long tz = 0;
@@ -1377,7 +1376,7 @@ static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
 		case trunc_none:
 			break;
 		}
-		strbuf_addstr(sb, local_sb.buf);
+		strbuf_addbuf(sb, &local_sb);
 	} else {
 		int sb_len = sb->len, offset = 0;
 		if (c->flush_type == flush_left)
@@ -1521,8 +1520,6 @@ void format_commit_message(const struct commit *commit,
 
 	free(context.commit_encoding);
 	unuse_commit_buffer(commit, context.message);
-	free(context.signature_check.gpg_output);
-	free(context.signature_check.signer);
 }
 
 static void pp_header(struct pretty_print_context *pp,
@@ -1557,12 +1554,7 @@ static void pp_header(struct pretty_print_context *pp,
 		}
 
 		if (!parents_shown) {
-			struct commit_list *parent;
-			int num;
-			for (parent = commit->parents, num = 0;
-			     parent;
-			     parent = parent->next, num++)
-				;
+			unsigned num = commit_list_count(commit->parents);
 			/* with enough slop */
 			strbuf_grow(sb, num * 50 + 20);
 			add_merge_info(pp, sb, commit);
