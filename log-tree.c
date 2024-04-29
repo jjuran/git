@@ -365,6 +365,7 @@ static void show_sig_lines(struct rev_info *opt, int status, const char *bol)
 		eol = strchrnul(bol, '\n');
 		printf("%s%.*s%s%s", color, (int)(eol - bol), bol, reset,
 		       *eol ? "\n" : "");
+		graph_show_oneline(opt->graph);
 		bol = (*eol) ? (eol + 1) : eol;
 	}
 }
@@ -446,16 +447,17 @@ static void show_one_mergetag(struct rev_info *opt,
 
 	payload_size = parse_signature(extra->value, extra->len);
 	status = -1;
-	if (extra->len > payload_size)
-		if (verify_signed_buffer(extra->value, payload_size,
-					 extra->value + payload_size,
-					 extra->len - payload_size,
-					 &verify_message, NULL)) {
-			if (verify_message.len <= gpg_message_offset)
-				strbuf_addstr(&verify_message, "No signature\n");
-			else
-				status = 0;
-		}
+	if (extra->len > payload_size) {
+		/* could have a good signature */
+		if (!verify_signed_buffer(extra->value, payload_size,
+					  extra->value + payload_size,
+					  extra->len - payload_size,
+					  &verify_message, NULL))
+			status = 0; /* good */
+		else if (verify_message.len <= gpg_message_offset)
+			strbuf_addstr(&verify_message, "No signature\n");
+		/* otherwise we couldn't verify, which is shown as bad */
+	}
 
 	show_sig_lines(opt, status, verify_message.buf);
 	strbuf_release(&verify_message);
