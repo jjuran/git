@@ -233,9 +233,18 @@ static void import_object(unsigned char *sha1, enum object_type type,
 		die_errno("unable to open %s for reading", filename);
 
 	if (!raw && type == OBJ_TREE) {
+
+	#ifdef USE_CPLUSPLUS_FOR_INIT
+	#pragma cplusplus on
+	#endif
+
 		const char *argv[] = { "mktree", NULL };
 		struct child_process cmd = { argv };
 		struct strbuf result = STRBUF_INIT;
+
+	#ifdef USE_CPLUSPLUS_FOR_INIT
+	#pragma cplusplus reset
+	#endif
 
 		cmd.argv = argv;
 		cmd.git_cmd = 1;
