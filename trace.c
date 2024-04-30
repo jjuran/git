@@ -158,6 +158,8 @@ static void trace_argv_vprintf_fl(const char *file, int line,
 }
 
 void trace_strbuf_fl(const char *file, int line, struct trace_key *key,
+		     const struct strbuf *data);
+void trace_strbuf_fl(const char *file, int line, struct trace_key *key,
 		     const struct strbuf *data)
 {
 	struct strbuf buf = STRBUF_INIT;
