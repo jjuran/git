@@ -70,11 +70,19 @@ static int git_verify_commit_config(const char *var, const char *value, void *cb
 
 int cmd_verify_commit(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int i = 1, verbose = 0, had_error = 0;
 	const struct option verify_commit_options[] = {
 		OPT__VERBOSE(&verbose, N_("print commit contents")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	git_config(git_verify_commit_config, NULL);
 
