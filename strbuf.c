@@ -94,7 +94,7 @@ void strbuf_ltrim(struct strbuf *sb)
 int strbuf_reencode(struct strbuf *sb, const char *from, const char *to)
 {
 	char *out;
-	int len;
+	int len = 0;
 
 	if (same_encoding(from, to))
 		return 0;
