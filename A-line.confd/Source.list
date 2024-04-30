@@ -106,6 +106,7 @@ builtin/update-ref.c
 builtin/update-server-info.c
 builtin/upload-archive.c
 builtin/var.c
+builtin/verify-commit.c
 builtin/verify-pack.c
 builtin/verify-tag.c
 builtin/write-tree.c
@@ -233,6 +234,7 @@ shell.c
 show-index.c
 sideband.c
 sigchain.c
+split-index.c
 strbuf.c
 streaming.c
 string-list.c

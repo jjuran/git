@@ -267,9 +267,7 @@ static struct string_list branch_list;
 
 static const char *abbrev_ref(const char *name, const char *prefix)
 {
-	const char *abbrev = skip_prefix(name, prefix);
-	if (abbrev)
-		return abbrev;
+	skip_prefix(name, prefix, &name);
 	return name;
 }
 #define abbrev_branch(name) abbrev_ref((name), "refs/heads/")
@@ -282,16 +280,17 @@ static int config_read_branches(const char *key, const char *value, void *cb)
 		struct string_list_item *item;
 		struct branch_info *info;
 		enum { REMOTE, MERGE, REBASE } type;
+		size_t key_len;
 
 		key += 7;
-		if (ends_with(key, ".remote")) {
-			name = xstrndup(key, strlen(key) - 7);
+		if (strip_suffix(key, ".remote", &key_len)) {
+			name = xmemdupz(key, key_len);
 			type = REMOTE;
-		} else if (ends_with(key, ".merge")) {
-			name = xstrndup(key, strlen(key) - 6);
+		} else if (strip_suffix(key, ".merge", &key_len)) {
+			name = xmemdupz(key, key_len);
 			type = MERGE;
-		} else if (ends_with(key, ".rebase")) {
-			name = xstrndup(key, strlen(key) - 7);
+		} else if (strip_suffix(key, ".rebase", &key_len)) {
+			name = xmemdupz(key, key_len);
 			type = REBASE;
 		} else
 			return 0;
@@ -772,7 +771,7 @@ static int remove_branches(struct string_list *branches)
 	branch_names = xmalloc(branches->nr * sizeof(*branch_names));
 	for (i = 0; i < branches->nr; i++)
 		branch_names[i] = branches->items[i].string;
-	result |= repack_without_refs(branch_names, branches->nr);
+	result |= repack_without_refs(branch_names, branches->nr, NULL);
 	free(branch_names);
 
 	for (i = 0; i < branches->nr; i++) {
@@ -1367,7 +1366,8 @@ static int prune_remote(const char *remote, int dry_run)
 		for (i = 0; i < states.stale.nr; i++)
 			delete_refs[i] = states.stale.items[i].util;
 		if (!dry_run)
-			result |= repack_without_refs(delete_refs, states.stale.nr);
+			result |= repack_without_refs(delete_refs,
+						      states.stale.nr, NULL);
 		free(delete_refs);
 	}
 

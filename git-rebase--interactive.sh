@@ -963,7 +963,7 @@ else
 fi
 git rev-list $merges_option --pretty=oneline --abbrev-commit \
 	--abbrev=7 --reverse --left-right --topo-order \
-	$revisions | \
+	$revisions ${restrict_revision+^$restrict_revision} | \
 	sed -n "s/^>//p" |
 while read -r shortsha1 rest
 do
@@ -1013,7 +1013,7 @@ then
 	git rev-list $revisions |
 	while read rev
 	do
-		if test -f "$rewritten"/$rev -a "$(sane_grep "$rev" "$state_dir"/not-cherry-picks)" = ""
+		if test -f "$rewritten"/$rev && test "$(sane_grep "$rev" "$state_dir"/not-cherry-picks)" = ""
 		then
 			# Use -f2 because if rev-list is telling us this commit is
 			# not worthwhile, we don't want to track its multiple heads,

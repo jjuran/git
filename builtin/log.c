@@ -63,6 +63,8 @@ static int parse_decoration_style(const char *var, const char *value)
 		return DECORATE_FULL_REFS;
 	else if (!strcmp(value, "short"))
 		return DECORATE_SHORT_REFS;
+	else if (!strcmp(value, "auto"))
+		return (isatty(1) || pager_in_use()) ? DECORATE_SHORT_REFS : 0;
 	return -1;
 }
 
@@ -676,6 +678,7 @@ static void add_header(const char *value)
 static int thread;
 static int do_signoff;
 static const char *signature = git_version_string;
+static const char *signature_file;
 static int config_cover_letter;
 
 enum {
@@ -745,6 +748,8 @@ static int git_format_config(const char *var, const char *value, void *cb)
 	}
 	if (!strcmp(var, "format.signature"))
 		return git_config_string(&signature, var, value);
+	if (!strcmp(var, "format.signaturefile"))
+		return git_config_pathname(&signature_file, var, value);
 	if (!strcmp(var, "format.coverletter")) {
 		if (value && !strcasecmp(value, "auto")) {
 			config_cover_letter = COVER_AUTO;
@@ -847,8 +852,13 @@ static void gen_message_id(struct rev_info *info, char *base)
 
 static void print_signature(void)
 {
-	if (signature && *signature)
-		printf("-- \n%s\n\n", signature);
+	if (!signature || !*signature)
+		return;
+
+	printf("-- \n%s", signature);
+	if (signature[strlen(signature)-1] != '\n')
+		putchar('\n');
+	putchar('\n');
 }
 
 static void add_branch_description(struct strbuf *buf, const char *branch_name)
@@ -859,7 +869,7 @@ static void add_branch_description(struct strbuf *buf, const char *branch_name)
 	read_branch_desc(&desc, branch_name);
 	if (desc.len) {
 		strbuf_addch(buf, '\n');
-		strbuf_add(buf, desc.buf, desc.len);
+		strbuf_addbuf(buf, &desc);
 		strbuf_addch(buf, '\n');
 	}
 }
@@ -869,7 +879,7 @@ static char *find_branch_name(struct rev_info *rev)
 	int i, positive = -1;
 	unsigned char branch_sha1[20];
 	const unsigned char *tip_sha1;
-	const char *ref;
+	const char *ref, *v;
 	char *full_ref, *branch = NULL;
 
 	for (i = 0; i < rev->cmdline.nr; i++) {
@@ -885,9 +895,9 @@ static char *find_branch_name(struct rev_info *rev)
 	ref = rev->cmdline.rev[positive].name;
 	tip_sha1 = rev->cmdline.rev[positive].item->sha1;
 	if (dwim_ref(ref, strlen(ref), branch_sha1, &full_ref) &&
-	    starts_with(full_ref, "refs/heads/") &&
+	    skip_prefix(full_ref, "refs/heads/", &v) &&
 	    !hashcmp(tip_sha1, branch_sha1))
-		branch = xstrdup(full_ref + strlen("refs/heads/"));
+		branch = xstrdup(v);
 	free(full_ref);
 	return branch;
 }
@@ -1240,6 +1250,8 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    PARSE_OPT_OPTARG, thread_callback },
 		OPT_STRING(0, "signature", &signature, N_("signature"),
 			    N_("add a signature")),
+		OPT_FILENAME(0, "signature-file", &signature_file,
+				N_("add a signature from a file")),
 		OPT__QUIET(&quiet, N_("don't print the patch filenames")),
 		OPT_END()
 	};
@@ -1400,10 +1412,10 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 
 		if (check_head) {
 			unsigned char sha1[20];
-			const char *ref;
+			const char *ref, *v;
 			ref = resolve_ref_unsafe("HEAD", sha1, 1, NULL);
-			if (ref && starts_with(ref, "refs/heads/"))
-				branch_name = xstrdup(ref + strlen("refs/heads/"));
+			if (ref && skip_prefix(ref, "refs/heads/", &v))
+				branch_name = xstrdup(v);
 			else
 				branch_name = xstrdup(""); /* no branch */
 		}
@@ -1459,6 +1471,18 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			cover_letter = (total > 1);
 		else
 			cover_letter = (config_cover_letter == COVER_ON);
+	}
+
+	if (!signature) {
+		; /* --no-signature inhibits all signatures */
+	} else if (signature && signature != git_version_string) {
+		; /* non-default signature already set */
+	} else if (signature_file) {
+		struct strbuf buf = STRBUF_INIT;
+
+		if (strbuf_read_file(&buf, signature_file, 128) < 0)
+			die_errno(_("unable to read signature file '%s'"), signature_file);
+		signature = strbuf_detach(&buf, NULL);
 	}
 
 	if (in_reply_to || thread || cover_letter)
