@@ -164,6 +164,9 @@ static int parse_next_sha1(struct strbuf *input, const char **next,
 	    "%s %s: unexpected end of input when reading <oldvalue>" :
 	    "%s %s: unexpected end of input when reading <newvalue>",
 	    command, refname);
+
+	/* Not reached */
+	return ret;
 }
 
 
