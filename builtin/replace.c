@@ -509,4 +509,7 @@ int cmd_replace(int argc, const char **argv, const char *prefix)
 	default:
 		die("BUG: invalid cmdmode %d", (int)cmdmode);
 	}
+
+	/* Not reached */
+	return 0;
 }
