@@ -18,6 +18,10 @@ static const char * const git_interpret_trailers_usage[] = {
 
 int cmd_interpret_trailers(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	int trim_empty = 0;
 	struct string_list trailers = STRING_LIST_INIT_DUP;
 
@@ -27,6 +31,10 @@ int cmd_interpret_trailers(int argc, const char **argv, const char *prefix)
 				N_("trailer(s) to add")),
 		OPT_END()
 	};
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, prefix, options,
 			     git_interpret_trailers_usage, 0);

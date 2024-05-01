@@ -78,6 +78,10 @@ static void hash_stdin_paths(const char *type, int no_filters, unsigned flags,
 
 int cmd_hash_object(int argc, const char **argv, const char *prefix)
 {
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus on
+#endif
+
 	static const char * const hash_object_usage[] = {
 		N_("git hash-object [-t <type>] [-w] [--path=<file>|--no-filters] [--stdin] [--] <file>..."),
 		N_("git hash-object  --stdin-paths < <list-of-paths>"),
@@ -104,6 +108,10 @@ int cmd_hash_object(int argc, const char **argv, const char *prefix)
 	int i;
 	int prefix_length = -1;
 	const char *errstr = NULL;
+
+#ifdef USE_CPLUSPLUS_FOR_INIT
+#pragma cplusplus reset
+#endif
 
 	argc = parse_options(argc, argv, NULL, hash_object_options,
 			     hash_object_usage, 0);
