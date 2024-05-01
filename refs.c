@@ -1068,8 +1068,10 @@ static const char PACKED_REFS_HEADER[] =
  * Return a pointer to the refname within the line (null-terminated),
  * or NULL if there was a problem.
  */
-static const char *parse_ref_line(char *line, unsigned char *sha1)
+static const char *parse_ref_line(struct strbuf *line, unsigned char *sha1)
 {
+	const char *ref;
+
 	/*
 	 * 42: the answer to everything.
 	 *
@@ -1078,22 +1080,23 @@ static const char *parse_ref_line(char *line, unsigned char *sha1)
 	 *  +1 (space in between hex and name)
 	 *  +1 (newline at the end of the line)
 	 */
-	int len = strlen(line) - 42;
+	if (line->len <= 42)
+		return NULL;
 
-	if (len <= 0)
+	if (get_sha1_hex(line->buf, sha1) < 0)
 		return NULL;
-	if (get_sha1_hex(line, sha1) < 0)
+	if (!isspace(line->buf[40]))
 		return NULL;
-	if (!isspace(line[40]))
-		return NULL;
-	line += 41;
-	if (isspace(*line))
-		return NULL;
-	if (line[len] != '\n')
-		return NULL;
-	line[len] = 0;
 
-	return line;
+	ref = line->buf + 41;
+	if (isspace(*ref))
+		return NULL;
+
+	if (line->buf[line->len - 1] != '\n')
+		return NULL;
+	line->buf[--line->len] = 0;
+
+	return ref;
 }
 
 /*
@@ -1126,16 +1129,15 @@ static const char *parse_ref_line(char *line, unsigned char *sha1)
 static void read_packed_refs(FILE *f, struct ref_dir *dir)
 {
 	struct ref_entry *last = NULL;
-	char refline[PATH_MAX];
+	struct strbuf line = STRBUF_INIT;
 	enum { PEELED_NONE, PEELED_TAGS, PEELED_FULLY } peeled = PEELED_NONE;
 
-	while (fgets(refline, sizeof(refline), f)) {
+	while (strbuf_getwholeline(&line, f, '\n') != EOF) {
 		unsigned char sha1[20];
 		const char *refname;
-		static const char header[] = "# pack-refs with:";
+		const char *traits;
 
-		if (!strncmp(refline, header, sizeof(header)-1)) {
-			const char *traits = refline + sizeof(header) - 1;
+		if (skip_prefix(line.buf, "# pack-refs with:", &traits)) {
 			if (strstr(traits, " fully-peeled "))
 				peeled = PEELED_FULLY;
 			else if (strstr(traits, " peeled "))
@@ -1144,7 +1146,7 @@ static void read_packed_refs(FILE *f, struct ref_dir *dir)
 			continue;
 		}
 
-		refname = parse_ref_line(refline, sha1);
+		refname = parse_ref_line(&line, sha1);
 		if (refname) {
 			int flag = REF_ISPACKED;
 
@@ -1160,10 +1162,10 @@ static void read_packed_refs(FILE *f, struct ref_dir *dir)
 			continue;
 		}
 		if (last &&
-		    refline[0] == '^' &&
-		    strlen(refline) == PEELED_LINE_LENGTH &&
-		    refline[PEELED_LINE_LENGTH - 1] == '\n' &&
-		    !get_sha1_hex(refline + 1, sha1)) {
+		    line.buf[0] == '^' &&
+		    line.len == PEELED_LINE_LENGTH &&
+		    line.buf[PEELED_LINE_LENGTH - 1] == '\n' &&
+		    !get_sha1_hex(line.buf + 1, sha1)) {
 			hashcpy(last->u.value.peeled, sha1);
 			/*
 			 * Regardless of what the file header said,
@@ -1173,6 +1175,8 @@ static void read_packed_refs(FILE *f, struct ref_dir *dir)
 			last->flag |= REF_KNOWS_PEELED;
 		}
 	}
+
+	strbuf_release(&line);
 }
 
 /*
@@ -3404,29 +3408,54 @@ int for_each_reflog_ent_reverse(const char *refname, each_reflog_ent_fn fn, void
 
 			bp = find_beginning_of_line(buf, scanp);
 
-			if (*bp != '\n') {
-				strbuf_splice(&sb, 0, 0, buf, endp - buf);
-				if (pos)
-					break; /* need to fill another block */
-				scanp = buf - 1; /* leave loop */
-			} else {
+			if (*bp == '\n') {
 				/*
-				 * (bp + 1) thru endp is the beginning of the
-				 * current line we have in sb
+				 * The newline is the end of the previous line,
+				 * so we know we have complete line starting
+				 * at (bp + 1). Prefix it onto any prior data
+				 * we collected for the line and process it.
 				 */
 				strbuf_splice(&sb, 0, 0, bp + 1, endp - (bp + 1));
 				scanp = bp;
 				endp = bp + 1;
-			}
-			ret = show_one_reflog_ent(&sb, fn, cb_data);
-			strbuf_reset(&sb);
-			if (ret)
+				ret = show_one_reflog_ent(&sb, fn, cb_data);
+				strbuf_reset(&sb);
+				if (ret)
+					break;
+			} else if (!pos) {
+				/*
+				 * We are at the start of the buffer, and the
+				 * start of the file; there is no previous
+				 * line, and we have everything for this one.
+				 * Process it, and we can end the loop.
+				 */
+				strbuf_splice(&sb, 0, 0, buf, endp - buf);
+				ret = show_one_reflog_ent(&sb, fn, cb_data);
+				strbuf_reset(&sb);
 				break;
+			}
+
+			if (bp == buf) {
+				/*
+				 * We are at the start of the buffer, and there
+				 * is more file to read backwards. Which means
+				 * we are in the middle of a line. Note that we
+				 * may get here even if *bp was a newline; that
+				 * just means we are at the exact end of the
+				 * previous line, rather than some spot in the
+				 * middle.
+				 *
+				 * Save away what we have to be combined with
+				 * the data from the next read.
+				 */
+				strbuf_splice(&sb, 0, 0, buf, endp - buf);
+				break;
+			}
 		}
 
 	}
 	if (!ret && sb.len)
-		ret = show_one_reflog_ent(&sb, fn, cb_data);
+		die("BUG: reverse reflog parser had leftover data");
 
 	fclose(logfp);
 	strbuf_release(&sb);
