@@ -53,6 +53,7 @@ builtin/hash-object.c
 builtin/help.c
 builtin/index-pack.c
 builtin/init-db.c
+builtin/interpret-trailers.c
 builtin/log.c
 builtin/ls-files.c
 builtin/ls-remote.c
@@ -256,6 +257,7 @@ test-sha1.c
 test-sigchain.c
 thread-utils.c
 trace.c
+trailer.c
 transport.c
 transport-helper.c
 tree-diff.c
