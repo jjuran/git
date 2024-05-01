@@ -826,9 +826,9 @@ static void prep_exclude(struct dir_struct *dir, const char *base, int baselen)
 	current = stk ? stk->baselen : -1;
 	strbuf_setlen(&dir->basebuf, current < 0 ? 0 : current);
 	while (current < baselen) {
-		struct exclude_stack *stk = xcalloc(1, sizeof(*stk));
 		const char *cp;
 
+		stk = xcalloc(1, sizeof(*stk));
 		if (current < 0) {
 			cp = base;
 			current = 0;
@@ -1507,12 +1507,16 @@ int dir_inside_of(const char *subdir, const char *dir)
 
 int is_inside_dir(const char *dir)
 {
-	char cwd[PATH_MAX];
+	char *cwd;
+	int rc;
+
 	if (!dir)
 		return 0;
-	if (!getcwd(cwd, sizeof(cwd)))
-		die_errno("can't find the current directory");
-	return dir_inside_of(cwd, dir) >= 0;
+
+	cwd = xgetcwd();
+	rc = (dir_inside_of(cwd, dir) >= 0);
+	free(cwd);
+	return rc;
 }
 
 int is_empty_dir(const char *path)

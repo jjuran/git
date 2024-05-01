@@ -114,6 +114,7 @@ can be used.
 	Only meaningful in `--verify` mode. Do not output an error
 	message if the first argument is not a valid object name;
 	instead exit with non-zero status silently.
+	SHA-1s for valid object names are printed to stdout on success.
 
 --sq::
 	Usually the output is made one line per flag and
@@ -183,7 +184,7 @@ shown.  If the pattern does not contain a globbing character (`?`,
 	consider. Repetitions of this option accumulate exclusion patterns
 	up to the next `--all`, `--branches`, `--tags`, `--remotes`, or
 	`--glob` option (other options or arguments do not clear
-	accumlated patterns).
+	accumulated patterns).
 +
 The patterns given should not begin with `refs/heads`, `refs/tags`, or
 `refs/remotes` when applied to `--branches`, `--tags`, or `--remotes`,

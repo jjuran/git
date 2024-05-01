@@ -239,13 +239,6 @@ int is_utf8(const char *text)
 	return 1;
 }
 
-static void strbuf_addchars(struct strbuf *sb, int c, size_t n)
-{
-	strbuf_grow(sb, n);
-	memset(sb->buf + sb->len, c, n);
-	strbuf_setlen(sb, sb->len + n);
-}
-
 static void strbuf_add_indented_text(struct strbuf *buf, const char *text,
 				     int indent, int indent2)
 {
@@ -381,6 +374,9 @@ void strbuf_utf8_replace(struct strbuf *sb_src, int pos, int width,
 			src += n;
 			dst += n;
 		}
+
+		if (src >= end)
+			break;
 
 		old = src;
 		n = utf8_width((const char**)&src, NULL);

@@ -82,6 +82,7 @@
 #define _ALL_SOURCE 1
 #define _GNU_SOURCE 1
 #define _BSD_SOURCE 1
+#define _DEFAULT_SOURCE 1
 #define _NETBSD_SOURCE 1
 #define _SGI_SOURCE 1
 
@@ -194,7 +195,7 @@ extern int compat_mkdir_wo_trailing_slash(const char*, mode_t);
 struct itimerval {
 	struct timeval it_interval;
 	struct timeval it_value;
-}
+};
 #endif
 
 #ifdef NO_SETITIMER
@@ -267,19 +268,35 @@ extern char *gitbasename(char *);
 #endif
 
 #ifndef has_dos_drive_prefix
-#define has_dos_drive_prefix(path) 0
-#endif
-
-#ifndef offset_1st_component
-#define offset_1st_component(path) (is_dir_sep((path)[0]))
+static inline int git_has_dos_drive_prefix(const char *path)
+{
+	return 0;
+}
+#define has_dos_drive_prefix git_has_dos_drive_prefix
 #endif
 
 #ifndef is_dir_sep
-#define is_dir_sep(c) ((c) == '/')
+static inline int git_is_dir_sep(int c)
+{
+	return c == '/';
+}
+#define is_dir_sep git_is_dir_sep
+#endif
+
+#ifndef offset_1st_component
+static inline int git_offset_1st_component(const char *path)
+{
+	return is_dir_sep(path[0]);
+}
+#define offset_1st_component git_offset_1st_component
 #endif
 
 #ifndef find_last_dir_sep
-#define find_last_dir_sep(path) strrchr(path, '/')
+static inline char *git_find_last_dir_sep(const char *path)
+{
+	return strrchr(path, '/');
+}
+#define find_last_dir_sep git_find_last_dir_sep
 #endif
 
 #if defined(__HP_cc) && (__HP_cc >= 61000)
@@ -311,6 +328,8 @@ extern char *gitbasename(char *);
 #include "compat/bswap.h"
 
 #include "wildmatch.h"
+
+struct strbuf;
 
 /* General helper functions */
 extern void vreportf(const char *prefix, const char *err, va_list params);
@@ -580,6 +599,11 @@ int inet_pton(int af, const char *src, void *dst);
 const char *inet_ntop(int af, const void *src, char *dst, size_t size);
 #endif
 
+#ifdef NO_PTHREADS
+#define atexit git_atexit
+extern int git_atexit(void (*handler)(void));
+#endif
+
 extern void release_pack_memory(size_t);
 
 typedef void (*try_to_free_t)(size_t);
@@ -596,6 +620,7 @@ extern try_to_free_t set_try_to_free_routine(try_to_free_t);
 extern char *xstrdup(const char *str);
 extern void *xmalloc(size_t size);
 extern void *xmallocz(size_t size);
+extern void *xmallocz_gently(size_t size);
 extern void *xmemdupz(const void *data, size_t len);
 extern char *xstrndup(const char *str, size_t len);
 extern void *xrealloc(void *ptr, size_t size);
@@ -610,6 +635,9 @@ extern int xmkstemp(char *template);
 extern int xmkstemp_mode(char *template, int mode);
 extern int odb_mkstemp(char *template, size_t limit, const char *pattern);
 extern int odb_pack_keep(char *name, size_t namesz, const unsigned char *sha1);
+extern char *xgetcwd(void);
+
+#define REALLOC_ARRAY(x, alloc) (x) = xrealloc((x), (alloc) * sizeof(*(x)))
 
 static inline size_t xsize_t(off_t len)
 {
@@ -659,7 +687,7 @@ extern const unsigned char sane_ctype[256];
 #define iscntrl(x) (sane_istest(x,GIT_CNTRL))
 #define ispunct(x) sane_istest(x, GIT_PUNCT | GIT_REGEX_SPECIAL | \
 		GIT_GLOB_SPECIAL | GIT_PATHSPEC_MAGIC)
-#define isxdigit(x) (hexval_table[x] != -1)
+#define isxdigit(x) (hexval_table[(unsigned char)(x)] != -1)
 #define tolower(x) sane_case((unsigned char)(x), 0x20)
 #define toupper(x) sane_case((unsigned char)(x), 0)
 #define is_pathspec_magic(x) sane_istest(x,GIT_PATHSPEC_MAGIC)
@@ -753,17 +781,27 @@ void git_qsort(void *base, size_t nmemb, size_t size,
 #endif
 #endif
 
-#if defined(__GNUC__) || (_MSC_VER >= 1400)
+#if defined(__GNUC__) || (_MSC_VER >= 1400) || defined(__C99_MACRO_WITH_VA_ARGS)
 #define HAVE_VARIADIC_MACROS 1
 #endif
 
 /*
  * Preserves errno, prints a message, but gives no warning for ENOENT.
- * Always returns the return value of unlink(2).
+ * Returns 0 on success, which includes trying to unlink an object that does
+ * not exist.
  */
 int unlink_or_warn(const char *path);
+ /*
+  * Tries to unlink file.  Returns 0 if unlink succeeded
+  * or the file already didn't exist.  Returns -1 and
+  * appends a message to err suitable for
+  * 'error("%s", err->buf)' on error.
+  */
+int unlink_or_msg(const char *file, struct strbuf *err);
 /*
- * Likewise for rmdir(2).
+ * Preserves errno, prints a message, but gives no warning for ENOENT.
+ * Returns 0 on success, which includes trying to remove a directory that does
+ * not exist.
  */
 int rmdir_or_warn(const char *path);
 /*

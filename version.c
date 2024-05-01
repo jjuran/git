@@ -3,7 +3,7 @@
 #include "strbuf.h"
 
 
-#define GIT_VERSION "2.1.3"
+#define GIT_VERSION "2.2.0"
 
 #define GIT_USER_AGENT "git/" GIT_VERSION
 

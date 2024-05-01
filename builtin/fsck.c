@@ -298,7 +298,7 @@ static int fsck_obj(struct object *obj)
 
 	if (fsck_walk(obj, mark_used, NULL))
 		objerror(obj, "broken links");
-	if (fsck_object(obj, check_strict, fsck_error_func))
+	if (fsck_object(obj, NULL, 0, check_strict, fsck_error_func))
 		return -1;
 
 	if (obj->type == OBJ_TREE) {
@@ -556,7 +556,7 @@ static int fsck_head_link(void)
 	if (verbose)
 		fprintf(stderr, "Checking HEAD link\n");
 
-	head_points_at = resolve_ref_unsafe("HEAD", head_sha1, 0, &flag);
+	head_points_at = resolve_ref_unsafe("HEAD", 0, head_sha1, &flag);
 	if (!head_points_at)
 		return error("Invalid HEAD");
 	if (!strcmp(head_points_at, "HEAD"))

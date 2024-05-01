@@ -233,6 +233,10 @@ do
 	--root=*)
 		root=$(expr "z$1" : 'z[^=]*=\(.*\)')
 		shift ;;
+	-x)
+		trace=t
+		verbose=t
+		shift ;;
 	*)
 		echo "error: unknown test option '$1'" >&2; exit 1 ;;
 	esac
@@ -517,10 +521,39 @@ maybe_setup_valgrind () {
 	fi
 }
 
+# This is a separate function because some tests use
+# "return" to end a test_expect_success block early
+# (and we want to make sure we run any cleanup like
+# "set +x").
+test_eval_inner_ () {
+	# Do not add anything extra (including LF) after '$*'
+	eval "
+		test \"$trace\" = t && set -x
+		$*"
+}
+
 test_eval_ () {
-	# This is a separate function because some tests use
-	# "return" to end a test_expect_success block early.
-	eval </dev/null >&3 2>&4 "$*"
+	# We run this block with stderr redirected to avoid extra cruft
+	# during a "-x" trace. Once in "set -x" mode, we cannot prevent
+	# the shell from printing the "set +x" to turn it off (nor the saving
+	# of $? before that). But we can make sure that the output goes to
+	# /dev/null.
+	#
+	# The test itself is run with stderr put back to &4 (so either to
+	# /dev/null, or to the original stderr if --verbose was used).
+	{
+		test_eval_inner_ "$@" </dev/null >&3 2>&4
+		test_eval_ret_=$?
+		if test "$trace" = t
+		then
+			set +x
+			if test "$test_eval_ret_" != 0
+			then
+				say_color error >&4 "error: last command exited with \$?=$test_eval_ret_"
+			fi
+		fi
+	} 2>/dev/null
+	return $test_eval_ret_
 }
 
 test_run_ () {
@@ -531,7 +564,8 @@ test_run_ () {
 	eval_ret=$?
 	teardown_malloc_check
 
-	if test -z "$immediate" || test $eval_ret = 0 || test -n "$expecting_failure"
+	if test -z "$immediate" || test $eval_ret = 0 ||
+	   test -n "$expecting_failure" && test "$test_cleanup" != ":"
 	then
 		setup_malloc_check
 		test_eval_ "$test_cleanup"
@@ -813,7 +847,8 @@ rm -fr "$TRASH_DIRECTORY" || {
 }
 
 HOME="$TRASH_DIRECTORY"
-export HOME
+GNUPGHOME="$HOME/gnupg-home-not-used"
+export HOME GNUPGHOME
 
 if test -z "$TEST_NO_CREATE_REPO"
 then
@@ -870,7 +905,7 @@ case $(uname -s) in
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
 	test_set_prereq MINGW
-	test_set_prereq NOT_CYGWIN
+	test_set_prereq NATIVE_CRLF
 	test_set_prereq SED_STRIPS_CR
 	test_set_prereq GREP_STRIPS_CR
 	GIT_TEST_CMP=mingw_test_cmp
@@ -878,7 +913,6 @@ case $(uname -s) in
 *CYGWIN*)
 	test_set_prereq POSIXPERM
 	test_set_prereq EXECKEEPSPID
-	test_set_prereq NOT_MINGW
 	test_set_prereq CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	test_set_prereq GREP_STRIPS_CR
@@ -887,8 +921,6 @@ case $(uname -s) in
 	test_set_prereq POSIXPERM
 	test_set_prereq BSLASHPSPEC
 	test_set_prereq EXECKEEPSPID
-	test_set_prereq NOT_MINGW
-	test_set_prereq NOT_CYGWIN
 	;;
 esac
 

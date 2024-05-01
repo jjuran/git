@@ -782,7 +782,8 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 			if (!obj)
 				die(_("invalid %s"), typename(type));
 			if (do_fsck_object &&
-			    fsck_object(obj, 1, fsck_error_function))
+			    fsck_object(obj, buf, size, 1,
+				    fsck_error_function))
 				die(_("Error in object"));
 			if (fsck_walk(obj, mark_link, NULL))
 				die(_("Not all child objects of %s are reachable"), sha1_to_hex(obj->sha1));
@@ -1172,9 +1173,7 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		int nr_objects_initial = nr_objects;
 		if (nr_unresolved <= 0)
 			die(_("confusion beyond insanity"));
-		objects = xrealloc(objects,
-				   (nr_objects + nr_unresolved + 1)
-				   * sizeof(*objects));
+		REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
 		memset(objects + nr_objects + 1, 0,
 		       nr_unresolved * sizeof(*objects));
 		f = sha1fd(output_fd, curr_pack);

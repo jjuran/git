@@ -204,13 +204,26 @@ advice.*::
 --
 
 core.fileMode::
-	If false, the executable bit differences between the index and
-	the working tree are ignored; useful on broken filesystems like FAT.
-	See linkgit:git-update-index[1].
+	Tells Git if the executable bit of files in the working tree
+	is to be honored.
 +
-The default is true, except linkgit:git-clone[1] or linkgit:git-init[1]
-will probe and set core.fileMode false if appropriate when the
-repository is created.
+Some filesystems lose the executable bit when a file that is
+marked as executable is checked out, or checks out an
+non-executable file with executable bit on.
+linkgit:git-clone[1] or linkgit:git-init[1] probe the filesystem
+to see if it handles the executable bit correctly
+and this variable is automatically set as necessary.
++
+A repository, however, may be on a filesystem that handles
+the filemode correctly, and this variable is set to 'true'
+when created, but later may be made accessible from another
+environment that loses the filemode (e.g. exporting ext4 via
+CIFS mount, visiting a Cygwin created repository with
+Git for Windows or Eclipse).
+In such a case it may be necessary to set this variable to 'false'.
+See linkgit:git-update-index[1].
++
+The default is true (when core.filemode is not specified in the config file).
 
 core.ignorecase::
 	If true, this option enables various workarounds to enable
@@ -499,7 +512,8 @@ core.bigFileThreshold::
 	Files larger than this size are stored deflated, without
 	attempting delta compression.  Storing large files without
 	delta compression avoids excessive memory usage, at the
-	slight expense of increased disk usage.
+	slight expense of increased disk usage. Additionally files
+	larger than this size are always treated as binary.
 +
 Default is 512 MiB on all platforms.  This should be reasonable
 for most projects as source code and other text files can still
@@ -669,7 +683,7 @@ alias.*::
 	confusion and troubles with script usage, aliases that
 	hide existing Git commands are ignored. Arguments are split by
 	spaces, the usual shell quoting and escaping is supported.
-	quote pair and a backslash can be used to quote them.
+	A quote pair or a backslash can be used to quote them.
 +
 If the alias expansion is prefixed with an exclamation point,
 it will be treated as a shell command.  For example, defining
@@ -871,7 +885,11 @@ color.grep.<slot>::
 `linenumber`;;
 	line number prefix (when using `-n`)
 `match`;;
-	matching text
+	matching text (same as setting `matchContext` and `matchSelected`)
+`matchContext`;;
+	matching text in context lines
+`matchSelected`;;
+	matching text in selected lines
 `selected`;;
 	non-matching text in selected lines
 `separator`;;
@@ -1192,7 +1210,7 @@ gc.autopacklimit::
 	default	value is 50.  Setting this to 0 disables it.
 
 gc.autodetach::
-	Make `git gc --auto` return immediately andrun in background
+	Make `git gc --auto` return immediately and run in background
 	if the system supports it. Default is true.
 
 gc.packrefs::
@@ -1339,7 +1357,7 @@ gpg.program::
 	same command-line interface as GPG, namely, to verify a detached
 	signature, "gpg --verify $file - <$signature" is run, and the
 	program is expected to signal a good signature by exiting with
-	code 0, and to generate an ascii-armored detached signature, the
+	code 0, and to generate an ASCII-armored detached signature, the
 	standard input of "gpg -bsau $key" is fed with the contents to be
 	signed, and the program is expected to send the result to its
 	standard output.
@@ -1574,7 +1592,7 @@ http.useragent::
 	Can be overridden by the 'GIT_HTTP_USER_AGENT' environment variable.
 
 http.<url>.*::
-	Any of the http.* options above can be applied selectively to some urls.
+	Any of the http.* options above can be applied selectively to some URLs.
 	For a config key to match a URL, each element of the config key is
 	compared to that of the URL, in the following order:
 +
@@ -1613,8 +1631,8 @@ if the URL is `https://user@example.com/foo/bar` a config key match of
 +
 All URLs are normalized before attempting any matching (the password part,
 if embedded in the URL, is always ignored for matching purposes) so that
-equivalent urls that are simply spelled differently will match properly.
-Environment variable settings always override any matches.  The urls that are
+equivalent URLs that are simply spelled differently will match properly.
+Environment variable settings always override any matches.  The URLs that are
 matched against are those given directly to Git commands.  This means any URLs
 visited as a result of a redirection do not participate in matching.
 
@@ -1776,6 +1794,12 @@ mergetool.keepTemporaries::
 	preserved, otherwise they will be removed after the tool has
 	exited. Defaults to `false`.
 
+mergetool.writeToTemp::
+	Git writes temporary 'BASE', 'LOCAL', and 'REMOTE' versions of
+	conflicting files in the worktree by default.  Git will attempt
+	to use a temporary directory for these files when set `true`.
+	Defaults to `false`.
+
 mergetool.prompt::
 	Prompt before each invocation of the merge resolution program.
 
@@ -1836,10 +1860,11 @@ pack.depth::
 	maximum depth is given on the command line. Defaults to 50.
 
 pack.windowMemory::
-	The window memory size limit used by linkgit:git-pack-objects[1]
-	when no limit is given on the command line.  The value can be
-	suffixed with "k", "m", or "g".  Defaults to 0, meaning no
-	limit.
+	The maximum size of memory that is consumed by each thread
+	in linkgit:git-pack-objects[1] for pack window memory when
+	no limit is given on the command line.  The value can be
+	suffixed with "k", "m", or "g".  When left unconfigured (or
+	set explicitly to 0), there will be no limit.
 
 pack.compression::
 	An integer -1..9, indicating the compression level for objects
@@ -2051,6 +2076,25 @@ receive.autogc::
 	By default, git-receive-pack will run "git-gc --auto" after
 	receiving data from git-push and updating refs.  You can stop
 	it by setting this variable to false.
+
+receive.certnonceseed::
+	By setting this variable to a string, `git receive-pack`
+	will accept a `git push --signed` and verifies it by using
+	a "nonce" protected by HMAC using this string as a secret
+	key.
+
+receive.certnonceslop::
+	When a `git push --signed` sent a push certificate with a
+	"nonce" that was issued by a receive-pack serving the same
+	repository within this many seconds, export the "nonce"
+	found in the certificate to `GIT_PUSH_CERT_NONCE` to the
+	hooks (instead of what the receive-pack asked the sending
+	side to include).  This may allow writing checks in
+	`pre-receive` and `post-receive` a bit easier.  Instead of
+	checking `GIT_PUSH_CERT_NONCE_SLOP` environment variable
+	that records by how many seconds the nonce is stale to
+	decide if they want to accept the certificate, they only
+	can check `GIT_PUSH_CERT_NONCE_STATUS` is `OK`.
 
 receive.fsckObjects::
 	If it is set to true, git-receive-pack will check all received
@@ -2295,7 +2339,7 @@ status.showUntrackedFiles::
 	files which are not currently tracked by Git. Directories which
 	contain only untracked files, are shown with the directory name
 	only. Showing untracked files means that Git needs to lstat() all
-	all the files in the whole repository, which might be slow on some
+	the files in the whole repository, which might be slow on some
 	systems. So, this variable controls how the commands displays
 	the untracked files. Possible values are:
 +

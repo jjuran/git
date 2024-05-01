@@ -138,10 +138,8 @@ static int parse_atom(const char *atom, const char *ep)
 	/* Add it in, including the deref prefix */
 	at = used_atom_cnt;
 	used_atom_cnt++;
-	used_atom = xrealloc(used_atom,
-			     (sizeof *used_atom) * used_atom_cnt);
-	used_atom_type = xrealloc(used_atom_type,
-				  (sizeof(*used_atom_type) * used_atom_cnt));
+	REALLOC_ARRAY(used_atom, used_atom_cnt);
+	REALLOC_ARRAY(used_atom_type, used_atom_cnt);
 	used_atom[at] = xmemdupz(atom, ep - atom);
 	used_atom_type[at] = valid_atom[i].cmp_type;
 	if (*atom == '*')
@@ -633,11 +631,12 @@ static void populate_value(struct refinfo *ref)
 	unsigned long size;
 	const unsigned char *tagged;
 
-	ref->value = xcalloc(sizeof(struct atom_value), used_atom_cnt);
+	ref->value = xcalloc(used_atom_cnt, sizeof(struct atom_value));
 
 	if (need_symref && (ref->flag & REF_ISSYMREF) && !ref->symref) {
 		unsigned char unused1[20];
-		ref->symref = resolve_refdup(ref->refname, unused1, 1, NULL);
+		ref->symref = resolve_refdup(ref->refname, RESOLVE_REF_READING,
+					     unused1, NULL);
 		if (!ref->symref)
 			ref->symref = "";
 	}
@@ -673,7 +672,8 @@ static void populate_value(struct refinfo *ref)
 		} else if (starts_with(name, "color:")) {
 			char color[COLOR_MAXLEN] = "";
 
-			color_parse(name + 6, "--format", color);
+			if (color_parse(name + 6, color) < 0)
+				die(_("unable to parse format"));
 			v->s = xstrdup(color);
 			continue;
 		} else if (!strcmp(name, "flag")) {
@@ -695,7 +695,8 @@ static void populate_value(struct refinfo *ref)
 			const char *head;
 			unsigned char sha1[20];
 
-			head = resolve_ref_unsafe("HEAD", sha1, 1, NULL);
+			head = resolve_ref_unsafe("HEAD", RESOLVE_REF_READING,
+						  sha1, NULL);
 			if (!strcmp(ref->refname, head))
 				v->s = "*";
 			else
@@ -839,6 +840,11 @@ static int grab_single_ref(const char *refname, const unsigned char *sha1, int f
 	struct refinfo *ref;
 	int cnt;
 
+	if (flag & REF_BAD_NAME) {
+		  warning("ignoring ref with broken name %s", refname);
+		  return 0;
+	}
+
 	if (*cb->grab_pattern) {
 		const char **pattern;
 		int namelen = strlen(refname);
@@ -870,8 +876,7 @@ static int grab_single_ref(const char *refname, const unsigned char *sha1, int f
 	ref->flag = flag;
 
 	cnt = cb->grab_cnt;
-	cb->grab_array = xrealloc(cb->grab_array,
-				  sizeof(*cb->grab_array) * (cnt + 1));
+	REALLOC_ARRAY(cb->grab_array, cnt + 1);
 	cb->grab_array[cnt++] = ref;
 	cb->grab_cnt = cnt;
 	return 0;
@@ -1007,7 +1012,8 @@ static void show_ref(struct refinfo *info, const char *format, int quote_style)
 		struct atom_value resetv;
 		char color[COLOR_MAXLEN] = "";
 
-		color_parse("reset", "--format", color);
+		if (color_parse("reset", color) < 0)
+			die("BUG: couldn't parse 'reset' as a color");
 		resetv.s = color;
 		print_value(&resetv, quote_style);
 	}

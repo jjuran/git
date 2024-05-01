@@ -230,23 +230,6 @@ struct daemon_service {
 	int overridable;
 };
 
-static struct daemon_service *service_looking_at;
-static int service_enabled;
-
-static int git_daemon_config(const char *var, const char *value, void *cb)
-{
-	const char *service;
-
-	if (skip_prefix(var, "daemon.", &service) &&
-	    !strcmp(service, service_looking_at->config_name)) {
-		service_enabled = git_config_bool(var, value);
-		return 0;
-	}
-
-	/* we are not interested in parsing any other configuration here */
-	return 0;
-}
-
 static int daemon_error(const char *dir, const char *msg)
 {
 	if (!informative_errors)
@@ -259,7 +242,7 @@ static const char *access_hook;
 
 static int run_access_hook(struct daemon_service *service, const char *dir, const char *path)
 {
-	struct child_process child;
+	struct child_process child = CHILD_PROCESS_INIT;
 	struct strbuf buf = STRBUF_INIT;
 	const char *argv[8];
 	const char **arg = argv;
@@ -277,7 +260,6 @@ static int run_access_hook(struct daemon_service *service, const char *dir, cons
 	*arg = NULL;
 #undef STRARG
 
-	memset(&child, 0, sizeof(child));
 	child.use_shell = 1;
 	child.argv = argv;
 	child.no_stdin = 1;
@@ -324,6 +306,7 @@ static int run_service(const char *dir, struct daemon_service *service)
 {
 	const char *path;
 	int enabled = service->enabled;
+	struct strbuf var = STRBUF_INIT;
 
 	loginfo("Request %s for '%s'", service->name, dir);
 
@@ -354,11 +337,9 @@ static int run_service(const char *dir, struct daemon_service *service)
 	}
 
 	if (service->overridable) {
-		service_looking_at = service;
-		service_enabled = -1;
-		git_config(git_daemon_config, NULL);
-		if (0 <= service_enabled)
-			enabled = service_enabled;
+		strbuf_addf(&var, "daemon.%s", service->config_name);
+		git_config_get_bool(var.buf, &enabled);
+		strbuf_release(&var);
 	}
 	if (!enabled) {
 		logerror("'%s': service not enabled for '%s'",
@@ -406,9 +387,8 @@ static void copy_to_log(int fd)
 
 static int run_service_command(const char **argv)
 {
-	struct child_process cld;
+	struct child_process cld = CHILD_PROCESS_INIT;
 
-	memset(&cld, 0, sizeof(cld));
 	cld.argv = argv;
 	cld.git_cmd = 1;
 	cld.err = -1;
@@ -738,7 +718,7 @@ static void handle(int incoming, struct sockaddr *addr, socklen_t addrlen)
 #pragma cplusplus on
 #endif
 
-	struct child_process cld = { NULL };
+	struct child_process cld = CHILD_PROCESS_INIT;
 	char addrbuf[300] = "REMOTE_ADDR=", portbuf[300];
 	char *env[] = { addrbuf, portbuf, NULL };
 

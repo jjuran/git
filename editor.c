@@ -43,14 +43,13 @@ int launch_editor(const char *path, struct strbuf *buffer, const char *const *en
 #endif
 
 		const char *args[] = { editor, real_path(path), NULL };
-		struct child_process p;
+		struct child_process p = CHILD_PROCESS_INIT;
 		int ret, sig;
 
 #ifdef USE_CPLUSPLUS_FOR_INIT
 #pragma cplusplus reset
 #endif
 
-		memset(&p, 0, sizeof(p));
 		p.argv = args;
 		p.env = env;
 		p.use_shell = 1;

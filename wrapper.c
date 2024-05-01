@@ -9,16 +9,24 @@ static void do_nothing(size_t size)
 
 static void (*try_to_free_routine)(size_t size) = do_nothing;
 
-static void memory_limit_check(size_t size)
+static int memory_limit_check(size_t size, int gentle)
 {
-	static int limit = -1;
-	if (limit == -1) {
-		const char *env = getenv("GIT_ALLOC_LIMIT");
-		limit = env ? atoi(env) * 1024 : 0;
+	static size_t limit = 0;
+	if (!limit) {
+		limit = git_env_ulong("GIT_ALLOC_LIMIT", 0);
+		if (!limit)
+			limit = SIZE_MAX;
 	}
-	if (limit && size > limit)
-		die("attempting to allocate %"PRIuMAX" over limit %d",
-		    (intmax_t)size, limit);
+	if (size > limit) {
+		if (gentle) {
+			error("attempting to allocate %"PRIuMAX" over limit %"PRIuMAX,
+			      (uintmax_t)size, (uintmax_t)limit);
+			return -1;
+		} else
+			die("attempting to allocate %"PRIuMAX" over limit %"PRIuMAX,
+			    (uintmax_t)size, (uintmax_t)limit);
+	}
+	return 0;
 }
 
 try_to_free_t set_try_to_free_routine(try_to_free_t routine)
@@ -42,11 +50,12 @@ char *xstrdup(const char *str)
 	return ret;
 }
 
-void *xmalloc(size_t size)
+static void *do_xmalloc(size_t size, int gentle)
 {
 	void *ret;
 
-	memory_limit_check(size);
+	if (memory_limit_check(size, gentle))
+		return NULL;
 	ret = malloc(size);
 	if (!ret && !size)
 		ret = malloc(1);
@@ -55,9 +64,16 @@ void *xmalloc(size_t size)
 		ret = malloc(size);
 		if (!ret && !size)
 			ret = malloc(1);
-		if (!ret)
-			die("Out of memory, malloc failed (tried to allocate %lu bytes)",
-			    (unsigned long)size);
+		if (!ret) {
+			if (!gentle)
+				die("Out of memory, malloc failed (tried to allocate %lu bytes)",
+				    (unsigned long)size);
+			else {
+				error("Out of memory, malloc failed (tried to allocate %lu bytes)",
+				      (unsigned long)size);
+				return NULL;
+			}
+		}
 	}
 #ifdef XMALLOC_POISON
 	memset(ret, 0xA5, size);
@@ -65,14 +81,35 @@ void *xmalloc(size_t size)
 	return ret;
 }
 
-void *xmallocz(size_t size)
+void *xmalloc(size_t size)
+{
+	return do_xmalloc(size, 0);
+}
+
+static void *do_xmallocz(size_t size, int gentle)
 {
 	void *ret;
-	if (unsigned_add_overflows(size, 1))
-		die("Data too large to fit into virtual memory space.");
-	ret = xmalloc(size + 1);
-	((char*)ret)[size] = 0;
+	if (unsigned_add_overflows(size, 1)) {
+		if (gentle) {
+			error("Data too large to fit into virtual memory space.");
+			return NULL;
+		} else
+			die("Data too large to fit into virtual memory space.");
+	}
+	ret = do_xmalloc(size + 1, gentle);
+	if (ret)
+		((char*)ret)[size] = 0;
 	return ret;
+}
+
+void *xmallocz(size_t size)
+{
+	return do_xmallocz(size, 0);
+}
+
+void *xmallocz_gently(size_t size)
+{
+	return do_xmallocz(size, 1);
 }
 
 /*
@@ -96,7 +133,7 @@ void *xrealloc(void *ptr, size_t size)
 {
 	void *ret;
 
-	memory_limit_check(size);
+	memory_limit_check(size, 0);
 	ret = realloc(ptr, size);
 	if (!ret && !size)
 		ret = realloc(ptr, 1);
@@ -115,7 +152,7 @@ void *xcalloc(size_t nmemb, size_t size)
 {
 	void *ret;
 
-	memory_limit_check(size * nmemb);
+	memory_limit_check(size * nmemb, 0);
 	ret = calloc(nmemb, size);
 	if (!ret && (!nmemb || !size))
 		ret = calloc(1, 1);
@@ -429,15 +466,27 @@ int xmkstemp_mode(char *template, int mode)
 
 static int warn_if_unremovable(const char *op, const char *file, int rc)
 {
-	if (rc < 0) {
-		int err = errno;
-		if (ENOENT != err) {
-			warning("unable to %s %s: %s",
-				op, file, strerror(errno));
-			errno = err;
-		}
-	}
+	int err;
+	if (!rc || errno == ENOENT)
+		return 0;
+	err = errno;
+	warning("unable to %s %s: %s", op, file, strerror(errno));
+	errno = err;
 	return rc;
+}
+
+int unlink_or_msg(const char *file, struct strbuf *err)
+{
+	int rc = unlink(file);
+
+	assert(err);
+
+	if (!rc || errno == ENOENT)
+		return 0;
+
+	strbuf_addf(err, "unable to unlink %s: %s",
+		    file, strerror(errno));
+	return -1;
 }
 
 int unlink_or_warn(const char *file)
@@ -492,4 +541,12 @@ struct passwd *xgetpwuid_self(void)
 		die(_("unable to look up current user in the passwd file: %s"),
 		    errno ? strerror(errno) : _("no such user"));
 	return pw;
+}
+
+char *xgetcwd(void)
+{
+	struct strbuf sb = STRBUF_INIT;
+	if (strbuf_getcwd(&sb))
+		die_errno(_("unable to get current working directory"));
+	return strbuf_detach(&sb, NULL);
 }

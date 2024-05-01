@@ -70,8 +70,8 @@ COMMANDS
 --username=<user>;;
 	For transports that SVN handles authentication for (http,
 	https, and plain svn), specify the username.  For other
-	transports (eg svn+ssh://), you must include the username in
-	the URL, eg svn+ssh://foo@svn.bar.com/project
+	transports (e.g. svn+ssh://), you must include the username in
+	the URL, e.g. svn+ssh://foo@svn.bar.com/project
 --prefix=<prefix>;;
 	This allows one to specify a prefix which is prepended
 	to the names of remotes if trunk/branches/tags are
@@ -252,6 +252,10 @@ Use of 'dcommit' is preferred to 'set-tree' (below).
 config key: svn-remote.<name>.commiturl
 config key: svn.commiturl (overwrites all svn-remote.<name>.commiturl options)
 +
+Note that the SVN URL of the commiturl config key includes the SVN branch.
+If you rather want to set the commit URL for an entire SVN repository use
+svn-remote.<name>.pushurl instead.
++
 Using this option for any other purpose (don't ask) is very strongly
 discouraged.
 
@@ -386,11 +390,13 @@ Any other arguments are passed directly to 'git log'
 	tree-ish to specify which branch should be searched).  When given a
 	tree-ish, returns the corresponding SVN revision number.
 +
+-B;;
 --before;;
 	Don't require an exact match if given an SVN revision, instead find
 	the commit corresponding to the state of the SVN repository (on the
 	current branch) at the specified revision.
 +
+-A;;
 --after;;
 	Don't require an exact match if given an SVN revision; if there is
 	not an exact match return the closest match searching forward in the
@@ -607,21 +613,6 @@ config key: svn.authorsfile
 --quiet::
 	Make 'git svn' less verbose. Specify a second time to make it
 	even less verbose.
-
---repack[=<n>]::
---repack-flags=<flags>::
-	These should help keep disk usage sane for large fetches with
-	many revisions.
-+
---repack takes an optional argument for the number of revisions
-to fetch before repacking.  This defaults to repacking every
-1000 commits fetched if no argument is specified.
-+
---repack-flags are passed directly to 'git repack'.
-+
-[verse]
-config key: svn.repack
-config key: svn.repackflags
 
 -m::
 --merge::
