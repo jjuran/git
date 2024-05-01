@@ -7,6 +7,7 @@
  *
  */
 #include "cache.h"
+#include "lockfile.h"
 #include "cache-tree.h"
 #include "quote.h"
 #include "blob.h"
@@ -435,7 +436,7 @@ static unsigned long linelen(const char *buffer, unsigned long size)
 
 static int is_dev_null(const char *str)
 {
-	return !memcmp("/dev/null", str, 9) && isspace(str[9]);
+	return skip_prefix(str, "/dev/null", &str) && isspace(*str);
 }
 
 #define TERM_SPACE	1
@@ -2626,7 +2627,7 @@ static void update_image(struct image *img,
 		 * NOTE: this knows that we never call remove_first_line()
 		 * on anything other than pre/post image.
 		 */
-		img->line = xrealloc(img->line, nr * sizeof(*img->line));
+		REALLOC_ARRAY(img->line, nr);
 		img->line_allocated = img->line;
 	}
 	if (preimage_limit != postimage->nr)
@@ -4274,13 +4275,11 @@ static int apply_patch(int fd, const char *filename, int options)
 	return 0;
 }
 
-static int git_apply_config(const char *var, const char *value, void *cb)
+static void git_apply_config(void)
 {
-	if (!strcmp(var, "apply.whitespace"))
-		return git_config_string(&apply_default_whitespace, var, value);
-	else if (!strcmp(var, "apply.ignorewhitespace"))
-		return git_config_string(&apply_default_ignorewhitespace, var, value);
-	return git_default_config(var, value, cb);
+	git_config_get_string_const("apply.whitespace", &apply_default_whitespace);
+	git_config_get_string_const("apply.ignorewhitespace", &apply_default_ignorewhitespace);
+	git_config(git_default_config, NULL);
 }
 
 static int option_parse_exclude(const struct option *opt,
@@ -4436,7 +4435,7 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 
 	prefix = prefix_;
 	prefix_length = prefix ? strlen(prefix) : 0;
-	git_config(git_apply_config, NULL);
+	git_apply_config();
 	if (apply_default_whitespace)
 		parse_whitespace_option(apply_default_whitespace);
 	if (apply_default_ignorewhitespace)

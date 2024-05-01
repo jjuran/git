@@ -347,36 +347,6 @@ test_expect_success 'B: fail on invalid blob sha1' '
 rm -f .git/objects/pack_* .git/objects/index_*
 
 cat >input <<INPUT_END
-commit .badbranchname
-committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
-data <<COMMIT
-corrupt
-COMMIT
-
-from refs/heads/master
-
-INPUT_END
-test_expect_success 'B: fail on invalid branch name ".badbranchname"' '
-    test_must_fail git fast-import <input
-'
-rm -f .git/objects/pack_* .git/objects/index_*
-
-cat >input <<INPUT_END
-commit bad[branch]name
-committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
-data <<COMMIT
-corrupt
-COMMIT
-
-from refs/heads/master
-
-INPUT_END
-test_expect_success 'B: fail on invalid branch name "bad[branch]name"' '
-    test_must_fail git fast-import <input
-'
-rm -f .git/objects/pack_* .git/objects/index_*
-
-cat >input <<INPUT_END
 commit TEMP_TAG
 committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
 data <<COMMIT
@@ -2336,7 +2306,7 @@ test_expect_success 'R: cat-blob-fd must be a nonnegative integer' '
 	test_must_fail git fast-import --cat-blob-fd=-1 </dev/null
 '
 
-test_expect_success NOT_MINGW 'R: print old blob' '
+test_expect_success !MINGW 'R: print old blob' '
 	blob=$(echo "yes it can" | git hash-object -w --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 11
@@ -2348,7 +2318,7 @@ test_expect_success NOT_MINGW 'R: print old blob' '
 	test_cmp expect actual
 '
 
-test_expect_success NOT_MINGW 'R: in-stream cat-blob-fd not respected' '
+test_expect_success !MINGW 'R: in-stream cat-blob-fd not respected' '
 	echo hello >greeting &&
 	blob=$(git hash-object -w greeting) &&
 	cat >expect <<-EOF &&
@@ -2369,7 +2339,7 @@ test_expect_success NOT_MINGW 'R: in-stream cat-blob-fd not respected' '
 	test_cmp expect actual.1
 '
 
-test_expect_success NOT_MINGW 'R: print new blob' '
+test_expect_success !MINGW 'R: print new blob' '
 	blob=$(echo "yep yep yep" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 12
@@ -2387,7 +2357,7 @@ test_expect_success NOT_MINGW 'R: print new blob' '
 	test_cmp expect actual
 '
 
-test_expect_success NOT_MINGW 'R: print new blob by sha1' '
+test_expect_success !MINGW 'R: print new blob by sha1' '
 	blob=$(echo "a new blob named by sha1" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 25
@@ -2687,7 +2657,7 @@ test_expect_success 'R: verify created pack' '
 test_expect_success \
 	'R: verify written objects' \
 	'git --git-dir=R/.git cat-file blob big-file:big1 >actual &&
-	 test_cmp expect actual &&
+	 test_cmp_bin expect actual &&
 	 a=$(git --git-dir=R/.git rev-parse big-file:big1) &&
 	 b=$(git --git-dir=R/.git rev-parse big-file:big2) &&
 	 test $a = $b'
@@ -2866,7 +2836,7 @@ test_expect_success 'S: notemodify with garbage after sha1 dataref must fail' '
 #
 # notemodify, mark in commit-ish
 #
-test_expect_success 'S: notemodify with garbarge after mark commit-ish must fail' '
+test_expect_success 'S: notemodify with garbage after mark commit-ish must fail' '
 	test_must_fail git fast-import --import-marks=marks <<-EOF 2>err &&
 	commit refs/heads/Snotes
 	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE

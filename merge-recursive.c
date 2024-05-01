@@ -3,8 +3,9 @@
  * Fredrik Kuivinen.
  * The thieves were Alex Riesen and Johannes Schindelin, in June/July 2006
  */
-#include "advice.h"
 #include "cache.h"
+#include "advice.h"
+#include "lockfile.h"
 #include "cache-tree.h"
 #include "commit.h"
 #include "blob.h"
@@ -163,9 +164,7 @@ static void output(struct merge_options *o, int v, const char *fmt, ...)
 	if (!show(o, v))
 		return;
 
-	strbuf_grow(&o->obuf, o->call_depth * 2 + 2);
-	memset(o->obuf.buf + o->obuf.len, ' ', o->call_depth * 2);
-	strbuf_setlen(&o->obuf, o->obuf.len + o->call_depth * 2);
+	strbuf_addchars(&o->obuf, ' ', o->call_depth * 2);
 
 	va_start(ap, fmt);
 	strbuf_vaddf(&o->obuf, fmt, ap);
@@ -1557,7 +1556,7 @@ static int blob_unchanged(const unsigned char *o_sha,
 	 * unchanged since their sha1s have already been compared.
 	 */
 	if (renormalize_buffer(path, o.buf, o.len, &o) |
-	    renormalize_buffer(path, a.buf, o.len, &a))
+	    renormalize_buffer(path, a.buf, a.len, &a))
 		ret = (o.len == a.len && !memcmp(o.buf, a.buf, o.len));
 
 error_return:
@@ -1688,10 +1687,6 @@ static int merge_content(struct merge_options *o,
 static int process_entry(struct merge_options *o,
 			 const char *path, struct stage_data *entry)
 {
-	/*
-	printf("processing entry, clean cache: %s\n", index_only ? "yes": "no");
-	print_index_entry("\tpath: ", entry);
-	*/
 	int clean_merge = 1;
 	int normalize = o->renormalize;
 	unsigned o_mode = entry->stages[1].mode;
@@ -2026,22 +2021,12 @@ int merge_recursive_generic(struct merge_options *o,
 	return clean ? 0 : 1;
 }
 
-static int merge_recursive_config(const char *var, const char *value, void *cb)
+static void merge_recursive_config(struct merge_options *o)
 {
-	struct merge_options *o = cb;
-	if (!strcmp(var, "merge.verbosity")) {
-		o->verbosity = git_config_int(var, value);
-		return 0;
-	}
-	if (!strcmp(var, "diff.renamelimit")) {
-		o->diff_rename_limit = git_config_int(var, value);
-		return 0;
-	}
-	if (!strcmp(var, "merge.renamelimit")) {
-		o->merge_rename_limit = git_config_int(var, value);
-		return 0;
-	}
-	return git_xmerge_config(var, value, cb);
+	git_config_get_int("merge.verbosity", &o->verbosity);
+	git_config_get_int("diff.renamelimit", &o->diff_rename_limit);
+	git_config_get_int("merge.renamelimit", &o->merge_rename_limit);
+	git_config(git_xmerge_config, NULL);
 }
 
 void init_merge_options(struct merge_options *o)
@@ -2052,7 +2037,7 @@ void init_merge_options(struct merge_options *o)
 	o->diff_rename_limit = -1;
 	o->merge_rename_limit = -1;
 	o->renormalize = 0;
-	git_config(merge_recursive_config, o);
+	merge_recursive_config(o);
 	if (getenv("GIT_MERGE_VERBOSITY"))
 		o->verbosity =
 			strtol(getenv("GIT_MERGE_VERBOSITY"), NULL, 10);

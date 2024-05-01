@@ -168,7 +168,8 @@ static void set_upstreams(struct transport *transport, struct ref *refs,
 		/* Follow symbolic refs (mainly for HEAD). */
 		localname = ref->peer_ref->name;
 		remotename = ref->name;
-		tmp = resolve_ref_unsafe(localname, sha, 1, &flag);
+		tmp = resolve_ref_unsafe(localname, RESOLVE_REF_READING,
+					 sha, &flag);
 		if (tmp && flag & REF_ISSYMREF &&
 			starts_with(tmp, "refs/heads/"))
 			localname = tmp;
@@ -201,7 +202,7 @@ static struct ref *get_refs_via_rsync(struct transport *transport, int for_push)
 {
 	struct strbuf buf = STRBUF_INIT, temp_dir = STRBUF_INIT;
 	struct ref dummy = {NULL}, *tail = &dummy;
-	struct child_process rsync;
+	struct child_process rsync = CHILD_PROCESS_INIT;
 	const char *args[5];
 	int temp_dir_len;
 
@@ -218,7 +219,6 @@ static struct ref *get_refs_via_rsync(struct transport *transport, int for_push)
 	strbuf_addstr(&buf, rsync_url(transport->url));
 	strbuf_addstr(&buf, "/refs");
 
-	memset(&rsync, 0, sizeof(rsync));
 	rsync.argv = args;
 	rsync.stdout_to_stderr = 1;
 	args[0] = "rsync";
@@ -263,9 +263,8 @@ static struct ref *get_refs_via_rsync(struct transport *transport, int for_push)
 static int fetch_objs_via_rsync(struct transport *transport,
 				int nr_objs, struct ref **to_fetch)
 {
-	struct child_process rsync;
+	struct child_process rsync = CHILD_PROCESS_INIT;
 
-	memset(&rsync, 0, sizeof(rsync));
 	rsync.stdout_to_stderr = 1;
 	argv_array_push(&rsync.args, "rsync");
 	argv_array_push(&rsync.args, (transport->verbose > 1) ? "-rv" : "-r");
@@ -327,7 +326,7 @@ static int rsync_transport_push(struct transport *transport,
 {
 	struct strbuf buf = STRBUF_INIT, temp_dir = STRBUF_INIT;
 	int result = 0, i;
-	struct child_process rsync;
+	struct child_process rsync = CHILD_PROCESS_INIT;
 	const char *args[10];
 
 	if (flags & TRANSPORT_PUSH_MIRROR)
@@ -338,7 +337,6 @@ static int rsync_transport_push(struct transport *transport,
 	strbuf_addstr(&buf, rsync_url(transport->url));
 	strbuf_addch(&buf, '/');
 
-	memset(&rsync, 0, sizeof(rsync));
 	rsync.argv = args;
 	rsync.stdout_to_stderr = 1;
 	i = 0;
@@ -479,6 +477,9 @@ static int set_git_option(struct git_transport_options *opts,
 			if (*end)
 				die("transport: invalid depth option '%s'", value);
 		}
+		return 0;
+	} else if (!strcmp(name, TRANS_OPT_PUSH_CERT)) {
+		opts->push_cert = !!value;
 		return 0;
 	}
 	return 1;
@@ -743,7 +744,7 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 	unsigned char head_sha1[20];
 	char *head;
 
-	head = resolve_refdup("HEAD", head_sha1, 1, NULL);
+	head = resolve_refdup("HEAD", RESOLVE_REF_READING, head_sha1, NULL);
 
 	if (verbose) {
 		for (ref = refs; ref; ref = ref->next)
@@ -774,6 +775,7 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 			*reject_reasons |= REJECT_NEEDS_FORCE;
 		}
 	}
+	free(head);
 }
 
 void transport_verify_remote_names(int nr_heads, const char **heads)
@@ -823,6 +825,8 @@ static int git_transport_push(struct transport *transport, struct ref *remote_re
 	args.progress = transport->progress;
 	args.dry_run = !!(flags & TRANSPORT_PUSH_DRY_RUN);
 	args.porcelain = !!(flags & TRANSPORT_PUSH_PORCELAIN);
+	args.push_cert = !!(flags & TRANSPORT_PUSH_CERT);
+	args.url = transport->url;
 
 	ret = send_pack(&args, data->fd, data->conn, remote_refs,
 			&data->extra_have);
@@ -1056,7 +1060,7 @@ static int run_pre_push_hook(struct transport *transport,
 {
 	int ret = 0, x;
 	struct ref *r;
-	struct child_process proc;
+	struct child_process proc = CHILD_PROCESS_INIT;
 	struct strbuf buf;
 	const char *argv[4];
 
@@ -1067,7 +1071,6 @@ static int run_pre_push_hook(struct transport *transport,
 	argv[2] = transport->url;
 	argv[3] = NULL;
 
-	memset(&proc, 0, sizeof(proc));
 	proc.argv = argv;
 	proc.in = -1;
 

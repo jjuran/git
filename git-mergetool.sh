@@ -10,11 +10,11 @@
 
 USAGE='[--tool=tool] [--tool-help] [-y|--no-prompt|--prompt] [file to merge] ...'
 SUBDIRECTORY_OK=Yes
+NONGIT_OK=Yes
 OPTIONS_SPEC=
 TOOL_MODE=merge
 . git-sh-setup
 . git-mergetool--lib
-require_work_tree
 
 # Returns true if the mode reflects a symlink
 is_symlink () {
@@ -37,6 +37,19 @@ base_present () {
 	test -n "$base_mode"
 }
 
+mergetool_tmpdir_init () {
+	if test "$(git config --bool mergetool.writeToTemp)" != true
+	then
+		MERGETOOL_TMPDIR=.
+		return 0
+	fi
+	if MERGETOOL_TMPDIR=$(mktemp -d -t "git-mergetool-XXXXXX" 2>/dev/null)
+	then
+		return 0
+	fi
+	die "error: mktemp is needed when 'mergetool.writeToTemp' is true"
+}
+
 cleanup_temp_files () {
 	if test "$1" = --save-backup
 	then
@@ -45,6 +58,10 @@ cleanup_temp_files () {
 		rm -f -- "$LOCAL" "$REMOTE" "$BASE"
 	else
 		rm -f -- "$LOCAL" "$REMOTE" "$BASE" "$BACKUP"
+	fi
+	if test "$MERGETOOL_TMPDIR" != "."
+	then
+		rmdir "$MERGETOOL_TMPDIR"
 	fi
 }
 
@@ -228,11 +245,27 @@ merge_file () {
 		return 1
 	fi
 
-	ext="$$$(expr "$MERGED" : '.*\(\.[^/]*\)$')"
-	BACKUP="./$MERGED.BACKUP.$ext"
-	LOCAL="./$MERGED.LOCAL.$ext"
-	REMOTE="./$MERGED.REMOTE.$ext"
-	BASE="./$MERGED.BASE.$ext"
+	if BASE=$(expr "$MERGED" : '\(.*\)\.[^/]*$')
+	then
+		ext=$(expr "$MERGED" : '.*\(\.[^/]*\)$')
+	else
+		BASE=$MERGED
+		ext=
+	fi
+
+	mergetool_tmpdir_init
+
+	if test "$MERGETOOL_TMPDIR" != "."
+	then
+		# If we're using a temporary directory then write to the
+		# top-level of that directory.
+		BASE=${BASE##*/}
+	fi
+
+	BACKUP="$MERGETOOL_TMPDIR/${BASE}_BACKUP_$$$ext"
+	LOCAL="$MERGETOOL_TMPDIR/${BASE}_LOCAL_$$$ext"
+	REMOTE="$MERGETOOL_TMPDIR/${BASE}_REMOTE_$$$ext"
+	BASE="$MERGETOOL_TMPDIR/${BASE}_BASE_$$$ext"
 
 	base_mode=$(git ls-files -u -- "$MERGED" | awk '{if ($3==1) print $1;}')
 	local_mode=$(git ls-files -u -- "$MERGED" | awk '{if ($3==2) print $1;}')
@@ -321,6 +354,10 @@ guessed_merge_tool=false
 while test $# != 0
 do
 	case "$1" in
+	--tool-help=*)
+		TOOL_MODE=${1#--tool-help=}
+		show_tool_help
+		;;
 	--tool-help)
 		show_tool_help
 		;;
@@ -371,6 +408,9 @@ prompt_after_failed_merge () {
 		esac
 	done
 }
+
+git_dir_init
+require_work_tree
 
 if test -z "$merge_tool"
 then

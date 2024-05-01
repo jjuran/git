@@ -26,12 +26,24 @@ extern int save_commit_buffer;
 extern const char *commit_type;
 
 /* While we can decorate any object with a name, it's only used for commits.. */
-extern struct decoration name_decoration;
 struct name_decoration {
 	struct name_decoration *next;
 	int type;
-	char name[1];
+	char name[FLEX_ARRAY];
 };
+
+enum decoration_type {
+	DECORATION_NONE = 0,
+	DECORATION_REF_LOCAL,
+	DECORATION_REF_REMOTE,
+	DECORATION_REF_TAG,
+	DECORATION_REF_STASH,
+	DECORATION_REF_HEAD,
+	DECORATION_GRAFTED,
+};
+
+void add_name_decoration(enum decoration_type type, const char *name, struct object *obj);
+const struct name_decoration *get_name_decoration(const struct object *obj);
 
 struct commit *lookup_commit(const unsigned char *sha1);
 struct commit *lookup_commit_reference(const unsigned char *sha1);
@@ -314,6 +326,17 @@ extern struct commit_extra_header *read_commit_extra_headers(struct commit *, co
 
 extern void free_commit_extra_headers(struct commit_extra_header *extra);
 
+/*
+ * Search the commit object contents given by "msg" for the header "key".
+ * Returns a pointer to the start of the header contents, or NULL. The length
+ * of the header, up to the first newline, is returned via out_len.
+ *
+ * Note that some headers (like mergetag) may be multi-line. It is the caller's
+ * responsibility to parse further in this case!
+ */
+extern const char *find_commit_header(const char *msg, const char *key,
+				      size_t *out_len);
+
 typedef void (*each_mergetag_fn)(struct commit *commit, struct commit_extra_header *extra,
 				 void *cb_data);
 
@@ -347,7 +370,7 @@ extern void print_commit_list(struct commit_list *list,
  * at all.  This may allocate memory for sig->gpg_output, sig->gpg_status,
  * sig->signer and sig->key.
  */
-extern void check_commit_signature(const struct commit* commit, struct signature_check *sigc);
+extern void check_commit_signature(const struct commit *commit, struct signature_check *sigc);
 
 int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused);
 

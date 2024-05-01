@@ -300,13 +300,12 @@ void trace_repo_setup(const char *prefix)
 {
 	static struct trace_key key = TRACE_KEY_INIT(SETUP);
 	const char *git_work_tree;
-	char cwd[PATH_MAX];
+	char *cwd;
 
 	if (!trace_want(&key))
 		return;
 
-	if (!getcwd(cwd, PATH_MAX))
-		die("Unable to get current working directory");
+	cwd = xgetcwd();
 
 	if (!(git_work_tree = get_git_work_tree()))
 		git_work_tree = "(null)";
@@ -318,6 +317,8 @@ void trace_repo_setup(const char *prefix)
 	trace_printf_key(&key, "setup: worktree: %s\n", quote_crnl(git_work_tree));
 	trace_printf_key(&key, "setup: cwd: %s\n", quote_crnl(cwd));
 	trace_printf_key(&key, "setup: prefix: %s\n", quote_crnl(prefix));
+
+	free(cwd);
 }
 
 int trace_want(struct trace_key *key)
@@ -386,7 +387,7 @@ static inline uint64_t gettimeofday_nanos(void)
  * Returns nanoseconds since the epoch (01/01/1970), for performance tracing
  * (i.e. favoring high precision over wall clock time accuracy).
  */
-inline uint64_t getnanotime(void)
+uint64_t getnanotime(void)
 {
 	static uint64_t offset;
 	if (offset > 1) {

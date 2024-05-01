@@ -10,6 +10,7 @@
 struct child_process {
 	const char **argv;
 	struct argv_array args;
+	struct argv_array env_array;
 	pid_t pid;
 	/*
 	 * Using .in, .out, .err:
@@ -43,6 +44,9 @@ struct child_process {
 	unsigned use_shell:1;
 	unsigned clean_on_exit:1;
 };
+
+#define CHILD_PROCESS_INIT { NULL, ARGV_ARRAY_INIT, ARGV_ARRAY_INIT }
+void child_process_init(struct child_process *);
 
 int start_command(struct child_process *);
 int finish_command(struct child_process *);

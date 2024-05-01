@@ -69,6 +69,7 @@ struct imap_server_conf {
 	char *tunnel;
 	char *host;
 	int port;
+	char *folder;
 	char *user;
 	char *pass;
 	int use_ssl;
@@ -82,6 +83,7 @@ static struct imap_server_conf server = {
 	NULL,	/* tunnel */
 	NULL,	/* host */
 	0,	/* port */
+	NULL,	/* folder */
 	NULL,	/* user */
 	NULL,	/* pass */
 	0,   	/* use_ssl */
@@ -128,7 +130,6 @@ struct imap_cmd_cb {
 	char *data;
 	int dlen;
 	int uid;
-	unsigned create:1, trycreate:1;
 };
 
 struct imap_cmd {
@@ -493,9 +494,9 @@ static int nfsnprintf(char *buf, int blen, const char *fmt, ...)
 	return ret;
 }
 
-static struct imap_cmd *v_issue_imap_cmd(struct imap_store *ctx,
-					 struct imap_cmd_cb *cb,
-					 const char *fmt, va_list ap)
+static struct imap_cmd *issue_imap_cmd(struct imap_store *ctx,
+				       struct imap_cmd_cb *cb,
+				       const char *fmt, va_list ap)
 {
 	struct imap *imap = ctx->imap;
 	struct imap_cmd *cmd;
@@ -524,7 +525,7 @@ static struct imap_cmd *v_issue_imap_cmd(struct imap_store *ctx,
 	if (Verbose) {
 		if (imap->num_in_progress)
 			printf("(%d in progress) ", imap->num_in_progress);
-		if (memcmp(cmd->cmd, "LOGIN", 5))
+		if (!starts_with(cmd->cmd, "LOGIN"))
 			printf(">>> %s", buf);
 		else
 			printf(">>> %d LOGIN <user> <pass>\n", cmd->tag);
@@ -559,20 +560,6 @@ static struct imap_cmd *v_issue_imap_cmd(struct imap_store *ctx,
 }
 
 __attribute__((format (printf, 3, 4)))
-static struct imap_cmd *issue_imap_cmd(struct imap_store *ctx,
-				       struct imap_cmd_cb *cb,
-				       const char *fmt, ...)
-{
-	struct imap_cmd *ret;
-	va_list ap;
-
-	va_start(ap, fmt);
-	ret = v_issue_imap_cmd(ctx, cb, fmt, ap);
-	va_end(ap);
-	return ret;
-}
-
-__attribute__((format (printf, 3, 4)))
 static int imap_exec(struct imap_store *ctx, struct imap_cmd_cb *cb,
 		     const char *fmt, ...)
 {
@@ -580,7 +567,7 @@ static int imap_exec(struct imap_store *ctx, struct imap_cmd_cb *cb,
 	struct imap_cmd *cmdp;
 
 	va_start(ap, fmt);
-	cmdp = v_issue_imap_cmd(ctx, cb, fmt, ap);
+	cmdp = issue_imap_cmd(ctx, cb, fmt, ap);
 	va_end(ap);
 	if (!cmdp)
 		return RESP_BAD;
@@ -596,7 +583,7 @@ static int imap_exec_m(struct imap_store *ctx, struct imap_cmd_cb *cb,
 	struct imap_cmd *cmdp;
 
 	va_start(ap, fmt);
-	cmdp = v_issue_imap_cmd(ctx, cb, fmt, ap);
+	cmdp = issue_imap_cmd(ctx, cb, fmt, ap);
 	va_end(ap);
 	if (!cmdp)
 		return DRV_STORE_BAD;
@@ -714,8 +701,8 @@ static int parse_response_code(struct imap_store *ctx, struct imap_cmd_cb *cb,
 static int get_cmd_result(struct imap_store *ctx, struct imap_cmd *tcmd)
 {
 	struct imap *imap = ctx->imap;
-	struct imap_cmd *cmdp, **pcmdp, *ncmdp;
-	char *cmd, *arg, *arg1, *p;
+	struct imap_cmd *cmdp, **pcmdp;
+	char *cmd, *arg, *arg1;
 	int n, resp, resp2, tag;
 
 	for (;;) {
@@ -801,39 +788,17 @@ static int get_cmd_result(struct imap_store *ctx, struct imap_cmd *tcmd)
 			if (!strcmp("OK", arg))
 				resp = DRV_OK;
 			else {
-				if (!strcmp("NO", arg)) {
-					if (cmdp->cb.create && cmd && (cmdp->cb.trycreate || !memcmp(cmd, "[TRYCREATE]", 11))) { /* SELECT, APPEND or UID COPY */
-						p = strchr(cmdp->cmd, '"');
-						if (!issue_imap_cmd(ctx, NULL, "CREATE \"%.*s\"", (int)(strchr(p + 1, '"') - p + 1), p)) {
-							resp = RESP_BAD;
-							goto normal;
-						}
-						/* not waiting here violates the spec, but a server that does not
-						   grok this nonetheless violates it too. */
-						cmdp->cb.create = 0;
-						if (!(ncmdp = issue_imap_cmd(ctx, &cmdp->cb, "%s", cmdp->cmd))) {
-							resp = RESP_BAD;
-							goto normal;
-						}
-						free(cmdp->cmd);
-						free(cmdp);
-						if (!tcmd)
-							return 0;	/* ignored */
-						if (cmdp == tcmd)
-							tcmd = ncmdp;
-						continue;
-					}
+				if (!strcmp("NO", arg))
 					resp = RESP_NO;
-				} else /*if (!strcmp("BAD", arg))*/
+				else /*if (!strcmp("BAD", arg))*/
 					resp = RESP_BAD;
 				fprintf(stderr, "IMAP command '%s' returned response (%s) - %s\n",
-					 memcmp(cmdp->cmd, "LOGIN", 5) ?
+					!starts_with(cmdp->cmd, "LOGIN") ?
 							cmdp->cmd : "LOGIN <user> <pass>",
 							arg, cmd ? cmd : "");
 			}
 			if ((resp2 = parse_response_code(ctx, &cmdp->cb, cmd)) > resp)
 				resp = resp2;
-		normal:
 			if (cmdp->cb.done)
 				cmdp->cb.done(ctx, cmdp, resp);
 			free(cmdp->cb.data);
@@ -947,7 +912,7 @@ static int auth_cram_md5(struct imap_store *ctx, struct imap_cmd *cmd, const cha
 	return 0;
 }
 
-static struct imap_store *imap_open_store(struct imap_server_conf *srvc)
+static struct imap_store *imap_open_store(struct imap_server_conf *srvc, char *folder)
 {
 	struct credential cred = CREDENTIAL_INIT;
 	struct imap_store *ctx;
@@ -957,33 +922,23 @@ static struct imap_store *imap_open_store(struct imap_server_conf *srvc)
 
 	ctx = xcalloc(1, sizeof(*ctx));
 
-	ctx->imap = imap = xcalloc(sizeof(*imap), 1);
+	ctx->imap = imap = xcalloc(1, sizeof(*imap));
 	imap->buf.sock.fd[0] = imap->buf.sock.fd[1] = -1;
 	imap->in_progress_append = &imap->in_progress;
 
 	/* open connection to IMAP server */
 
 	if (srvc->tunnel) {
-
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus on
-#endif
-
-		const char *argv[] = { srvc->tunnel, NULL };
-		struct child_process tunnel = {NULL};
-
-#ifdef USE_CPLUSPLUS_FOR_INIT
-#pragma cplusplus reset
-#endif
+		struct child_process tunnel = CHILD_PROCESS_INIT;
 
 		imap_info("Starting tunnel '%s'... ", srvc->tunnel);
 
-		tunnel.argv = argv;
+		argv_array_push(&tunnel.args, srvc->tunnel);
 		tunnel.use_shell = 1;
 		tunnel.in = -1;
 		tunnel.out = -1;
 		if (start_command(&tunnel))
-			die("cannot start proxy %s", argv[0]);
+			die("cannot start proxy %s", srvc->tunnel);
 
 		imap->buf.sock.fd[0] = tunnel.out;
 		imap->buf.sock.fd[1] = tunnel.in;
@@ -1168,6 +1123,25 @@ static struct imap_store *imap_open_store(struct imap_server_conf *srvc)
 		credential_approve(&cred);
 	credential_clear(&cred);
 
+	/* check the target mailbox exists */
+	ctx->name = folder;
+	switch (imap_exec(ctx, NULL, "EXAMINE \"%s\"", ctx->name)) {
+	case RESP_OK:
+		/* ok */
+		break;
+	case RESP_BAD:
+		fprintf(stderr, "IMAP error: could not check mailbox\n");
+		goto out;
+	case RESP_NO:
+		if (imap_exec(ctx, NULL, "CREATE \"%s\"", ctx->name) == RESP_OK) {
+			imap_info("Created missing mailbox\n");
+		} else {
+			fprintf(stderr, "IMAP error: could not create missing mailbox\n");
+			goto out;
+		}
+		break;
+	}
+
 	ctx->prefix = "";
 	return ctx;
 
@@ -1176,6 +1150,7 @@ bail:
 		credential_reject(&cred);
 	credential_clear(&cred);
 
+ out:
 	imap_close_store(ctx);
 	return NULL;
 }
@@ -1231,7 +1206,6 @@ static int imap_store_msg(struct imap_store *ctx, struct strbuf *msg)
 
 	box = ctx->name;
 	prefix = !strcmp(box, "INBOX") ? "" : ctx->prefix;
-	cb.create = 0;
 	ret = imap_exec_m(ctx, &cb, "APPEND \"%s%s\" ", prefix, box);
 	imap->caps = imap->rcaps;
 	if (ret != DRV_OK)
@@ -1336,45 +1310,35 @@ static int split_msg(struct strbuf *all_msgs, struct strbuf *msg, int *ofs)
 	return 1;
 }
 
-static char *imap_folder;
-
-static int git_imap_config(const char *key, const char *val, void *cb)
+static void git_imap_config(void)
 {
-	if (!skip_prefix(key, "imap.", &key))
-		return 0;
+	const char *val = NULL;
 
-	/* check booleans first, and barf on others */
-	if (!strcmp("sslverify", key))
-		server.ssl_verify = git_config_bool(key, val);
-	else if (!strcmp("preformattedhtml", key))
-		server.use_html = git_config_bool(key, val);
-	else if (!val)
-		return config_error_nonbool(key);
+	git_config_get_bool("imap.sslverify", &server.ssl_verify);
+	git_config_get_bool("imap.preformattedhtml", &server.use_html);
+	git_config_get_string("imap.folder", &server.folder);
 
-	if (!strcmp("folder", key)) {
-		imap_folder = xstrdup(val);
-	} else if (!strcmp("host", key)) {
-		if (starts_with(val, "imap:"))
-			val += 5;
-		else if (starts_with(val, "imaps:")) {
-			val += 6;
-			server.use_ssl = 1;
+	if (!git_config_get_value("imap.host", &val)) {
+		if (!val) {
+			git_die_config("imap.host", "Missing value for 'imap.host'");
+		} else {
+			if (starts_with(val, "imap:"))
+				val += 5;
+			else if (starts_with(val, "imaps:")) {
+				val += 6;
+				server.use_ssl = 1;
+			}
+			if (starts_with(val, "//"))
+				val += 2;
+			server.host = xstrdup(val);
 		}
-		if (starts_with(val, "//"))
-			val += 2;
-		server.host = xstrdup(val);
-	} else if (!strcmp("user", key))
-		server.user = xstrdup(val);
-	else if (!strcmp("pass", key))
-		server.pass = xstrdup(val);
-	else if (!strcmp("port", key))
-		server.port = git_config_int(key, val);
-	else if (!strcmp("tunnel", key))
-		server.tunnel = xstrdup(val);
-	else if (!strcmp("authmethod", key))
-		server.auth_method = xstrdup(val);
+	}
 
-	return 0;
+	git_config_get_string("imap.user", &server.user);
+	git_config_get_string("imap.pass", &server.pass);
+	git_config_get_int("imap.port", &server.port);
+	git_config_get_string("imap.tunnel", &server.tunnel);
+	git_config_get_string("imap.authmethod", &server.auth_method);
 }
 
 int main(int argc, char **argv)
@@ -1395,12 +1359,12 @@ int main(int argc, char **argv)
 		usage(imap_send_usage);
 
 	setup_git_directory_gently(&nongit_ok);
-	git_config(git_imap_config, NULL);
+	git_imap_config();
 
 	if (!server.port)
 		server.port = server.use_ssl ? 993 : 143;
 
-	if (!imap_folder) {
+	if (!server.folder) {
 		fprintf(stderr, "no imap store specified\n");
 		return 1;
 	}
@@ -1430,14 +1394,13 @@ int main(int argc, char **argv)
 	}
 
 	/* write it to the imap server */
-	ctx = imap_open_store(&server);
+	ctx = imap_open_store(&server, server.folder);
 	if (!ctx) {
 		fprintf(stderr, "failed to open store\n");
 		return 1;
 	}
 
 	fprintf(stderr, "sending %d message%s\n", total, (total != 1) ? "s" : "");
-	ctx->name = imap_folder;
 	while (1) {
 		unsigned percent = n * 100 / total;
 

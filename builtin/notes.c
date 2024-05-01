@@ -126,7 +126,7 @@ static void write_commented_object(int fd, const unsigned char *object)
 
 	const char *show_args[5] =
 		{"show", "--stat", "--no-notes", sha1_to_hex(object), NULL};
-	struct child_process show;
+	struct child_process show = CHILD_PROCESS_INIT;
 	struct strbuf buf = STRBUF_INIT;
 	struct strbuf cbuf = STRBUF_INIT;
 
@@ -135,7 +135,6 @@ static void write_commented_object(int fd, const unsigned char *object)
 #endif
 
 	/* Invoke "git show --stat --no-notes $object" */
-	memset(&show, 0, sizeof(show));
 	show.argv = show_args;
 	show.no_stdin = 1;
 	show.out = -1;
@@ -219,7 +218,7 @@ static void create_note(const unsigned char *object, struct msg_arg *msg,
 		if (write_sha1_file(msg->buf.buf, msg->buf.len, blob_type, result)) {
 			error(_("unable to write note object"));
 			if (path)
-				error(_("The note contents has been left in %s"),
+				error(_("The note contents have been left in %s"),
 				      path);
 			exit(128);
 		}
@@ -749,7 +748,7 @@ static int merge_commit(struct notes_merge_options *o)
 	init_notes(t, "NOTES_MERGE_PARTIAL", combine_notes_overwrite, 0);
 
 	o->local_ref = local_ref_to_free =
-		resolve_refdup("NOTES_MERGE_REF", sha1, 0, NULL);
+		resolve_refdup("NOTES_MERGE_REF", 0, sha1, NULL);
 	if (!o->local_ref)
 		die("Failed to resolve NOTES_MERGE_REF");
 

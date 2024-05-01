@@ -133,7 +133,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 		{".idx"},
 		{".bitmap", 1},
 	};
-	struct child_process cmd;
+	struct child_process cmd = CHILD_PROCESS_INIT;
 	struct string_list_item *item;
 	struct argv_array cmd_args = ARGV_ARRAY_INIT;
 	struct string_list names = STRING_LIST_INIT_DUP;
@@ -221,6 +221,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	argv_array_push(&cmd_args, "--non-empty");
 	argv_array_push(&cmd_args, "--all");
 	argv_array_push(&cmd_args, "--reflog");
+	argv_array_push(&cmd_args, "--indexed-objects");
 	if (window)
 		argv_array_pushf(&cmd_args, "--window=%s", window);
 	if (window_memory)
@@ -262,7 +263,6 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 
 	argv_array_push(&cmd_args, packtmp);
 
-	memset(&cmd, 0, sizeof(cmd));
 	cmd.argv = cmd_args.argv;
 	cmd.git_cmd = 1;
 	cmd.out = -1;
@@ -390,6 +390,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	/* End of pack replacement. */
 
 	if (delete_redundant) {
+		int opts = 0;
 		sort_string_list(&names);
 		for_each_string_list_item(item, &existing_packs) {
 			char *sha1;
@@ -400,25 +401,13 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 			if (!string_list_has_string(&names, sha1))
 				remove_redundant_pack(packdir, item->string);
 		}
-		argv_array_push(&cmd_args, "prune-packed");
-		if (quiet)
-			argv_array_push(&cmd_args, "--quiet");
-
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.argv = cmd_args.argv;
-		cmd.git_cmd = 1;
-		run_command(&cmd);
-		argv_array_clear(&cmd_args);
+		if (!quiet && isatty(2))
+			opts |= PRUNE_PACKED_VERBOSE;
+		prune_packed_objects(opts);
 	}
 
-	if (!no_update_server_info) {
-		argv_array_push(&cmd_args, "update-server-info");
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.argv = cmd_args.argv;
-		cmd.git_cmd = 1;
-		run_command(&cmd);
-		argv_array_clear(&cmd_args);
-	}
+	if (!no_update_server_info)
+		update_server_info(0);
 	remove_temporary_files();
 	string_list_clear(&names, 0);
 	string_list_clear(&rollback, 0);

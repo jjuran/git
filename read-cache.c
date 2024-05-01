@@ -5,6 +5,7 @@
  */
 #define NO_THE_INDEX_COMPATIBILITY_MACROS
 #include "cache.h"
+#include "lockfile.h"
 #include "cache-tree.h"
 #include "refs.h"
 #include "dir.h"
@@ -1246,24 +1247,16 @@ static struct cache_entry *refresh_cache_entry(struct cache_entry *ce,
 
 #define INDEX_FORMAT_DEFAULT 3
 
-static int index_format_config(const char *var, const char *value, void *cb)
-{
-	unsigned int *version = cb;
-	if (!strcmp(var, "index.version")) {
-		*version = git_config_int(var, value);
-		return 0;
-	}
-	return 1;
-}
-
 static unsigned int get_index_format_default(void)
 {
 	char *envversion = getenv("GIT_INDEX_VERSION");
 	char *endp;
+	int value;
 	unsigned int version = INDEX_FORMAT_DEFAULT;
 
 	if (!envversion) {
-		git_config(index_format_config, &version);
+		if (!git_config_get_int("index.version", &value))
+			version = value;
 		if (version < INDEX_FORMAT_LB || INDEX_FORMAT_UB < version) {
 			warning(_("index.version set, but the value is invalid.\n"
 				  "Using version %i"), INDEX_FORMAT_DEFAULT);
@@ -1375,6 +1368,14 @@ static int read_index_extension(struct index_state *istate,
 	return 0;
 }
 
+int hold_locked_index(struct lock_file *lk, int die_on_error)
+{
+	return hold_lock_file_for_update(lk, get_index_file(),
+					 die_on_error
+					 ? LOCK_DIE_ON_ERROR
+					 : 0);
+}
+
 int read_index(struct index_state *istate)
 {
 	return read_index_from(istate, get_index_file());
@@ -1473,6 +1474,21 @@ static struct cache_entry *create_from_disk(struct ondisk_cache_entry *ondisk,
 	return ce;
 }
 
+static void check_ce_order(struct cache_entry *ce, struct cache_entry *next_ce)
+{
+	int name_compare = strcmp(ce->name, next_ce->name);
+	if (0 < name_compare)
+		die("unordered stage entries in index");
+	if (!name_compare) {
+		if (!ce_stage(ce))
+			die("multiple stage entries for merged file '%s'",
+				ce->name);
+		if (ce_stage(ce) > ce_stage(next_ce))
+			die("unordered stage entries for '%s'",
+				ce->name);
+	}
+}
+
 /* remember to discard_cache() before reading a different cache! */
 int do_read_index(struct index_state *istate, const char *path, int must_exist)
 {
@@ -1533,6 +1549,9 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 		disk_ce = (struct ondisk_cache_entry *)((char *)mmap + src_offset);
 		ce = create_from_disk(disk_ce, &consumed, previous_name);
 		set_index_entry(istate, i, ce);
+
+		if (i > 0)
+			check_ce_order(istate->cache[i - 1], ce);
 
 		src_offset += consumed;
 	}
@@ -2034,16 +2053,10 @@ void set_alternate_index_output(const char *name)
 
 static int commit_locked_index(struct lock_file *lk)
 {
-	if (alternate_index_output) {
-		if (lk->fd >= 0 && close_lock_file(lk))
-			return -1;
-		if (rename(lk->filename, alternate_index_output))
-			return -1;
-		lk->filename[0] = 0;
-		return 0;
-	} else {
+	if (alternate_index_output)
+		return commit_lock_file_to(lk, alternate_index_output);
+	else
 		return commit_lock_file(lk);
-	}
 }
 
 static int do_write_locked_index(struct index_state *istate, struct lock_file *lock,
@@ -2183,7 +2196,6 @@ int read_index_unmerged(struct index_state *istate)
 		if (add_index_entry(istate, new_ce, 0))
 			return error("%s: cannot drop to stage #0",
 				     new_ce->name);
-		i = index_name_pos(istate, new_ce->name, len);
 	}
 	return unmerged;
 }

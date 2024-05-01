@@ -221,6 +221,7 @@ run_merge_tool () {
 	else
 		run_diff_cmd "$1"
 	fi
+	status=$?
 	return $status
 }
 
@@ -250,7 +251,7 @@ list_merge_tool_candidates () {
 			tools="opendiff kdiff3 tkdiff xxdiff meld $tools"
 		fi
 		tools="$tools gvimdiff diffuse diffmerge ecmerge"
-		tools="$tools p4merge araxis bc3 codecompare"
+		tools="$tools p4merge araxis bc codecompare"
 	fi
 	case "${VISUAL:-$EDITOR}" in
 	*vim*)

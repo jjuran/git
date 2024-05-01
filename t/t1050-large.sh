@@ -13,7 +13,7 @@ test_expect_success setup '
 	echo X | dd of=large2 bs=1k seek=2000 &&
 	echo X | dd of=large3 bs=1k seek=2000 &&
 	echo Y | dd of=huge bs=1k seek=2500 &&
-	GIT_ALLOC_LIMIT=1500 &&
+	GIT_ALLOC_LIMIT=1500k &&
 	export GIT_ALLOC_LIMIT
 '
 
@@ -112,6 +112,20 @@ test_expect_success 'diff --raw' '
 	git diff --raw HEAD^
 '
 
+test_expect_success 'diff --stat' '
+	git diff --stat HEAD^ HEAD
+'
+
+test_expect_success 'diff' '
+	git diff HEAD^ HEAD >actual &&
+	grep "Binary files.*differ" actual
+'
+
+test_expect_success 'diff --cached' '
+	git diff --cached HEAD^ >actual &&
+	grep "Binary files.*differ" actual
+'
+
 test_expect_success 'hash-object' '
 	git hash-object large1
 '
@@ -161,6 +175,12 @@ test_expect_success 'zip achiving, store only' '
 
 test_expect_success 'zip achiving, deflate' '
 	git archive --format=zip HEAD >/dev/null
+'
+
+test_expect_success 'fsck' '
+	test_must_fail git fsck 2>err &&
+	n=$(grep "error: attempting to allocate .* over limit" err | wc -l) &&
+	test "$n" -gt 1
 '
 
 test_done

@@ -1,5 +1,5 @@
-#include "cache.h"
 #include "builtin.h"
+#include "lockfile.h"
 #include "commit.h"
 #include "refs.h"
 #include "dir.h"
@@ -431,7 +431,7 @@ static int expire_reflog(const char *ref, const unsigned char *sha1, int unused,
 			 write_str_in_full(lock->lock_fd, "\n") != 1 ||
 			 close_ref(lock) < 0)) {
 			status |= error("Couldn't write %s",
-				lock->lk->filename);
+					lock->lk->filename.buf);
 			unlink(newlog_path);
 		} else if (rename(newlog_path, log_file)) {
 			status |= error("cannot rename %s to %s",
@@ -649,7 +649,7 @@ static int cmd_reflog_expire(int argc, const char **argv, const char *prefix)
 		init_revisions(&cb.revs, prefix);
 		if (cb.verbose)
 			printf("Marking reachable objects...");
-		mark_reachable_objects(&cb.revs, 0, NULL);
+		mark_reachable_objects(&cb.revs, 0, 0, NULL);
 		if (cb.verbose)
 			putchar('\n');
 	}

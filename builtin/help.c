@@ -82,12 +82,11 @@ static const char *get_man_viewer_info(const char *name)
 static int check_emacsclient_version(void)
 {
 	struct strbuf buffer = STRBUF_INIT;
-	struct child_process ec_process;
+	struct child_process ec_process = CHILD_PROCESS_INIT;
 	const char *argv_ec[] = { "emacsclient", "--version", NULL };
 	int version;
 
 	/* emacsclient prints its version number on stderr */
-	memset(&ec_process, 0, sizeof(ec_process));
 	ec_process.argv = argv_ec;
 	ec_process.err = -1;
 	ec_process.stdout_to_stderr = 1;
@@ -425,6 +424,7 @@ static struct {
 	const char *help;
 } common_guides[] = {
 	{ "attributes", N_("Defining attributes per path") },
+	{ "everyday", N_("Everyday Git With 20 Commands Or So") },
 	{ "glossary", N_("A Git glossary") },
 	{ "ignore", N_("Specifies intentionally untracked files to ignore") },
 	{ "modules", N_("Defining submodule properties") },

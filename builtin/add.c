@@ -5,6 +5,7 @@
  */
 #include "cache.h"
 #include "builtin.h"
+#include "lockfile.h"
 #include "dir.h"
 #include "pathspec.h"
 #include "exec_cmd.h"
@@ -180,7 +181,7 @@ static int edit_patch(int argc, const char **argv, const char *prefix)
 	char *file = git_pathdup("ADD_EDIT.patch");
 	const char *apply_argv[] = { "apply", "--recount", "--cached",
 		NULL, NULL };
-	struct child_process child;
+	struct child_process child = CHILD_PROCESS_INIT;
 	struct rev_info rev;
 	int out;
 	struct stat st;
@@ -214,7 +215,6 @@ static int edit_patch(int argc, const char **argv, const char *prefix)
 	if (!st.st_size)
 		die(_("Empty patch. Aborted."));
 
-	memset(&child, 0, sizeof(child));
 	child.git_cmd = 1;
 	child.argv = apply_argv;
 	if (run_command(&child))

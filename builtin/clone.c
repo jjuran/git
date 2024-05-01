@@ -9,6 +9,7 @@
  */
 
 #include "builtin.h"
+#include "lockfile.h"
 #include "parse-options.h"
 #include "fetch-pack.h"
 #include "refs.h"
@@ -390,7 +391,6 @@ static void clone_local(const char *src_repo, const char *dest_repo)
 
 static const char *junk_work_tree;
 static const char *junk_git_dir;
-static pid_t junk_pid;
 static enum {
 	JUNK_LEAVE_NONE,
 	JUNK_LEAVE_REPO,
@@ -417,8 +417,6 @@ static void remove_junk(void)
 		break;
 	}
 
-	if (getpid() != junk_pid)
-		return;
 	if (junk_git_dir) {
 		strbuf_addstr(&sb, junk_git_dir);
 		remove_dir_recursively(&sb, 0);
@@ -622,7 +620,7 @@ static int checkout(void)
 	if (option_no_checkout)
 		return 0;
 
-	head = resolve_refdup("HEAD", sha1, 1, NULL);
+	head = resolve_refdup("HEAD", RESOLVE_REF_READING, sha1, NULL);
 	if (!head) {
 		warning(_("remote HEAD refers to nonexistent ref, "
 			  "unable to checkout.\n"));
@@ -685,9 +683,10 @@ static void write_config(struct string_list *config)
 	}
 }
 
-static void write_refspec_config(const char* src_ref_prefix,
-		const struct ref* our_head_points_at,
-		const struct ref* remote_head_points_at, struct strbuf* branch_top)
+static void write_refspec_config(const char *src_ref_prefix,
+		const struct ref *our_head_points_at,
+		const struct ref *remote_head_points_at,
+		struct strbuf *branch_top)
 {
 	struct strbuf key = STRBUF_INIT;
 	struct strbuf value = STRBUF_INIT;
@@ -757,8 +756,6 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	struct refspec *refspec;
 	const char *fetch_pattern;
-
-	junk_pid = getpid();
 
 	packet_trace_identity("clone");
 	argc = parse_options(argc, argv, prefix, builtin_clone_options,
@@ -1004,5 +1001,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	strbuf_release(&key);
 	strbuf_release(&value);
 	junk_mode = JUNK_LEAVE_ALL;
+
+	free(refspec);
 	return err;
 }

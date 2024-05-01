@@ -563,7 +563,7 @@ static int git_show_branch_config(const char *var, const char *value, void *cb)
 			default_arg[default_num++] = "show-branch";
 		} else if (default_alloc <= default_num + 1) {
 			default_alloc = default_alloc * 3 / 2 + 20;
-			default_arg = xrealloc(default_arg, sizeof *default_arg * default_alloc);
+			REALLOC_ARRAY(default_arg, default_alloc);
 		}
 		default_arg[default_num++] = xstrdup(value);
 		default_arg[default_num] = NULL;
@@ -732,11 +732,14 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 		char nth_desc[256];
 		char *ref;
 		int base = 0;
+		unsigned int flags = 0;
 
 		if (ac == 0) {
 			static const char *fake_av[2];
 
-			fake_av[0] = resolve_refdup("HEAD", sha1, 1, NULL);
+			fake_av[0] = resolve_refdup("HEAD",
+						    RESOLVE_REF_READING,
+						    sha1, NULL);
 			fake_av[1] = NULL;
 			av = fake_av;
 			ac = 1;
@@ -758,7 +761,7 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 				/* Ah, that is a date spec... */
 				unsigned long at;
 				at = approxidate(reflog_base);
-				read_ref_at(ref, at, -1, sha1, NULL,
+				read_ref_at(ref, flags, at, -1, sha1, NULL,
 					    NULL, NULL, &base);
 			}
 		}
@@ -769,7 +772,7 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 			unsigned long timestamp;
 			int tz;
 
-			if (read_ref_at(ref, 0, base+i, sha1, &logmsg,
+			if (read_ref_at(ref, flags, 0, base+i, sha1, &logmsg,
 					&timestamp, &tz, NULL)) {
 				reflog = i;
 				break;
@@ -797,7 +800,8 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 		}
 	}
 
-	head_p = resolve_ref_unsafe("HEAD", head_sha1, 1, NULL);
+	head_p = resolve_ref_unsafe("HEAD", RESOLVE_REF_READING,
+				    head_sha1, NULL);
 	if (head_p) {
 		head_len = strlen(head_p);
 		memcpy(head, head_p, head_len + 1);

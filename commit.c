@@ -584,25 +584,19 @@ define_commit_slab(author_date_slab, unsigned long);
 static void record_author_date(struct author_date_slab *author_date,
 			       struct commit *commit)
 {
-	const char *buf, *line_end, *ident_line;
 	const char *buffer = get_commit_buffer(commit, NULL);
 	struct ident_split ident;
+	const char *ident_line;
+	size_t ident_len;
 	char *date_end;
 	unsigned long date;
 
-	for (buf = buffer; buf; buf = line_end + 1) {
-		line_end = strchrnul(buf, '\n');
-		if (!skip_prefix(buf, "author ", &ident_line)) {
-			if (!line_end[0] || line_end[1] == '\n')
-				return; /* end of header */
-			continue;
-		}
-		if (split_ident_line(&ident,
-				     ident_line, line_end - ident_line) ||
-		    !ident.date_begin || !ident.date_end)
-			goto fail_exit; /* malformed "author" line */
-		break;
-	}
+	ident_line = find_commit_header(buffer, "author", &ident_len);
+	if (!ident_line)
+		goto fail_exit; /* no author line */
+	if (split_ident_line(&ident, ident_line, ident_len) ||
+	    !ident.date_begin || !ident.date_end)
+		goto fail_exit; /* malformed "author" line */
 
 	date = strtoul(ident.date_begin, &date_end, 10);
 	if (date_end != ident.date_end)
@@ -1220,43 +1214,7 @@ free_return:
 	free(buf);
 }
 
-static struct {
-	char result;
-	const char *check;
-} sigcheck_gpg_status[] = {
-	{ 'G', "\n[GNUPG:] GOODSIG " },
-	{ 'B', "\n[GNUPG:] BADSIG " },
-	{ 'U', "\n[GNUPG:] TRUST_NEVER" },
-	{ 'U', "\n[GNUPG:] TRUST_UNDEFINED" },
-};
-
-static void parse_gpg_output(struct signature_check *sigc)
-{
-	const char *buf = sigc->gpg_status;
-	int i;
-
-	/* Iterate over all search strings */
-	for (i = 0; i < ARRAY_SIZE(sigcheck_gpg_status); i++) {
-		const char *found, *next;
-
-		if (!skip_prefix(buf, sigcheck_gpg_status[i].check + 1, &found)) {
-			found = strstr(buf, sigcheck_gpg_status[i].check);
-			if (!found)
-				continue;
-			found += strlen(sigcheck_gpg_status[i].check);
-		}
-		sigc->result = sigcheck_gpg_status[i].result;
-		/* The trust messages are not followed by key/signer information */
-		if (sigc->result != 'U') {
-			sigc->key = xmemdupz(found, 16);
-			found += 17;
-			next = strchrnul(found, '\n');
-			sigc->signer = xmemdupz(found, next - found);
-		}
-	}
-}
-
-void check_commit_signature(const struct commit* commit, struct signature_check *sigc)
+void check_commit_signature(const struct commit *commit, struct signature_check *sigc)
 {
 	struct strbuf payload = STRBUF_INIT;
 	struct strbuf signature = STRBUF_INIT;
@@ -1659,4 +1617,26 @@ void print_commit_list(struct commit_list *list,
 		const char *format = list->next ? format_cur : format_last;
 		printf(format, sha1_to_hex(list->item->object.sha1));
 	}
+}
+
+const char *find_commit_header(const char *msg, const char *key, size_t *out_len)
+{
+	int key_len = strlen(key);
+	const char *line = msg;
+
+	while (line) {
+		const char *eol = strchrnul(line, '\n');
+
+		if (line == eol)
+			return NULL;
+
+		if (eol - line > key_len &&
+		    !strncmp(line, key, key_len) &&
+		    line[key_len] == ' ') {
+			*out_len = eol - line - key_len - 1;
+			return line + key_len + 1;
+		}
+		line = *eol ? eol + 1 : NULL;
+	}
+	return NULL;
 }

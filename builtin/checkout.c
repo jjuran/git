@@ -1,5 +1,5 @@
-#include "cache.h"
 #include "builtin.h"
+#include "lockfile.h"
 #include "parse-options.h"
 #include "refs.h"
 #include "commit.h"
@@ -355,7 +355,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 	if (write_locked_index(&the_index, lock_file, COMMIT_LOCK))
 		die(_("unable to write new index file"));
 
-	read_ref_full("HEAD", rev, 0, &flag);
+	read_ref_full("HEAD", 0, rev, &flag);
 	head = lookup_commit_reference_gently(rev, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
@@ -551,6 +551,12 @@ static int merge_working_tree(const struct checkout_opts *opts,
 				return ret;
 		}
 	}
+
+	if (!active_cache_tree)
+		active_cache_tree = cache_tree();
+
+	if (!cache_tree_fully_valid(active_cache_tree))
+		cache_tree_update(&the_index, WRITE_TREE_SILENT | WRITE_TREE_REPAIR);
 
 	if (write_locked_index(&the_index, lock_file, COMMIT_LOCK))
 		die(_("unable to write new index file"));
@@ -769,7 +775,7 @@ static int switch_branches(const struct checkout_opts *opts,
 	unsigned char rev[20];
 	int flag, writeout_error = 0;
 	memset(&old, 0, sizeof(old));
-	old.path = path_to_free = resolve_refdup("HEAD", rev, 0, &flag);
+	old.path = path_to_free = resolve_refdup("HEAD", 0, rev, &flag);
 	old.commit = lookup_commit_reference_gently(rev, 1);
 	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
@@ -1066,7 +1072,7 @@ static int checkout_branch(struct checkout_opts *opts,
 		unsigned char rev[20];
 		int flag;
 
-		if (!read_ref_full("HEAD", rev, 0, &flag) &&
+		if (!read_ref_full("HEAD", 0, rev, &flag) &&
 		    (flag & REF_ISSYMREF) && is_null_sha1(rev))
 			return switch_unborn_to_new_branch(opts);
 	}
@@ -1153,10 +1159,8 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		const char *argv0 = argv[0];
 		if (!argc || !strcmp(argv0, "--"))
 			die (_("--track needs a branch name"));
-		if (starts_with(argv0, "refs/"))
-			argv0 += 5;
-		if (starts_with(argv0, "remotes/"))
-			argv0 += 8;
+		skip_prefix(argv0, "refs/", &argv0);
+		skip_prefix(argv0, "remotes/", &argv0);
 		argv0 = strchr(argv0, '/');
 		if (!argv0 || !argv0[1])
 			die (_("Missing branch name; try -b"));
