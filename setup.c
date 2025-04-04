@@ -2,6 +2,8 @@
 #include "dir.h"
 #include "string-list.h"
 
+#include "relix/fork_and_exit.h"
+
 static int inside_git_dir = -1;
 static int inside_work_tree = -1;
 
@@ -862,14 +864,8 @@ int daemonize(void)
 	errno = ENOSYS;
 	return -1;
 #else
-	switch (fork()) {
-		case 0:
-			break;
-		case -1:
-			die_errno("fork failed");
-		default:
-			exit(0);
-	}
+	if (fork_and_exit(0) < 0)
+		die_errno("fork failed");
 	if (setsid() == -1)
 		die_errno("setsid failed");
 	close(0);
